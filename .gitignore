@@ -1,0 +1,12 @@
+# secrets and local config - never commit these
+.env
+.env.*
+!.env.example
+.token
+*.token
+.vercel/
+
+# noise
+node_modules/
+.DS_Store
+*.log

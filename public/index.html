@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>To-Do</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="To-Do">
+<meta name="theme-color" content="#f4eee1">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="stylesheet" href="/app.css?v=1039">
+<link rel="stylesheet" href="/work.css?v=1039">
+<script>
+(function(){
+  var de=document.documentElement;
+  function ls(k){try{return window.localStorage.getItem(k)}catch(e){return null}}
+  // Set the theme before first paint so older Safari never has to restyle already-drawn elements.
+  var sc={};try{sc=JSON.parse(ls('settingsCache')||'{}')||{}}catch(e){}
+  var ns=sc.night_start||22,ne=sc.night_end!==undefined?sc.night_end:6,hr=new Date().getHours(),tm=ls('themeMode')||'auto';
+  var auto=ns>ne?(hr>=ns||hr<ne):(hr>=ns&&hr<ne),night=tm==='night'||(tm==='auto'&&auto),work=ls('listMode')==='work';
+  de.className=(night?'night':'')+(work?(night?' work':'work'):'');
+  // iOS 9 sometimes leaves existing elements on the old colours after the theme class changes: force a full restyle.
+  function restyle(){var d=de.style.display;de.style.display='none';void de.offsetHeight;de.style.display=d}
+  var last=de.className;
+  if(window.MutationObserver){
+    new MutationObserver(function(){
+      var c=de.className.replace(/\s*idle\b/,'').replace(/^\s+|\s+$/g,'');
+      if(c===last)return;last=c;restyle();setTimeout(restyle,700);
+    }).observe(de,{attributes:true,attributeFilter:['class']});
+  }
+  // The Shortcut opens /?open=latest after adding a session. core.js only searches the list on screen, so a Work
+  // session was missed when Personal was showing. Resolve "latest" across both lists here, before core.js reads the address.
+  try{
+    if(/[?&]open=latest(&|#|$)/.test(window.location.search)&&window.XMLHttpRequest&&window.history&&history.replaceState){
+      var hm=/[#&]t=([^&]+)/.exec(window.location.hash||''),tk=hm?decodeURIComponent(hm[1]).toLowerCase():ls('todoToken');
+      if(tk){
+        var xr=new XMLHttpRequest();xr.open('GET','/api/todos?_='+Date.now(),false);xr.setRequestHeader('x-todo-token',tk);xr.send(null);
+        if(xr.status===200){
+          var ts=(JSON.parse(xr.responseText)||{}).todos||[],bt='',bid='',ti,tt,tc;
+          for(ti=0;ti<ts.length;ti++){tt=ts[ti];tc=tt.created_at||'';if(tt.is_session&&!tt.done&&tc>=bt){bt=tc;bid=tt.id}}
+          if(bid)history.replaceState(null,'',window.location.pathname+'?open='+encodeURIComponent(bid)+(window.location.hash||''));
+        }
+      }
+    }
+  }catch(e){}
+})();
+</script>
+</head>
+<body onclick="void(0)" data-view="tasks">
+<div id="app">
+  <nav id="rail" aria-label="Main menu">
+    <button class="ritem" id="nPersonal" data-act="nav" data-view="personal"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><span class="lb">Personal</span><span class="bdg" id="bPersonal"></span></button>
+    <button class="ritem" id="nWork" data-act="nav" data-view="work"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg><span class="lb">Work</span><span class="bdg" id="bWork"></span></button>
+    <button class="ritem" id="nBoard" style="display:none" data-act="nav" data-view="board"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.500"/><rect x="10" y="4" width="5" height="10" rx="1.500"/><rect x="17" y="4" width="4" height="13" rx="1.500"/></svg><span class="lb">Projects</span></button>
+    <button class="ritem" id="nPlan" data-act="nav" data-view="plan"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M10 15h4"/></svg><span class="lb">Tomorrow</span></button>
+    <button class="ritem" id="nBudget" style="display:none" data-act="nav" data-view="budget"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 8.5a3 3 0 0 0-5.500 1.500V14c0 1.300-.600 2.300-1.500 3h8M8 12.500h5"/></svg><span class="lb">Budget</span></button>
+    <button class="ritem" id="nInsights" style="display:none" data-act="nav" data-view="insights"><svg class="ic" viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span class="lb">Insights</span></button>
+    <button class="ritem" id="nShopping" style="display:none" data-act="nav" data-view="shopping"><svg class="ic" viewBox="0 0 24 24"><path d="M3 4h2l2.500 11h10.500L20 7H6.500"/><circle cx="9" cy="19.500" r="1.300"/><circle cx="17" cy="19.500" r="1.300"/></svg><span class="lb">Shopping</span></button>
+    <button class="ritem soon" id="nWorkouts" data-act="soon"><svg class="ic" viewBox="0 0 24 24"><path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/></svg><span class="lb">Workouts</span></button>
+    <div class="rsp"></div>
+    <button class="ritem" id="nSettings" data-act="settings"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span class="lb">Settings</span></button>
+  </nav>
+
+  <div id="main">
+    <header class="top">
+      <button class="navtoggle" data-act="rail" aria-label="Show or hide menu"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div class="hd-left">
+        <div class="clock" id="clock" data-act="theme">--:--</div>
+        <div class="date" id="date"></div>
+      </div>
+      <div class="hd-mid">
+        <div class="tasksonly">
+          <form class="addform" id="addForm" autocomplete="off">
+            <input id="addInput" type="text" placeholder="Add a to-do…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" maxlength="500">
+            <button type="submit">Add</button>
+          </form>
+          <div class="hint">Shortcuts: “call dentist fri” sets a date, “#home” sets a category, “every week” repeats it, end with “work” for your Work list</div>
+        </div>
+        <div id="viewTitle"></div>
+      </div>
+      <div class="hd-right tasksonly"><div class="stats" id="stats"></div><button class="weekbtn" data-act="preview">Today’s order</button> <button class="weekbtn" data-act="week">Week</button> <button class="weekbtn" id="projBtn" data-pj="open">Projects</button></div>
+    </header>
+    <div id="views">
+      <section class="view on" id="vTasks">
+        <div id="glance"></div>
+        <div id="filters"></div>
+        <div id="focus"></div>
+        <main class="cols" id="cols"><section class="col" id="colA"></section><section class="col" id="colB"></section><section class="col" id="colC"></section></main>
+      </section>
+      <section class="view" id="vPlan"><div class="scrollview"><div class="pane" id="planPane"></div></div></section>
+      <section class="view" id="vBudget"><div class="scrollview"><div class="pane" id="budgetPane"></div></div></section>
+      <section class="view" id="vShopping"><div class="scrollview"><div class="pane" id="shoppingPane"></div></div></section>
+      <section class="view" id="vBoard"><div class="scrollview"><div class="pane wide" id="boardPane"></div></div></section>
+      <section class="view" id="vInsights"><div class="scrollview"><div class="pane" id="insightsPane"></div></div></section>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="card scard">
+    <div class="shead">
+      <div class="sg" id="eList"></div>
+      <div id="eFocus"></div>
+    </div>
+    <div class="sbody">
+      <input class="etitle" id="eTitle" type="text" maxlength="500" autocorrect="off" placeholder="Task title">
+      <div class="fsec">
+        <div class="frow"><div class="flbl">Due</div><div class="fctl"><div id="eWhen"></div><input class="edate" id="eDate" type="date"></div></div>
+        <div class="frow"><div class="flbl">Time</div><div class="fctl"><div id="eTime"></div><input class="edate" id="eTimeIn" type="time"><div id="eIcs"></div></div></div>
+      </div>
+      <div class="fsec" id="eWorkSec">
+        <div class="frow"><div class="flbl">Priority</div><div class="fctl"><div class="sg" id="ePrio"></div></div></div>
+        <div class="frow"><div class="flbl">Flags</div><div class="fctl" id="eFlags"></div></div>
+        <div class="frow" id="eBlockRow"><div class="flbl">Unblock action</div><div class="fctl"><input class="edate" id="eUnblock" type="text" maxlength="300" autocomplete="off" autocorrect="off" placeholder="What needs to happen? e.g. Chase Sam for access"><div class="sethint">Blocked tasks leave Overdue and your counts until you unblock them.</div></div></div>
+      </div>
+      <div class="fsec">
+        <div class="frow"><div class="flbl">Category</div><div class="fctl" id="eCats"></div></div>
+        <div class="frow"><div class="flbl">Notes</div><div class="fctl"><textarea id="eNotes" maxlength="2000" rows="3" placeholder="Optional notes…" autocorrect="off"></textarea></div></div>
+      </div>
+      <button class="morebtn" id="eMoreBtn" data-act="smore">More options</button>
+      <div class="fsec" id="eMore">
+        <div class="frow"><div class="flbl">Repeat</div><div class="fctl"><div id="eRecur"></div><div id="eEnd"></div><input class="edate" id="eEndDate" type="date" style="display:none"></div></div>
+        <div id="eSubs"></div>
+      </div>
+    </div>
+    <div class="sfoot">
+      <button class="btn danger" data-act="delete">Delete</button>
+      <span class="sp"></span>
+      <button class="btn" data-act="cancel">Cancel</button>
+      <button class="btn primary" data-act="save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="sess">
+  <div class="card">
+    <div><span class="sbadge" id="sBadge">SESSION</span></div>
+    <div class="rvtitle" id="sTitle"></div>
+    <div class="rvsub" id="sMeta"></div>
+    <div class="prog"><i id="sBar" style="width:0"></i></div>
+    <ul class="slist" id="sList"></ul>
+    <form class="addform" id="sForm" autocomplete="off">
+      <input id="sInput" type="text" placeholder="Add a task…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" maxlength="200">
+      <button type="submit">Add</button>
+    </form>
+    <div class="row">
+      <button class="btn" id="sDetails" style="margin-left:0" data-act="sdetails">Details</button>
+      <button class="btn" id="sReorder" data-act="sreorder">Re-order</button>
+      <span class="sp"></span>
+      <button class="btn" data-act="sclose">Close</button>
+      <button class="btn primary" id="sFinish" data-act="sfinish">Finish session</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="settings"><div class="card wide" id="settingsCard"></div></div>
+<div class="sheet" id="preview"><div class="card" id="previewCard"></div></div>
+<div class="sheet" id="review"><div class="card" id="reviewCard"></div></div>
+<div class="sheet" id="ask"><div class="card" id="askCard"></div></div>
+
+<div id="saver"><div class="slide" id="slideA"></div><div class="slide" id="slideB"></div><div id="saverClock"></div><div id="saverEvents"></div></div>
+
+<div id="gate">
+  <div class="box">
+    <h1>To-Do</h1>
+    <p>Enter your access token to connect this device.</p>
+    <input id="gateInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="xxxxx-xxxxx">
+    <button class="btn primary" data-act="gatesave">Connect</button>
+    <div class="msg" id="gateMsg"></div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/js/core.js?v=1039"></script>
+<script src="/js/budget.js?v=1039"></script>
+<script src="/js/saver.js?v=1039"></script>
+<script src="/js/calendar.js?v=1039"></script>
+<script src="/js/insights.js?v=1039"></script>
+<script src="/js/shopping.js?v=1039"></script>
+<script src="/js/projects.js?v=1039"></script>
+<script src="/js/workcal.js?v=1039"></script>
+<script src="/js/board.js?v=1039"></script>
+<style>.fsbtn{position:fixed;right:10px;bottom:10px;z-index:30;width:30px;height:30px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);opacity:.35;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .15s}
+.fsbtn[hidden]{display:none}
+.fsbtn:hover,.fsbtn:focus-visible{opacity:1;background:var(--paper)}
+.fsbtn .ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media print{.fsbtn{display:none}}</style>
+<button id="fsBtn" class="fsbtn" type="button" aria-label="Full screen" title="Full screen" hidden><svg class="ic" viewBox="0 0 24 24"><path id="fsIc" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+<script>
+(function(){var b=document.getElementById('fsBtn'),p=document.getElementById('fsIc'),d=document,e=d.documentElement;
+if(!b||!e.requestFullscreen||!d.fullscreenEnabled||/iPhone|iPad|iPod/.test(navigator.userAgent))return;
+var IN='M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',OUT='M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5';
+b.hidden=false;
+b.addEventListener('click',function(){try{if(d.fullscreenElement)d.exitFullscreen();else e.requestFullscreen();}catch(x){}});
+d.addEventListener('fullscreenchange',function(){var on=!!d.fullscreenElement;p.setAttribute('d',on?IN:OUT);b.title=on?'Exit full screen':'Full screen';b.setAttribute('aria-label',b.title);});
+})();
+</script>
+</body>
+</html>

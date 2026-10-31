@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Add To-Do</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Add To-Do">
+<meta name="theme-color" content="#f4eee1">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<style>
+:root{--bg:#f4eee1;--paper:#fbf7ee;--ink:#2a2723;--muted:#8a8174;--rule:#e2d9c6;--accent:#2f4a6d;--onaccent:#fff;--ok:#4f7a5a;--alert:#b8432b}
+@media (prefers-color-scheme:dark){:root{--bg:#14130f;--paper:#1b1a16;--ink:#cfc7b6;--muted:#6f6859;--rule:#2a2822;--accent:#7f9bc2;--onaccent:#14130f;--ok:#7aa584;--alert:#d4735b}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink)}
+body{font:17px/1.35 -apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%;padding:28px 18px}
+h1{font:italic 600 28px Georgia,"Times New Roman",serif;margin:0 0 16px}
+form{display:flex}
+input{flex:1;min-width:0;font-size:18px;padding:14px;border:1px solid var(--rule);border-radius:12px 0 0 12px;background:var(--paper);color:var(--ink);-webkit-appearance:none;outline:none}
+button{flex:none;font-size:17px;font-weight:600;padding:0 20px;border:0;border-radius:0 12px 12px 0;background:var(--accent);color:var(--onaccent);-webkit-appearance:none;touch-action:manipulation}
+.hint{font-size:13px;color:var(--muted);margin:8px 2px 0}
+#msg{min-height:24px;margin:16px 2px 4px;font-size:15px;color:var(--ok)}
+#msg.err{color:var(--alert)}
+ul{list-style:none;margin:0;padding:0}
+li{padding:10px 2px;border-bottom:1px solid var(--rule);font-size:16px}
+li small{color:var(--muted);margin-left:6px}
+a{color:var(--accent);display:inline-block;margin-top:22px;font-size:16px}
+#gate{display:none}
+#gate input{border-radius:12px;width:100%;text-align:center;margin-bottom:12px}
+#gate button{border-radius:12px;width:100%;padding:14px}
+</style>
+</head>
+<body>
+<h1>Add a to-do</h1>
+
+<div id="main">
+  <form id="f" autocomplete="off">
+    <input id="t" type="text" placeholder="What needs doing?" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" maxlength="500" autofocus>
+    <button type="submit">Add</button>
+  </form>
+  <div class="hint">Try “call dentist fri”, “pay rent #money” or “kitchen session” (opens a checklist). For Work: “send report !!! quick must work”</div>
+  <div id="msg"></div>
+  <ul id="recent"></ul>
+  <a href="/">View my list →</a>
+</div>
+
+<div id="gate">
+  <p>Enter your access token to connect this device.</p>
+  <input id="g" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="xxxxx-xxxxx">
+  <button id="gb" type="button">Connect</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var DOWS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  var store = {
+    get: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} },
+    del: function (k) { try { window.localStorage.removeItem(k); } catch (e) {} }
+  };
+  var token, m = /[#&]t=([^&]+)/.exec(window.location.hash || '');
+  if (m) { token = decodeURIComponent(m[1]).toLowerCase(); store.set('todoToken', token); }
+  else token = store.get('todoToken');
+
+  function showMain() { $('gate').style.display = 'none'; $('main').style.display = 'block'; setTimeout(function () { $('t').focus(); }, 50); }
+  function showGate() { $('main').style.display = 'none'; $('gate').style.display = 'block'; }
+  function say(text, err) { var el = $('msg'); el.textContent = text; el.className = err ? 'err' : ''; }
+  function dueLabel(iso) {
+    if (!iso) return '';
+    var p = iso.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+    return DOWS[d.getUTCDay()] + ' ' + (+p[2]) + ' ' + MONS[+p[1] - 1];
+  }
+
+  var recent = [];
+  function drawRecent() {
+    var h = '';
+    for (var i = 0; i < recent.length; i++) h += '<li>' + esc(recent[i].title) + (recent[i].due_date ? '<small>' + dueLabel(recent[i].due_date) + '</small>' : '') + (recent[i].category ? '<small>#' + esc(recent[i].category) + '</small>' : '') + '</li>';
+    $('recent').innerHTML = h;
+  }
+
+  var busy = false;
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var input = $('t'), text = input.value.replace(/^\s+|\s+$/g, '');
+    if (!text || busy) { input.focus(); return; }
+    busy = true; say('Adding…');
+    var x = new XMLHttpRequest();
+    x.open('POST', '/api/todos', true);
+    x.setRequestHeader('x-todo-token', token);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.timeout = 15000;
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      busy = false;
+      var d = null; try { d = JSON.parse(x.responseText); } catch (err) {}
+      if (x.status === 201 && d && d.todo) {
+        input.value = ''; say('✓ Added');
+        if (d.todo.is_session) { window.location.href = '/?open=' + encodeURIComponent(d.todo.id); return; }
+        recent.unshift(d.todo); if (recent.length > 4) recent.pop(); drawRecent();
+        if (navigator.vibrate) navigator.vibrate(30);
+      } else if (x.status === 401) {
+        store.del('todoToken'); token = null; showGate();
+      } else {
+        say('Could not add, check your connection and try again.', true);
+      }
+      input.focus();
+    };
+    x.send(JSON.stringify({ text: text }));
+  }, false);
+
+  $('gb').addEventListener('click', function () {
+    var v = $('g').value.replace(/\s+/g, '').toLowerCase();
+    if (!v) return;
+    token = v; store.set('todoToken', v); showMain();
+  }, false);
+
+  if (token) showMain(); else showGate();
+})();
+</script>
+</body>
+</html>
