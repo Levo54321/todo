@@ -10,3 +10,5 @@ Static ES5 frontend (built for an iPad 2 on iOS 9.3.5 and an iPhone) + Vercel No
 
 Rules: ES5 only in `public/js` (no arrow functions, let/const, grid, sticky).
 Deploys: push to `main` -> Vercel production.
+
+Deploys automatically from main via Vercel (project: luc-todo).
