@@ -115,5 +115,5 @@ grant execute on function public.todo_delete(text, uuid) to anon;
 
 -- Your access token, stored as a SHA-256 hash (the token itself is never in the database).
 insert into public.app_config (key, value)
-values ('token_sha256', '213bd77cb47b9d040ed56bab5e51db2b0ec2f96da77543dfd661a37d9e4758c8')
+values ('token_sha256', 'REPLACE_WITH_SHA256_OF_YOUR_ACCESS_TOKEN')
 on conflict (key) do update set value = excluded.value;

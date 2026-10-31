@@ -1,4 +1,4 @@
-// /api/shopping — token-gated Shopping List (Beta). Not part of the Shortcut ingestion flow.
+// /api/shopping — LEGACY beta, unused. The Shopping tab is now an iframe of the separate holmlodge-shop project. Do not extend; safe to delete.
 // GET        -> { data: { items, trip, log } | null }
 // PUT {data} -> saves the whole list (validated and size-capped)
 var todos = require('./todos.js');

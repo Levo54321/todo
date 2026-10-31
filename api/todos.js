@@ -2,7 +2,7 @@
 // The iPad (iOS 9) and phone only ever talk to this endpoint, never to Supabase directly.
 // GET    /api/todos                 -> { today, todos: [...] }
 // POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category }
-// PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action? }
+// PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action? }
 // DELETE /api/todos?id=<uuid>
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
 

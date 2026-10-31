@@ -25,7 +25,7 @@ Only the API layer holds the Supabase key. The browser holds the access token (l
 | `public/js/workcal.js` | "Add to Google work calendar?" prompt in the editor for timed Work tasks |
 | `public/js/budget.js`, `saver.js`, `calendar.js`, `shopping.js` | Budget, screensaver, calendar view, shop iframe |
 | `api/*.js` | one endpoint each (see section 4) |
-| `db/setup01..12.sql` | ordered migrations; idempotent (`if not exists`, `create or replace`) |
+| `db/setup01..13.sql` | ordered migrations; idempotent (`if not exists`, `create or replace`) |
 | `public/add.html` | minimal add page |
 
 ## 3. Data model
@@ -47,6 +47,11 @@ Env vars (Vercel only): `SUPABASE_URL`, `SUPABASE_KEY`, `GOOGLE_CLIENT_ID`, `GOO
 Push to `main` -> Vercel production build (no build step beyond static + functions). Region dub1. HTML is `no-cache`. `luc-todo.vercel.app` alias did **not** auto-move on the first git deploy and was assigned manually; verify after each push. Manual path: Vercel MCP `create_deployment` then `assign_alias`.
 
 ## 7. Known nuances
+- **Config keys are whitelisted** in `cfg_get`/`cfg_set` (`db/setup13.sql`): budget, caldav, caldav_state, saver, shop, gcal, projects. A new key needs a migration that edits both lists.
+- `todos.category` (the project name) is capped at 40 characters; `title` at 500.
+- `todos.created_at/updated_at` predate `db/setup01.sql`; rebuilding the database from `db/` alone would need the base `todos` table first.
+- `todo_update` does not clear `paused` when a task is marked done (history handles it); check board/list code if a done task ever shows as paused.
+- `db/setup01.sql` holds a placeholder for the access-token hash. Never commit the real hash.
 - Repo `public/js` is readable source; earlier manual deploys were terser-minified. Cache buster `?v=` must be bumped in `build.py` args when JS/CSS change.
 - Vercel MCP file-content reads truncate at ~2 KB; get source from the repo instead.
 - Pause/Blocked/board features are mock-tested only; not yet exercised on physical iPad 2.

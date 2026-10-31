@@ -6,6 +6,9 @@
 3. **Restore tests into the repo**: add a `tests/` folder with the Playwright mock harness (shot5/shot7 style) and a `npm test` script.
 4. **Delete the Vercel token "pull-shop"** (created for the shop export).
 
+5a. Decide whether to make the repo private and rotate the access token (the old token hash was committed in `db/setup01.sql` while the repo was public).
+5b. Add a `todos` base-table migration so the database can be rebuilt from `db/` alone.
+
 ## P1 — cleanup
 5. Remove legacy `api/shopping.js` and the Shopping Beta wording; keep only the iframe tab.
 6. Add a build/minify step (terser `--ecma 5`) in a `tools/` script so deployed JS is small again, and a lint check that rejects ES6 syntax in `public/js`.

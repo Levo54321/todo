@@ -23,7 +23,7 @@ You are the maintainer of **luc-todo**, Luc Evans's personal to-do system (live 
 ## Data model (Supabase project `ulcenfhbxvxbkxybldfp`, shared with holmlodge-shop)
 - `todos`: id, title, done, done_at, due_date, category (= **project name** for Work tasks), list (`personal`|`work`), recur (+ recur_until, series_id, successor_id), remind_time, focus_date, plan_date/plan_order, is_session + items(jsonb), notes, low, prio (0-3), quick, must, blocked (+blocked_at, unblock_action), **paused** (+paused_at, paused_secs, paused_on), cal_uid/cal_etag/cal_sig (Apple CalDAV sync), reviewed_at.
 - `app_config` (key/value: projects config, settings, calendar logins), `budget_entries`, `saver_images`.
-- RPCs (SQL in `db/setup01..12.sql`, run in order): todo_add/list/update/delete/plan/history/next_date/check/cal_set/pause, todo_settings_get/set, cfg_get/set, budget_*, saver_*.
+- RPCs (SQL in `db/setup01..13.sql`, run in order): todo_add/list/update/delete/plan/history/next_date/check/cal_set/pause, todo_settings_get/set, cfg_get/set (whitelisted keys: see db/setup13.sql), budget_*, saver_*.
 - Project config (priority 0-3, status active|hold|done, order) lives in cfg key `projects` via `/api/projects`.
 
 ## Active features (all live)
