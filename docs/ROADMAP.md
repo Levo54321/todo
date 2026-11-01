@@ -1,7 +1,18 @@
 # luc-todo — roadmap
 
 _Audit 1 Nov 2026: see `docs/AUDIT-2026-11.md` for findings and a prioritised list (C1–C6, W1–W10, P1–P8). Items move here once Luc approves them._
-_Done: v1050 (Deploy A) C3, C4, W3, W4, P1; v1051 (Deploy B) C2 and the `#t=` half of W2. Tabled by Luc (needs work from him): C1 token rotation and the `?t=` restriction (his Shortcuts use `?t=`). Next: Deploy D (polling diet, C5) unless Luc says otherwise._
+_Done: v1050 (Deploy A) C3, C4, W3, W4, P1; v1051 (Deploy B) C2 and the `#t=` half of W2. Tabled by Luc (needs work from him): C1 token rotation and the `?t=` restriction (his Shortcuts use `?t=`). Next: Deploy D (polling diet, C5), plan APPROVED by Luc, not yet built (v1052):_
+
+**Deploy D plan (approved 1 Nov 2026; build, test, push, then stop for Luc to test)**
+1. `api/todos.js` GET: fingerprint the `todo_list` result (hash, excluding `now`); if the request has `?v=<fingerprint>` and it matches, reply `{same:true, today, now}` (about 0.2 KB) instead of the full list (about 82 KB). Always include the fingerprint (`v`) in full replies. No `?v=` (old cached app, Shortcuts) means the full list exactly as today. Update the file's header comment, regenerate `docs/API.md`.
+2. `core.js` `load()`: send the last `v`; on `same`, keep `todos`, update `today` and `serverOffset`, and call `render()` only if `online` flipped or `today` changed. `lastMutation` guard stays.
+3. Foreground refresh 15 s to 30 s (`setInterval` near line 1673); resume, focus, `pageshow`, visibilitychange and after-edit refreshes stay immediate; idle slowdown unchanged. Luc was asked about 30 s and said "sounds good".
+4. `maybeCalSync`: 2 minutes to 5 minutes (as its comment says).
+5. Honest numbers (correcting the audit's "90%"): calls about -50%, bytes about -99%. Re-run `docs/audit-2026-11/scripts/audit_calls.py` before and after and report the measured figures.
+6. Tests: new `tests/todos_node.js` (stub `rpc` like `tests/gcal_node.js`: full first time, `same` when unchanged, full after a change, full with no `?v=`, Shortcut `POST {text}` unchanged); a browser test in `tests/t_deploya.py` (a `same` reply leaves the list and screen untouched; the harness mock in `tests/harness.py` needs `?v` support); plus `node tests/es5.js public/js/*.js`, `node tests/vault_node.js`, `node tests/gcal_node.js`, and `python3 tests/harness.py . tests/t_deploya.py`.
+7. After the push: deployment READY and `luc-todo.vercel.app` pointing at it; update CLAUDE.md amendments, ARCHITECTURE.md and this file.
+
+Tabled (needs work from Luc, only when he asks): C1 token rotation, the `?t=` restriction (his Shortcuts use `?t=`), C6 server-only key. After D, remaining audit items are in `docs/AUDIT-2026-11.md` section 5 (W1 to W10, P1 to P8); Luc picks.
 
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
