@@ -134,7 +134,7 @@
     return h + (m === '00' ? '' : ':' + m) + ap;
   }
   function timeOf(t) { return t.remind_time ? t.remind_time.slice(0, 5) : ''; }
-  function tonight(t) { return !t.done && !t.paused && !isFocus(t) && !!t.due_date && t.due_date < curToday(); } // carried over from an earlier day
+  function tonight(t) { return !t.done && !t.paused && !isShelved(t) && !isFocus(t) && !!t.due_date && t.due_date < curToday(); } // carried over from an earlier day
   function planNo(t) { // position in today's order among the tasks still to do, so finishing one moves the rest up. "Finish tonight" tasks and today's tasks are numbered separately.
     if (t.done || t.plan_date !== curToday() || !t.plan_order) return 0;
     var n = 1, i, o, l = t.list || 'personal', tn = tonight(t);
@@ -160,6 +160,11 @@
   }
   function isFocus(t) { return !t.done && t.focus_date === curToday(); }
   function isPaused(t) { return !!t.paused && !t.done && t.list === 'work'; } // waiting on someone else: out of Overdue and the counts
+  /* Personal Projects (pprojects.js loads them). A Personal task in a project that is Paused, Not Pursued or Shut Down is "shelved":
+     like a paused Work task it stays out of Overdue, the badges, the counts, Today's order and the review nudges. */
+  var pprojs = [], ppStat = {}, ppName = {}, ppSig = '', showShelved = false;
+  function isShelved(t) { return !t.done && (t.list || 'personal') === 'personal' && !!t.pproject_id && !!ppStat[t.pproject_id] && ppStat[t.pproject_id] !== 'active'; }
+  function isOut(t) { return isPaused(t) || isShelved(t); }
   function pausedAge(t) { var d = Math.floor((nowMs() - parseTS(t.paused_at)) / 86400000); return d < 1 ? 'today' : d + 'd'; }
   /* Work list auto-order: timed first, then "must do today", then priority (!!! first, unmarked, ! last), then quick wins, then oldest. */
   function isMust(t) { return !!t.must && !t.done && !t.paused && !!t.due_date && t.due_date <= curToday(); }
@@ -232,12 +237,13 @@
   }
 
   function groups() {
-    var t0 = curToday(), g = { focus: [], overdue: [], today: [], soon: [], whenever: [], done: [], low: [], blocked: [], paused: [], open: 0, dueNow: 0, stale: [] };
+    var t0 = curToday(), g = { focus: [], overdue: [], today: [], soon: [], whenever: [], done: [], low: [], blocked: [], paused: [], shelved: [], open: 0, dueNow: 0, stale: [] };
     for (var i = 0; i < todos.length; i++) {
       var t = todos[i];
       if (!inMode(t)) continue;
       if (t.done) { if (!t.low) g.done.push(t); continue; }
       if (t.low && !t.due_date) { if (!filterCat || t.category === filterCat) g.low.push(t); continue; } // non-urgent: kept out of the counts
+      if (isShelved(t)) { if (!filterCat || t.category === filterCat) g.shelved.push(t); continue; } // project on hold: out of Overdue and every count
       if (isPaused(t)) { if (!filterCat || t.category === filterCat) g.paused.push(t); continue; } // paused: out of Overdue and every count
       g.open++;
       if (t.blocked && t.list === 'work') { if (!filterCat || t.category === filterCat) g.blocked.push(t); continue; } // blocked: out of Overdue and the counts
@@ -283,6 +289,7 @@
       meta += '<span class="stale">⏳ ' + (ad >= 14 ? Math.floor(ad / 7) + 'w' : ad + 'd') + '</span>';
     }
     if (t.category) meta += '<span class="cat">' + esc(t.category) + '</span>';
+    if (t.pproject_id && ppName[t.pproject_id] && (t.list || 'personal') === 'personal') meta += '<span class="cat pjc">▣ ' + esc(ppName[t.pproject_id]) + (isShelved(t) ? ' · on hold' : '') + '</span>';
     if (t.notes) meta += '<span class="cat" title="Has notes">📝 notes</span>';
     meta += subChip(t, !t.done);
     var unb = '';
@@ -361,7 +368,7 @@
     if ($('date').textContent !== dtxt) $('date').textContent = dtxt;
     for (c = 0; c < todos.length; c++) {
       tc = todos[c];
-      if (tc.done || tc.blocked || isPaused(tc)) continue;
+      if (tc.done || tc.blocked || isOut(tc)) continue;
       if (isFocus(tc) || (tc.due_date && tc.due_date <= t0)) dueBy[tc.list === 'work' ? 'work' : 'personal']++;
     }
     setHTML($('bPersonal'), loaded && dueBy.personal ? '' + dueBy.personal : '');
@@ -372,6 +379,7 @@
     setCls($('nBudget'), 'ritem' + (view === 'budget' ? ' on' : ''));
     setCls($('nInsights'), 'ritem' + (view === 'insights' ? ' on' : ''));
     setCls($('nBoard'), 'ritem' + (view === 'board' ? ' on' : ''));
+    setCls($('nPprojects'), 'ritem' + (view === 'pprojects' ? ' on' : ''));
     if (document.body.getAttribute('data-view') !== view) document.body.setAttribute('data-view', view);
     var bc = railOpen ? 'rail-open' : '';
     if (document.body.className !== bc) document.body.className = bc;
@@ -403,7 +411,7 @@
     var t0 = curToday(), foc = [], rest = [], i, t, ids = [];
     for (i = 0; i < todos.length; i++) {
       t = todos[i];
-      if (!inMode(t) || t.done || t.blocked || isPaused(t)) continue;
+      if (!inMode(t) || t.done || t.blocked || isOut(t)) continue;
       if (isFocus(t)) foc.push(t); else if (t.due_date && t.due_date <= t0) rest.push(t);
     }
     foc.sort(function (a, b) { return planCmp(a, b, byTimeThenCreated); });
@@ -439,7 +447,7 @@
     for (var c = 0; c < todos.length; c++) {
       var tc = todos[c];
       if (tc.done) continue;
-      if (tc.category && !tc.low && inMode(tc)) counts[tc.category] = (counts[tc.category] || 0) + 1;
+      if (tc.category && !tc.low && !isShelved(tc) && inMode(tc)) counts[tc.category] = (counts[tc.category] || 0) + 1;
     }
     setHTML($('glance'), glanceHTML());
     setHTML($('filters'), loaded ? filtersHTML(counts) : '');
@@ -472,6 +480,10 @@
     hB += g.soon.length ? listHTML(g.soon) : (loaded ? '<p class="empty">Nothing scheduled.</p>' : '');
     if (loaded && mode === 'work' && g.blocked.length) hC += '<h2>Blocked<span class="count">' + g.blocked.length + '</span></h2><div class="wtsum">Out of Overdue and your counts until unblocked.</div>' + listHTML(g.blocked);
     if (loaded && mode === 'work' && g.paused.length) hC += '<h2>Paused<span class="count">' + g.paused.length + '</span></h2><div class="wtsum">Waiting on other people. Out of Overdue and your counts until you resume.</div>' + listHTML(g.paused);
+    if (loaded && mode === 'personal' && g.shelved.length) {
+      hC += '<button class="donebtn" data-act="toggleshelved">' + (showShelved ? '▾' : '▸') + ' On-hold projects (' + g.shelved.length + ')</button>';
+      if (showShelved) hC += '<div class="wtsum">In projects that are paused, not pursued or shut down. Out of Overdue and your counts.</div>' + listHTML(g.shelved);
+    }
     hC += '<h2>Whenever<span class="count">' + g.whenever.length + '</span></h2>';
     if (loaded && g.stale.length) {
       hC += '<div class="nudge">⏳ ' + g.stale.length + (g.stale.length === 1 ? ' item has' : ' items have') + ' been parked for ' + staleText() + '+. Still relevant?<br>' +
@@ -495,7 +507,7 @@
     if (window.pageYOffset !== pageY) window.scrollTo(0, pageY);
   }
   /* ---------- navigation ---------- */
-  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard' };
+  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects' };
   function navTo(name) {
     var next = (name === 'personal' || name === 'work') ? 'tasks' : name;
     if (next !== 'tasks' && next !== 'plan' && !App.views[next]) { toast('Not available yet'); return; }
@@ -746,6 +758,15 @@
     var cats = allCats(), c = '';
     for (i = 0; i < cats.length; i++) c += '<button class="chip' + (editing.cat === cats[i] ? ' on' : '') + '" data-act="scat" data-val="' + esc(cats[i]) + '">' + esc(cats[i]) + '</button>';
     $('eCats').innerHTML = c;
+    var pc = '', showPP = editing.list === 'personal' && (pprojs.length || editing.pp);
+    if (showPP) {
+      pc = '<button class="chip' + (!editing.pp ? ' on' : '') + '" data-act="sproj" data-val="">None</button>';
+      for (i = 0; i < pprojs.length; i++) if (pprojs[i].status === 'active' || pprojs[i].id === editing.pp) {
+        pc += '<button class="chip' + (editing.pp === pprojs[i].id ? ' on' : '') + '" data-act="sproj" data-val="' + esc(pprojs[i].id) + '">' + esc(pprojs[i].name) + (pprojs[i].status !== 'active' ? ' (on hold)' : '') + '</button>';
+      }
+    }
+    $('eProj').innerHTML = pc;
+    $('ePRow').style.display = showPP ? '' : 'none';
     var rc = '<button class="chip' + (!editing.recur ? ' on' : '') + '" data-act="srecur" data-val="">None</button>';
     for (var r in RLABEL) if (RLABEL.hasOwnProperty(r)) {
       rc += '<button class="chip' + (editing.recur === r ? ' on' : '') + '" data-act="srecur" data-val="' + r + '">' + RLABEL[r].charAt(0).toUpperCase() + RLABEL[r].slice(1) + '</button>';
@@ -797,7 +818,7 @@
   function icsUrl(id) { return '/api/ics?id=' + encodeURIComponent(id) + '&t=' + encodeURIComponent(token); }
   function openSheet(id) {
     var t = find(id); if (!t) return;
-    editing = { id: id, list: t.list || 'personal', due: t.due_date || null, cat: t.category || null, recur: t.recur || null, low: !!t.low, until: t.recur_until || null, untilOn: !!t.recur_until, time: timeOf(t) || null, focus: isFocus(t), prio: t.prio || 0, quick: !!t.quick, must: isMust(t), blocked: !!t.blocked, unblock: t.unblock_action || '', paused: isPaused(t), pausedOn: t.paused_on || '', more: !!(t.recur || t.low || (t.items && t.items.length && !t.is_session)) };
+    editing = { id: id, list: t.list || 'personal', due: t.due_date || null, cat: t.category || null, pp: t.pproject_id || null, recur: t.recur || null, low: !!t.low, until: t.recur_until || null, untilOn: !!t.recur_until, time: timeOf(t) || null, focus: isFocus(t), prio: t.prio || 0, quick: !!t.quick, must: isMust(t), blocked: !!t.blocked, unblock: t.unblock_action || '', paused: isPaused(t), pausedOn: t.paused_on || '', more: !!(t.recur || t.low || (t.items && t.items.length && !t.is_session)) };
     $('eTitle').value = t.title;
     $('eNotes').value = t.notes || '';
     $('eUnblock').value = editing.paused ? editing.pausedOn : editing.unblock;
@@ -818,6 +839,8 @@
     if (editing.due !== (t.due_date || null)) { patch.due_date = editing.due; before.due_date = t.due_date || null; n++; }
     if (editing.cat !== (t.category || null)) { patch.category = editing.cat; before.category = t.category || null; n++; }
     if (editing.list !== (t.list || 'personal')) { patch.list = editing.list; before.list = t.list || 'personal'; n++; }
+    if (editing.list === 'work') editing.pp = null; // Personal Projects are for Personal tasks only
+    if (editing.pp !== (t.pproject_id || null)) { patch.pproject_id = editing.pp; before.pproject_id = t.pproject_id || null; n++; }
     if (editing.recur !== (t.recur || null)) { patch.recur = editing.recur; before.recur = t.recur || null; n++; }
     if (editing.time && (!editing.due || editing.due < curToday())) editing.due = curToday(); // a reminder needs today or later
     var wantUntil = editing.recur && editing.untilOn ? editing.until : null;
@@ -936,7 +959,7 @@
     var t0 = curToday(), arr = [];
     for (var i = 0; i < todos.length; i++) {
       var t = todos[i];
-      if (inMode(t) && !t.done && !t.blocked && !isPaused(t) && (isFocus(t) || (t.due_date && t.due_date <= t0))) arr.push(t);
+      if (inMode(t) && !t.done && !t.blocked && !isOut(t) && (isFocus(t) || (t.due_date && t.due_date <= t0))) arr.push(t);
     }
     arr.sort(function (a, b) { var ga = tonight(a) ? 0 : 1, gb = tonight(b) ? 0 : 1; return ga !== gb ? ga - gb : planCmp(a, b, pvDefault); });
     projSlots(arr, segTonight);
@@ -1385,7 +1408,7 @@
         h += '</ul>';
       }
       var od = [];
-      for (i = 0; i < todos.length; i++) if (inMode(todos[i]) && !todos[i].done && !todos[i].blocked && !isPaused(todos[i]) && todos[i].due_date && todos[i].due_date < curToday()) od.push(todos[i]);
+      for (i = 0; i < todos.length; i++) if (inMode(todos[i]) && !todos[i].done && !todos[i].blocked && !isOut(todos[i]) && todos[i].due_date && todos[i].due_date < curToday()) od.push(todos[i]);
       od.sort(byDue);
       h += '<div class="lbl">Rolled over (' + od.length + ')</div>';
       if (od.length) {
@@ -1553,7 +1576,7 @@
       var w = el.getAttribute('data-when');
       for (var oi = todos.length - 1; oi >= 0; oi--) {
         var ot = todos[oi];
-        if (inMode(ot) && !ot.done && !ot.blocked && !isPaused(ot) && ot.due_date && ot.due_date < curToday()) doQuick(ot.id, w);
+        if (inMode(ot) && !ot.done && !ot.blocked && !isOut(ot) && ot.due_date && ot.due_date < curToday()) doQuick(ot.id, w);
       }
       renderReview();
     }
@@ -1587,6 +1610,8 @@
     }
     else if (act === 'toggledone') { showDone = !showDone; render(); }
     else if (act === 'togglelow') { showLow = !showLow; render(); }
+    else if (act === 'toggleshelved') { showShelved = !showShelved; render(); }
+    else if (act === 'sproj') { var pv2 = el.getAttribute('data-val') || null; editing.pp = (!pv2 || editing.pp === pv2) ? null : pv2; renderSheet(); }
     else if (act === 'low') doLow(id, el.getAttribute('data-val') === '1');
     else if (act === 'slow') { editing.low = !editing.low; renderSheet(); }
     else if (act === 'swhen') { editing.due = whenToDate(el.getAttribute('data-val')); if (editing.due) editing.low = false; renderSheet(); }
@@ -1656,6 +1681,18 @@
   App.reload = function () { lastMutation = 0; load(); };
   // Projects board <-> Work list
   App.isPaused = isPaused;
+  App.isShelved = isShelved;
+  App.listHTML = function (arr) { return listHTML(arr); };
+  App.find = function (id) { return find(id); };
+  App.pprojects = function () { return pprojs; };
+  App.setPProjects = function (list) { // Personal Projects: names for the task chip + editor, statuses for the shelved rule
+    var st = {}, nm = {}, i, sig;
+    list = list || [];
+    for (i = 0; i < list.length; i++) { st[list[i].id] = list[i].status; nm[list[i].id] = list[i].name; }
+    sig = JSON.stringify(list.map(function (p) { return [p.id, p.name, p.status]; }));
+    pprojs = list; ppStat = st; ppName = nm;
+    if (sig !== ppSig) { ppSig = sig; render(); }
+  };
   App.cmpWork = autoCmp;
   App.setProjects = function (list) { // priority and hand-set order of each project, used by the Work list's automatic order
     var pr = {}, od = {}, i, p, sig;

@@ -53,6 +53,7 @@
 <div id="app">
   <nav id="rail" aria-label="Main menu">
     <button class="ritem" id="nPersonal" data-act="nav" data-view="personal"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><span class="lb">Personal</span><span class="bdg" id="bPersonal"></span></button>
+    <button class="ritem" id="nPprojects" style="display:none" data-act="nav" data-view="pprojects"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 14l2.500 2.500L16 11"/></svg><span class="lb">My projects</span></button>
     <button class="ritem" id="nWork" data-act="nav" data-view="work"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg><span class="lb">Work</span><span class="bdg" id="bWork"></span></button>
     <button class="ritem" id="nBoard" style="display:none" data-act="nav" data-view="board"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.500"/><rect x="10" y="4" width="5" height="10" rx="1.500"/><rect x="17" y="4" width="4" height="13" rx="1.500"/></svg><span class="lb">Projects</span></button>
     <button class="ritem" id="nPlan" data-act="nav" data-view="plan"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M10 15h4"/></svg><span class="lb">Tomorrow</span></button>
@@ -91,6 +92,7 @@
       </section>
       <section class="view" id="vPlan"><div class="scrollview"><div class="pane" id="planPane"></div></div></section>
       <section class="view" id="vBudget"><div class="scrollview"><div class="pane" id="budgetPane"></div></div></section>
+      <section class="view" id="vPprojects"><div class="scrollview"><div class="pane" id="ppPane"></div></div></section>
       <section class="view" id="vBoard"><div class="scrollview"><div class="pane wide" id="boardPane"></div></div></section>
       <section class="view" id="vInsights"><div class="scrollview"><div class="pane" id="insightsPane"></div></div></section>
     </div>
@@ -116,6 +118,7 @@
       </div>
       <div class="fsec">
         <div class="frow"><div class="flbl">Category</div><div class="fctl" id="eCats"></div></div>
+        <div class="frow" id="ePRow" style="display:none"><div class="flbl">Project</div><div class="fctl" id="eProj"></div></div>
         <div class="frow"><div class="flbl">Notes</div><div class="fctl"><textarea id="eNotes" maxlength="2000" rows="3" placeholder="Optional notes…" autocorrect="off"></textarea></div></div>
       </div>
       <button class="morebtn" id="eMoreBtn" data-act="smore">More options</button>

@@ -1,8 +1,9 @@
 // /api/todos — thin, token-gated API in front of Supabase.
 // The iPad (iOS 9) and phone only ever talk to this endpoint, never to Supabase directly.
 // GET    /api/todos                 -> { today, todos: [...] }
-// POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category }
-// PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action? }
+// POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id? }
+// PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id? }
+// pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
 // DELETE /api/todos?id=<uuid>
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
 
@@ -301,6 +302,9 @@ module.exports = async function handler(req, res) {
           row = await rpc('todo_add', addArgs);
         }
       } else row = await rpc('todo_add', addArgs);
+      if (listName === 'personal' && typeof b.pproject_id === 'string' && UUID.test(b.pproject_id) && row && row.id) {
+        row = await rpc('todo_update', { p_token: token, p_id: row.id, p_patch: { pproject_id: b.pproject_id } }); // added from a Personal Project page
+      }
       var addCal = remind ? await calHook(token) : null;
       var out = { todo: row, cal: addCal };
       if (listName === 'work' && !category) { // the Shortcut uses this to offer a project picker
@@ -363,6 +367,10 @@ module.exports = async function handler(req, res) {
       if (pb.reviewed === true) patch.reviewed = true;
       if ('notes' in pb) patch.notes = typeof pb.notes === 'string' ? pb.notes.trim().slice(0, 2000) : '';
       if ('category' in pb) patch.category = typeof pb.category === 'string' ? pb.category.trim() : null;
+      if ('pproject_id' in pb) {
+        if (pb.pproject_id !== null && !(typeof pb.pproject_id === 'string' && UUID.test(pb.pproject_id))) return send(res, 400, { error: 'bad project' });
+        patch.pproject_id = pb.pproject_id;
+      }
       var updated = await rpc('todo_update', { p_token: token, p_id: id, p_patch: patch });
       var calKeys = ['done', 'title', 'due_date', 'remind_time', 'recur', 'recur_until', 'category'], calRel = false;
       for (var ck = 0; ck < calKeys.length; ck++) if (calKeys[ck] in patch) calRel = true;
@@ -395,6 +403,7 @@ module.exports = async function handler(req, res) {
     if (e.code === 'P0002') return send(res, 404, { error: 'not found' });
     if (e.code === '23514' && /focus full/.test(e.message || '')) return send(res, 409, { error: 'focus full' });
     if (e.code === '23514' || e.code === '22007' || e.code === '22P02') return send(res, 400, { error: 'invalid input' });
+    if (e.code === '23503') return send(res, 400, { error: 'that project no longer exists' });
     console.error('todos api error', e.code, e.message);
     return send(res, 502, { error: 'upstream error' });
   }

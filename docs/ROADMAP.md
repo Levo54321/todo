@@ -22,6 +22,7 @@
 12. Notes/attachments on Work tasks; weekly review prompt.
 13. Offline queue (like the shop app's `shopQ`) so adds made without signal sync later.
 14. Make time zone configurable.
+14a. Personal Projects follow-ups: quick-add shorthand for a project (e.g. `@hub`), delete/merge a project in the UI (API already supports DELETE), and Personal Projects in Insights.
 
 ## P3 — nice to have
 15. Shortcuts for pause/resume and "what's due today" voice readout.
