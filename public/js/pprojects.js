@@ -21,6 +21,7 @@
   var addTo = store.get('ppAddTo') === 'list' ? 'list' : 'backlog';
   var fold = { idea: false, paused: true, not_pursued: true, shut_down: true }; // Idea, In progress and Live open by default
   var reasonId = '', reasonDraft = '', drag = null;
+  var costEdit = '', costDraft = null, budgetNames = null, budgetAsked = false, SOON = 30; // costs: id being edited ('new' = adding)
   function statusOf(p) { return p.status === 'active' ? 'in_progress' : p.status; }
   try { var fs = JSON.parse(store.get('ppFold') || 'null'), fk; if (fs && typeof fs === 'object') for (fk in fs) if (fs.hasOwnProperty(fk) && fold.hasOwnProperty(fk)) fold[fk] = !!fs[fk]; } catch (e) {}
   var dep = { configured: null, status: {}, at: 0, loading: false };
@@ -99,6 +100,15 @@
     '.ppsec textarea{display:block;width:100%;min-height:76px;padding:9px 11px;border:1px solid var(--rule);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px;-webkit-appearance:none;outline:none;resize:vertical}' +
     '.ppsec .rbtns .btn{margin:8px 8px 0 0;min-height:44px}' +
     '.pplk.rs{border-style:dashed;color:var(--accent);min-height:36px;margin-top:8px}' +
+    '.ppdue{margin-top:8px;padding:5px 9px;border-radius:10px;background:var(--chip);color:var(--ink);font-size:13px;font-weight:600}.ppdue.late{background:var(--alert);color:#fff}.ppdue span{font-weight:400;opacity:.8}' +
+    '.ppcost{padding:8px 0;border-bottom:1px solid var(--rule)}.ppcost:last-of-type{border-bottom:0}' +
+    '.ppcost .r1{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center}.ppcost .r1 b{-webkit-flex:none;flex:none;margin-left:8px;font-size:15px}' +
+    '.ppcost .nm{-webkit-flex:1;flex:1;min-width:0;min-height:44px;padding:0;border:0;background:none;color:var(--ink);font-size:15px;text-align:left;word-wrap:break-word;-webkit-appearance:none;outline:none}' +
+    '.ppcost .r2{font-size:12px;color:var(--muted);margin-top:2px;word-wrap:break-word;overflow-wrap:break-word}.ppcost .r2 a{color:var(--accent);text-decoration:none}' +
+    '.ppcost .inb{color:var(--accent);font-weight:600}' +
+    '.ppcform{margin:6px 0 10px;padding:10px;border:1px solid var(--rule);border-radius:10px;background:var(--bg)}' +
+    '.ppcform .sg button{min-height:40px}.ppcform .btn.danger{color:var(--alert)}' +
+    '.ppcrow{display:-webkit-flex;display:flex}.ppcrow .a{-webkit-flex:1;flex:1;min-width:0;margin-right:8px}.ppcrow .c{-webkit-flex:none;flex:none;width:96px}' +
     '.ppgrip{-webkit-flex:none;flex:none;width:44px;height:44px;margin:-6px -8px -6px 4px;line-height:44px;text-align:center;color:var(--muted);font-size:19px;cursor:-webkit-grab;cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}' +
     '.ppcard.dragging{box-shadow:0 8px 22px rgba(0,0,0,.28);opacity:.97;background:var(--paper)}' +
     '.ppcard.dropb{box-shadow:0 -3px 0 var(--accent)}.ppcard.dropa{box-shadow:0 3px 0 var(--accent)}' +
@@ -125,7 +135,10 @@
     if (!App.token()) { if (tries++ < 8) setTimeout(function () { load(cb); }, 1500); return; }
     App.api('GET', '', null, function (s, d) {
       if (s === 200 && d && d.projects) {
-        for (var i = 0; i < d.projects.length; i++) if (!d.projects[i].meta || typeof d.projects[i].meta !== 'object') d.projects[i].meta = {};
+        for (var i = 0; i < d.projects.length; i++) {
+          if (!d.projects[i].meta || typeof d.projects[i].meta !== 'object') d.projects[i].meta = {};
+          if (!d.projects[i].costs || !d.projects[i].costs.push) d.projects[i].costs = [];
+        }
         list = d.projects; known = true; failed = false; App.setPProjects(list);
       } else if (!known) failed = true;
       if (cb) cb();
@@ -189,6 +202,148 @@
   function touch(p) { if (p) p.last_at = new Date(App.nowMs()).toISOString(); }
 
   /* ---------- pieces ---------- */
+  /* ---------- subscriptions and costs ---------- */
+  var SYM = { GBP: '£', EUR: '€', USD: '$' }, FREQL = { monthly: 'a month', yearly: 'a year', one_off: 'one-off' };
+  function money(a, cur) {
+    var n = (+a || 0).toFixed(2).replace(/\.00$/, ''), sy = SYM[cur || 'GBP'];
+    return sy ? sy + n : n + ' ' + (cur || '');
+  }
+  function addMonthsISO(iso, n, day) { // keeps the original day of the month where it fits (31st -> 30th/28th)
+    var p = iso.split('-'), y = +p[0], m = +p[1] - 1 + n;
+    y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    var dim = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(), d = Math.min(day, dim);
+    return y + '-' + App.pad(m + 1) + '-' + App.pad(d);
+  }
+  function dueOf(c) { // next date it is due (monthly/yearly roll forward past today); one-offs keep their date
+    if (!c.next_due) return null;
+    var base = String(c.next_due).slice(0, 10), d = base, today = App.today(), day = +base.split('-')[2], k = 0, step = c.freq === 'yearly' ? 12 : 1;
+    if (c.freq === 'one_off') return d;
+    while (d < today && k < 600) { k++; d = addMonthsISO(base, step * k, day); } // always counted from the stored date, so the 31st stays the 31st
+    return d;
+  }
+  function inDays(iso) { return App.diffDays(iso, App.today()); }
+  function whenText(iso) {
+    var n = inDays(iso);
+    return n < 0 ? (-n === 1 ? 'yesterday' : -n + ' days ago') : n === 0 ? 'today' : n === 1 ? 'tomorrow' : 'in ' + n + ' days';
+  }
+  function dueSoon(p) { // costs due within 30 days (or a one-off that has passed), soonest first
+    var out = [], cs = p.costs || [], i, d;
+    for (i = 0; i < cs.length; i++) { d = dueOf(cs[i]); if (d && inDays(d) <= SOON && (inDays(d) >= 0 || cs[i].freq === 'one_off')) out.push({ c: cs[i], d: d }); }
+    out.sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; });
+    return out;
+  }
+  function dueHTML(p) {
+    var ds = dueSoon(p); if (!ds.length) return '';
+    var x = ds[0], late = inDays(x.d) < 0;
+    return '<div class="ppdue' + (late ? ' late' : '') + '">' + (late ? 'Overdue' : 'Due ' + whenText(x.d)) + ': ' + esc(x.c.name) + ' · ' + money(x.c.amount, x.c.currency) +
+      (ds.length > 1 ? ' <span>+' + (ds.length - 1) + ' more</span>' : '') + '</div>';
+  }
+  function totalsText(cs) { // recurring costs per currency as "£25 a month · £300 a year", plus one-offs
+    var by = {}, order = [], i, c, k, parts = [];
+    for (i = 0; i < cs.length; i++) {
+      c = cs[i]; k = c.currency || 'GBP';
+      if (!by[k]) { by[k] = { m: 0, one: 0 }; order.push(k); }
+      if (c.freq === 'monthly') by[k].m += +c.amount; else if (c.freq === 'yearly') by[k].m += c.amount / 12; else by[k].one += +c.amount;
+    }
+    for (i = 0; i < order.length; i++) {
+      k = order[i];
+      if (by[k].m) parts.push(money(by[k].m, k) + ' a month · ' + money(by[k].m * 12, k) + ' a year');
+      if (by[k].one) parts.push(money(by[k].one, k) + ' one-off');
+    }
+    return parts.join(' · ');
+  }
+  function inBudget(name) { // a Budget bill with a similar name (so the same thing is not tracked twice by accident)
+    if (!budgetNames) return false;
+    var n = (name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/^\s+|\s+$/g, ''), i, b;
+    if (n.length < 3) return false;
+    for (i = 0; i < budgetNames.length; i++) { b = budgetNames[i]; if (b.length >= 3 && (b === n || b.indexOf(n) >= 0 || n.indexOf(b) >= 0)) return true; }
+    return false;
+  }
+  function loadBudgetNames() { // read-only look at Budget's bills, once per visit
+    if (budgetAsked) return; budgetAsked = true;
+    App.api('GET', '', null, function (s, d) {
+      var bs = s === 200 && d && d.config && d.config.bills, out = [], i;
+      if (bs && bs.length) for (i = 0; i < bs.length; i++) if (bs[i] && bs[i].n) out.push(String(bs[i].n).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/^\s+|\s+$/g, ''));
+      budgetNames = out; paint();
+    }, '/api/budget');
+  }
+  function costsHTML(p) {
+    var cs = p.costs || [], h = '<div class="ppsec ppcosts"><div class="lbl">Subscriptions and costs</div>', i, c, d, tt;
+    if (cs.length && !budgetAsked) loadBudgetNames();
+    for (i = 0; i < cs.length; i++) {
+      c = cs[i];
+      if (costEdit === c.id) { h += costForm(c); continue; }
+      d = dueOf(c);
+      h += '<div class="ppcost"><div class="r1"><button class="nm" data-pp="cedit" data-id="' + esc(c.id) + '">' + esc(c.name) + '</button><b>' + money(c.amount, c.currency) + '</b></div>' +
+        '<div class="r2">' + FREQL[c.freq] + (d ? ' · ' + (c.freq === 'one_off' ? 'due ' : 'next ') + fmtD(d) + ' (' + whenText(d) + ')' : '') +
+        (inBudget(c.name) ? ' · <span class="inb">also in Budget</span>' : '') + '</div>' +
+        ((c.link || c.email) ? '<div class="r2">' + (c.link ? '<a href="' + esc(c.link) + '" target="_blank" rel="noopener">' + esc(host(c.link)) + ' ↗</a>' : '') +
+          (c.link && c.email ? ' · ' : '') + (c.email ? esc(c.email) : '') + '</div>' : '') + '</div>';
+    }
+    if (costEdit === 'new') h += costForm(null);
+    else h += '<button class="pplk rs" data-pp="cadd">+ Add a cost</button>';
+    tt = totalsText(cs);
+    if (tt) h += '<div class="pphint">' + tt + '</div>';
+    return h + '</div>';
+  }
+  function costForm(c) {
+    var d = costDraft, curs = ['GBP', 'EUR', 'USD'], i, h = '<form class="ppform ppcform" id="ppCostForm" autocomplete="off">';
+    if (curs.indexOf(d.currency) < 0) curs.push(d.currency);
+    h += '<div class="frow2"><label>Name</label><input class="setinput" id="ppCname" type="text" maxlength="60" placeholder="e.g. Domain renewal, Vercel Pro" value="' + esc(d.name) + '"></div>';
+    h += '<div class="frow2 ppcrow"><div class="a"><label>Amount</label><input class="setinput" id="ppCamt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="' + esc(d.amount) + '"></div>' +
+      '<div class="c"><label>Currency</label><select class="setinput" id="ppCcur">';
+    for (i = 0; i < curs.length; i++) h += '<option value="' + curs[i] + '"' + (d.currency === curs[i] ? ' selected' : '') + '>' + curs[i] + '</option>';
+    h += '</select></div></div>';
+    h += '<div class="frow2"><label>How often</label><span class="sg">';
+    var fq = [['monthly', 'Monthly'], ['yearly', 'Yearly'], ['one_off', 'One-off']];
+    for (i = 0; i < fq.length; i++) h += '<button type="button" class="' + (d.freq === fq[i][0] ? 'on' : '') + '" data-pp="cfreq" data-val="' + fq[i][0] + '">' + fq[i][1] + '</button>';
+    h += '</span></div>';
+    h += '<div class="frow2"><label>' + (d.freq === 'one_off' ? 'Due date' : 'Next due date') + '</label><input class="setinput" id="ppCdue" type="date" value="' + esc(d.next_due) + '"></div>';
+    h += '<div class="frow2"><label>Link (optional)</label><input class="setinput" id="ppClink" type="url" autocapitalize="off" autocorrect="off" placeholder="https://…" value="' + esc(d.link) + '"></div>';
+    h += '<div class="frow2"><label>Email on the account (optional)</label><input class="setinput" id="ppCemail" type="email" autocapitalize="off" autocorrect="off" placeholder="you@example.com" value="' + esc(d.email) + '"></div>';
+    h += '<button class="btn primary" type="submit"' + (busy ? ' disabled' : '') + '>' + (c ? 'Save' : 'Add cost') + '</button><button class="btn" type="button" data-pp="cx">Cancel</button>' +
+      (c ? '<button class="btn danger" type="button" data-pp="cdel" data-id="' + esc(c.id) + '">Delete</button>' : '');
+    return h + '</form>';
+  }
+  function startCost(c) {
+    costEdit = c ? c.id : 'new';
+    costDraft = { name: c ? c.name : '', amount: c ? String(c.amount) : '', currency: c ? c.currency : 'GBP', freq: c ? c.freq : 'monthly',
+      next_due: c && c.next_due ? String(c.next_due).slice(0, 10) : '', link: c && c.link ? c.link : '', email: c && c.email ? c.email : '' };
+  }
+  var CF = { ppCname: 'name', ppCamt: 'amount', ppCcur: 'currency', ppCdue: 'next_due', ppClink: 'link', ppCemail: 'email' };
+  function saveCost() {
+    var p = byId(sel), d = costDraft; if (!p || !d || busy) return;
+    var t = function (v) { return (v || '').replace(/^\s+|\s+$/g, ''); };
+    if (!t(d.name)) { App.toast('Give the cost a name'); return; }
+    if (t(d.amount) === '' || isNaN(+t(d.amount)) || +t(d.amount) < 0) { App.toast('Enter the amount, e.g. 12.99'); return; }
+    var body = { name: t(d.name), amount: +t(d.amount), currency: d.currency, freq: d.freq, next_due: t(d.next_due), link: t(d.link), email: t(d.email) };
+    var isNew = costEdit === 'new', cid = costEdit;
+    if (isNew) body.project_id = p.id;
+    busy = true; paint();
+    App.api(isNew ? 'POST' : 'PATCH', isNew ? '?cost=1' : '?cost=' + encodeURIComponent(cid), body, function (s, r) {
+      busy = false;
+      if ((s === 200 || s === 201) && r && r.cost) {
+        var cs = p.costs || (p.costs = []), i, done = false;
+        for (i = 0; i < cs.length; i++) if (cs[i].id === r.cost.id) { cs[i] = r.cost; done = true; }
+        if (!done) cs.push(r.cost);
+        costEdit = ''; costDraft = null; touch(p); App.toast(isNew ? 'Cost added' : 'Cost saved'); loadEvents(p.id);
+      } else App.toast(errText(s, r));
+      paint();
+    }, '/api/pprojects');
+  }
+  function deleteCost(id) {
+    var p = byId(sel); if (!p || busy) return;
+    if (!window.confirm('Delete this cost?')) return;
+    busy = true; paint();
+    App.api('DELETE', '?cost=' + encodeURIComponent(id), null, function (s, r) {
+      busy = false;
+      if (s === 200) {
+        p.costs = (p.costs || []).filter(function (c) { return c.id !== id; });
+        costEdit = ''; costDraft = null; touch(p); App.toast('Cost deleted'); loadEvents(p.id);
+      } else App.toast(errText(s, r));
+      paint();
+    }, '/api/pprojects');
+  }
   function logoHTML(p, big) {
     var m = p.meta || {}, letter = esc((p.name || '?').charAt(0).toUpperCase());
     return '<span class="pplogo' + (big ? ' big' : '') + '">' + letter +
@@ -231,7 +386,7 @@
     h = '<div class="ppcard' + (NOTLIVE[statusOf(p)] ? ' off' : '') + '" data-pp="open" data-id="' + esc(p.id) + '">' +
       '<div class="pphd">' + logoHTML(p) + '<div class="ppnm"><b>' + esc(p.name) + '</b>' + (m.desc ? '<div class="ppdesc">' + esc(m.desc) + '</div>' : '') + '</div>' + dotHTML(p) +
       (grip ? '<div class="ppgrip" data-pp="grip" data-id="' + esc(p.id) + '" aria-label="Drag to reorder">☰</div>' : '') + '</div>' +
-      warnHTML(p) + (rs ? '<div class="ppreason"><b>Why:</b> ' + esc(rs) + '</div>' : '') +
+      warnHTML(p) + (rs ? '<div class="ppreason"><b>Why:</b> ' + esc(rs) + '</div>' : '') + dueHTML(p) +
       (pg.all ? progHTML(pg) : '<div class="ppempty">No tasks yet</div>') +
       '<div class="ppfoot"><span>' + (pg.back ? pg.back + ' in backlog · ' : '') + 'Active ' + ago(p.last_at || p.created_at) + '</span><span class="sp"></span></div>' +
       (linkChips(p) ? '<div>' + linkChips(p) + '</div>' : '');
@@ -413,6 +568,7 @@
     var lk = '', al = allLinks(p);
     for (i = 0; i < al.length; i++) lk += '<a class="pplinkrow" href="' + esc(al[i][1]) + '" target="_blank" rel="noopener"><span>' + esc(al[i][0]) + ' ↗</span><small>' + esc(al[i][2]) + '</small></a>';
     if (lk) h += '<div class="ppsec"><div class="lbl">Links</div>' + lk + '</div>';
+    h += costsHTML(p);
     if (m.started || m.target) h += '<div class="ppsec"><div class="lbl">Dates</div><div class="ppline">' +
       (m.started ? 'Started ' + fmtD(m.started) : '') + (m.started && m.target ? ' · ' : '') + (m.target ? 'Target ' + fmtD(m.target) : '') + '</div></div>';
     return h;
@@ -425,6 +581,9 @@
       case 'renamed': return 'Renamed: ' + t;
       case 'details': return 'Details updated';
       case 'reason': return t ? 'Reason: ' + t : 'Reason cleared';
+      case 'cost_added': return 'Cost added: ' + t;
+      case 'cost_changed': return 'Cost changed: ' + t;
+      case 'cost_removed': return 'Cost removed: ' + t;
       case 'task_added': return 'Added <b>' + t + '</b>';
       case 'task_done': return 'Done <b>' + t + '</b>';
       case 'task_reopened': return 'Reopened <b>' + t + '</b>';
@@ -652,7 +811,7 @@
     }, '/api/todos');
   }
   function openProject(id) {
-    sel = id; editId = ''; editing = false; draft = null; showDone = false; moveId = ''; reasonId = ''; setStore('ppSel', id);
+    sel = id; editId = ''; editing = false; draft = null; showDone = false; moveId = ''; reasonId = ''; costEdit = ''; costDraft = null; setStore('ppSel', id);
     var op = byId(id); if (op && statusOf(op) === 'idea') addTo = 'backlog'; // ideas: new tasks default to the Backlog
     pageScroll = null; paint(); window.scrollTo(0, 0); loadEvents(id);
   }
@@ -687,16 +846,23 @@
     else if (a === 'redit') { var rp = byId(id); reasonId = id; reasonDraft = (rp && rp.meta && rp.meta.reason) || ''; paint(); if ($('ppReason')) $('ppReason').focus(); }
     else if (a === 'rx') { reasonId = ''; paint(); }
     else if (a === 'rsave') saveReason(id);
+    else if (a === 'cadd') { startCost(null); paint(); if ($('ppCname')) $('ppCname').focus(); }
+    else if (a === 'cedit') { var cp = byId(sel), ci; if (cp) for (ci = 0; ci < (cp.costs || []).length; ci++) if (cp.costs[ci].id === id) startCost(cp.costs[ci]); paint(); }
+    else if (a === 'cx') { costEdit = ''; costDraft = null; paint(); }
+    else if (a === 'cfreq' && costDraft) { costDraft.freq = v; paint(); }
+    else if (a === 'cdel') deleteCost(id);
   }, false);
   document.addEventListener('submit', function (e) {
     var f = e.target; if (!f) return;
     if (f.id === 'ppNewForm') { e.preventDefault(); create($('ppNew').value); }
     else if (f.id === 'ppTaskForm') { e.preventDefault(); addTask($('ppTask').value); }
     else if (f.id === 'ppDetForm') { e.preventDefault(); saveDetails(); }
+    else if (f.id === 'ppCostForm') { e.preventDefault(); saveCost(); }
   }, false);
   function onField(e) { // keep the details draft in step with what is typed (the form is redrawn from it)
     var el = e.target, f = el && el.getAttribute ? el.getAttribute('data-f') : null, m;
     if (el && el.id === 'ppReason') { reasonDraft = el.value; return; }
+    if (el && costDraft && CF[el.id]) { costDraft[CF[el.id]] = el.value; return; }
     if (!f || !draft) return;
     if ((m = /^site:(\d+)$/.exec(f))) draft.sites[+m[1]] = el.value;
     else if ((m = /^ll:(\d+)$/.exec(f))) draft.links[+m[1]].l = el.value;

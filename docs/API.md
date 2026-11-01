@@ -70,7 +70,8 @@ change the header in the endpoint file and regenerate._
 ## api/pprojects.js
 ```
 // /api/pprojects — Personal Projects (your apps, home projects ...). Separate from Work projects (/api/projects).
-//   GET                      -> { projects: [{id, name, status, created_at, meta, pos, open, done, done_old, last_at}] }
+//   GET                      -> { projects: [{id, name, status, created_at, meta, pos, open, done, done_old, last_at, costs}] }
+//                               costs = [{id, name, amount, currency, freq, next_due, link, email}] (subscriptions/costs)
 //                               in hand-made order (pos ascending; each lane shows its projects in this order)
 //                               open/done = all-time task counts; done_old = finished more than 7 days ago (not in GET /api/todos);
 //                               last_at = latest activity. meta = { sites:[url], links:[{l,u}], vercel, supabase, github, desc,
@@ -86,12 +87,18 @@ change the header in the endpoint file and regenerate._
 //                               a changed reason is logged as its own activity entry
 //   PATCH ?order=1 {ids:[...]}  -> reorder (drag and drop): these projects swap among the places they already hold,
 //                               in the order given -> { pos: {<id>: n} }. New projects go to the top.
-//   DELETE ?id               -> remove (its tasks stay, they just lose the link)
+//   DELETE ?id               -> remove (its tasks stay, they just lose the link; its costs go with it)
+//   POST ?cost=1 {project_id, name, amount, currency?, freq?, next_due?, link?, email?} -> add a cost -> { cost }
+//   PATCH ?cost=<id> {name, amount, currency?, freq?, next_due?, link?, email?}       -> replace a cost -> { cost }
+//   DELETE ?cost=<id>        -> remove a cost
+//        currency: 3 letters, default GBP; freq: 'monthly' | 'yearly' | 'one_off' (default monthly); next_due YYYY-MM-DD;
+//        link https only; max 30 per project. Adding/changing/removing a cost is written to the activity log.
+//        Separate from Budget's bills (monthly GBP entries in the budget config with no ids), so nothing is shared.
 // status: 'idea' | 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
 // Tasks of idea / paused / not_pursued / shut_down projects are shelved (out of Overdue and the counts).
 // Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
 // a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
-// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup17.sql.
+// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup18.sql.
 ```
 
 ## api/projects.js

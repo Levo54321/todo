@@ -105,6 +105,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Project costs have their own table (`personal_project_costs`); never write Budget's config from My projects (read-only name match only). Playwright `inner_text` applies CSS text-transform: compare uppercase labels case-insensitively in tests.
 - 2026-11-01 — My projects: the Idea lane shows only when it holds a project (In progress is first otherwise). Background redraws must write nothing (see Pitfalls).
 - 2026-11-01 — Personal project statuses live in four places: DB check + `pproj_save` (latest `db/setupNN.sql`), `api/pprojects.js` STATUS, `core.js` PP_SHELF, `pprojects.js` STAT/LABEL/SHELF/REASON/NOTLIVE/fold. Change all together.
 - 2026-11-01 — My projects reordering must be drag and drop (Luc dislikes up/down arrows); reuse board.js touch drag.

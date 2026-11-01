@@ -5,7 +5,9 @@ landscape, iPad portrait and iPhone sizes, and the Vercel picker replacing only 
 v1045 (Deploy 2): Idea status (shelved, Backlog default), Reason (edit, log, card), "still live on Vercel" warning,
 drag-and-drop order within a lane (mouse and synthetic touch), new projects first, order kept across lanes.
 v1046: Idea lane hidden when empty; background refreshes touch nothing (no flicker, cursor kept) and a real redraw
-keeps the cursor position in the field being typed in."""
+keeps the cursor position in the field being typed in.
+v1047 (Deploy 3): subscriptions and costs per project (add/edit/delete, totals, roll-forward of due dates,
+"due soon" on cards, "also in Budget" hint, activity entries)."""
 import importlib.util, os
 D = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(D, 'out'); os.makedirs(OUT, exist_ok=True)  # screenshots (git-ignored)
@@ -97,6 +99,7 @@ def run(h):
     picker_checks(h, chk, wait, calls)
     d2_checks(h, chk, wait, calls)
     idle_checks(h, chk, wait)
+    cost_checks(h, chk, wait, calls)
     return R
 
 def layout_checks(h, chk, wait):
@@ -353,4 +356,76 @@ def idle_checks(h, chk, wait):
         sel = p.evaluate("[document.activeElement && document.activeElement.id, document.getElementById('ppTask').selectionStart, document.getElementById('ppTask').value, document.getElementById('ppPane').innerText.indexOf('Arrived from the phone') >= 0]")
         chk('%s: real redraw shows the change and keeps focus + cursor' % tag, sel == ['ppTask', 6, 'half-typed words', True], sel)
         p.fill('#ppTask', ''); p.click('[data-pp=back]'); wait(300); p.fill('#ppNew', '')
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)
+
+
+def cost_checks(h, chk, wait, calls):
+    p = h.page
+    def pid(name): return [x for x in h.pprojects if x['name'] == name][0]['id']
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
+    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(700)
+    if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
+    hub = pid('Holmlodge Hub')
+    p.click('.ppcard[data-id="%s"] .ppnm' % hub); p.wait_for_selector('.ppside .ppcosts'); wait(300)
+    chk('costs section on project page', 'subscriptions and costs' in p.inner_text('.ppside').lower() and p.query_selector('[data-pp=cadd]'))
+    # add a monthly cost
+    p.click('[data-pp=cadd]'); wait(200)
+    p.fill('#ppCname', 'Vercel Pro'); p.fill('#ppCamt', '16')
+    p.fill('#ppCdue', '2026-11-03'); p.fill('#ppCemail', 'Luc@Example.com')
+    p.click('#ppCostForm button[type=submit]'); wait(600)
+    po = [c for c in calls('POST', '/api/pprojects') if 'cost' in c[2]]
+    chk('add cost posts the right body', po and po[-1][3] == {'name': 'Vercel Pro', 'amount': 16, 'currency': 'GBP', 'freq': 'monthly', 'next_due': '2026-11-03',
+        'link': '', 'email': 'Luc@Example.com', 'project_id': hub}, po[-1][3] if po else None)
+    side = p.inner_text('.ppside')
+    chk('cost row shows amount, frequency and due', '£16' in side and 'a month' in side and 'in 2 days' in side, side[side.lower().find('subscriptions'):][:300])
+    chk('"also in Budget" hint on a matching name', 'also in Budget' in side)
+    # yearly domain in the past: rolls forward a year; one-off overdue
+    p.click('[data-pp=cadd]'); wait(200)
+    p.fill('#ppCname', 'Domain renewal'); p.fill('#ppCamt', '12.5'); p.click('[data-pp=cfreq][data-val=yearly]'); wait(150)
+    p.fill('#ppCdue', '2025-11-10'); p.fill('#ppClink', 'https://porkbun.com/account')
+    p.click('#ppCostForm button[type=submit]'); wait(600)
+    p.click('[data-pp=cadd]'); wait(200)
+    p.fill('#ppCname', 'Logo design'); p.fill('#ppCamt', '40'); p.click('[data-pp=cfreq][data-val=one_off]'); wait(150)
+    p.fill('#ppCdue', '2026-10-25'); p.click('#ppCostForm button[type=submit]'); wait(600)
+    side = p.inner_text('.ppside')
+    chk('yearly cost rolls forward to next year', '10 Nov 2026' in side, side[side.find('Domain'):][:120])
+    chk('totals per month and year (+ one-off)', '£17.04 a month · £204.50 a year · £40 one-off' in side, side[side.lower().find('subscriptions'):])
+    chk('no "also in Budget" for unrelated names', side.count('also in Budget') == 1)
+    # edit: typing survives a background refresh, then change amount
+    ids = [c['id'] for c in [x for x in h.pprojects if x['id'] == hub][0]['costs']]
+    p.click('.ppcost [data-pp=cedit][data-id="%s"]' % ids[0]); wait(200)
+    p.fill('#ppCamt', '20'); p.evaluate("App.render()"); wait(200)
+    chk('cost edit survives a background refresh', p.input_value('#ppCamt') == '20')
+    p.click('#ppCostForm button[type=submit]'); wait(600)
+    pa = [c for c in calls('PATCH', '/api/pprojects') if 'cost' in c[2]]
+    chk('edit patches the cost', pa and pa[-1][2]['cost'][0] == ids[0] and pa[-1][3]['amount'] == 20, pa[-1:] if pa else None)
+    # card flags: Vercel Pro due in 2 days -> but the one-off is overdue and first
+    p.click('[data-pp=back]'); wait(400)
+    card = p.inner_text('.ppcard[data-id="%s"]' % hub)
+    chk('card flags the overdue one-off first', 'Overdue: Logo design · £40' in card and '+2 more' in card, card)
+    # delete (confirm dialog)
+    p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(500)
+    p.click('.ppcost [data-pp=cedit][data-id="%s"]' % ids[2]); wait(200)
+    p.once('dialog', lambda d: d.accept())
+    p.click('[data-pp=cdel]'); wait(600)
+    chk('delete removes the cost', 'Logo design' not in p.inner_text('.ppside') and [c for c in calls('DELETE', '/api/pprojects') if 'cost' in c[2]])
+    if p.get_attribute('[data-pp=act]', 'aria-expanded') != 'true': p.click('[data-pp=act]'); wait(200)
+    wait(800)
+    act = p.inner_text('.ppmain')
+    chk('cost changes in activity', 'Cost added:' in act and 'Cost changed:' in act and 'Cost removed:' in act, act[-500:])
+    p.click('[data-pp=back]'); wait(300)
+    card = p.inner_text('.ppcard[data-id="%s"]' % hub)
+    chk('card flags the next due cost', 'Due in 2 days: Vercel Pro · £20' in card, card)
+    # bad input is caught before saving
+    p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(400)
+    n0 = len(calls('POST', '/api/pprojects'))
+    p.click('[data-pp=cadd]'); wait(200); p.fill('#ppCname', 'No amount'); p.click('#ppCostForm button[type=submit]'); wait(300)
+    chk('missing amount is not sent', len(calls('POST', '/api/pprojects')) == n0)
+    p.click('[data-pp=cx]'); wait(200)
+    p.screenshot(path=os.path.join(OUT, 'd3_page.png'))
+    p.set_viewport_size({'width': 390, 'height': 844}); wait(400)
+    p.click('[data-pp=cadd]'); wait(200)
+    chk('iPhone: cost form fits', p.evaluate('document.documentElement.scrollWidth') <= 392)
+    p.screenshot(path=os.path.join(OUT, 'd3_iphone.png'), full_page=True)
+    p.click('[data-pp=cx]'); wait(200); p.click('[data-pp=back]'); wait(300)
     p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)

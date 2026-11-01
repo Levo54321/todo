@@ -64,6 +64,26 @@ class H:
             if method == 'DELETE':
                 self.todos = [t for t in self.todos if t['id'] != q['id'][0]]; return 200, {'ok': True}
         if path == '/api/pprojects':
+            if 'cost' in q:  # subscriptions / costs
+                if method == 'DELETE':
+                    for pj in self.pprojects:
+                        for c in list(pj.get('costs', [])):
+                            if c['id'] == q['cost'][0]: pj['costs'].remove(c); self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'cost_removed', 't': c['name']})
+                    return 200, {'ok': True}
+                if not body.get('name'): return 400, {'error': 'name required'}
+                c = {k: body.get(k) or None for k in ('name', 'currency', 'freq', 'next_due', 'link', 'email')}
+                c['amount'] = round(float(body['amount']), 2); c['currency'] = c['currency'] or 'GBP'; c['freq'] = c['freq'] or 'monthly'
+                if method == 'POST':
+                    pj = [x for x in self.pprojects if x['id'] == body['project_id']][0]
+                    c['id'] = str(uuid.uuid4()); pj.setdefault('costs', []).append(c)
+                    self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'cost_added', 't': '%s (£%.2f %s)' % (c['name'], c['amount'], c['freq'])})
+                    return 201, {'cost': c}
+                for pj in self.pprojects:
+                    for i, old in enumerate(pj.get('costs', [])):
+                        if old['id'] == q['cost'][0]:
+                            c['id'] = old['id']; pj['costs'][i] = c
+                            self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'cost_changed', 't': c['name']}); return 200, {'cost': c}
+                return 404, {'error': 'not found'}
             if method == 'GET':
                 if 'events' in q: return 200, {'events': [e for e in self.pevents if e['pid'] == q['events'][0]][::-1]}
                 if 'vercel' in q:
@@ -78,7 +98,7 @@ class H:
                     return 200, {'configured': True, 'status': st}
                 out = []
                 for pj in sorted(self.pprojects, key=lambda x: x.get('pos', 0)):
-                    o = dict(pj); o['open'] = len([t for t in self.todos if t.get('pproject_id') == pj['id'] and not t['done']]); out.append(o)
+                    o = dict(pj); o['open'] = len([t for t in self.todos if t.get('pproject_id') == pj['id'] and not t['done']]); o['costs'] = [dict(c) for c in pj.get('costs', [])]; out.append(o)
                 return 200, {'projects': out}
             if method == 'POST':
                 if any(p['name'].lower() == body['name'].lower() for p in self.pprojects): return 409, {'error': 'a project with that name already exists'}
@@ -114,7 +134,7 @@ class H:
             return 200, {'projects': [{'id': 'p1', 'name': 'Alpha', 'prio': 2, 'status': 'active'}, {'id': 'p2', 'name': 'Beta', 'prio': 1, 'status': 'active'}]}
         if path == '/api/settings': return 200, {'settings': {}}
         if path == '/api/history': return 200, {'history': [{'c': '2026-10-20T09:00:00Z', 'd': '2026-10-25T09:00:00Z', 'cat': 'home', 'l': 'personal', 't': 'Old'}]}
-        if path == '/api/budget': return 200, {'config': {}, 'entries': []}
+        if path == '/api/budget': return 200, {'config': {'bills': [{'n': 'Vercel Pro', 'a': 16, 'd': 3}]}, 'entries': []}
         if path == '/api/saver':
             if 'id' in q: return 200, None
             return 200, {'images': [{'id': 'img1', 'w': 10, 'h': 10, 'kb': 1}]}

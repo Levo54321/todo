@@ -1,5 +1,6 @@
 // /api/pprojects — Personal Projects (your apps, home projects ...). Separate from Work projects (/api/projects).
-//   GET                      -> { projects: [{id, name, status, created_at, meta, pos, open, done, done_old, last_at}] }
+//   GET                      -> { projects: [{id, name, status, created_at, meta, pos, open, done, done_old, last_at, costs}] }
+//                               costs = [{id, name, amount, currency, freq, next_due, link, email}] (subscriptions/costs)
 //                               in hand-made order (pos ascending; each lane shows its projects in this order)
 //                               open/done = all-time task counts; done_old = finished more than 7 days ago (not in GET /api/todos);
 //                               last_at = latest activity. meta = { sites:[url], links:[{l,u}], vercel, supabase, github, desc,
@@ -15,12 +16,18 @@
 //                               a changed reason is logged as its own activity entry
 //   PATCH ?order=1 {ids:[...]}  -> reorder (drag and drop): these projects swap among the places they already hold,
 //                               in the order given -> { pos: {<id>: n} }. New projects go to the top.
-//   DELETE ?id               -> remove (its tasks stay, they just lose the link)
+//   DELETE ?id               -> remove (its tasks stay, they just lose the link; its costs go with it)
+//   POST ?cost=1 {project_id, name, amount, currency?, freq?, next_due?, link?, email?} -> add a cost -> { cost }
+//   PATCH ?cost=<id> {name, amount, currency?, freq?, next_due?, link?, email?}       -> replace a cost -> { cost }
+//   DELETE ?cost=<id>        -> remove a cost
+//        currency: 3 letters, default GBP; freq: 'monthly' | 'yearly' | 'one_off' (default monthly); next_due YYYY-MM-DD;
+//        link https only; max 30 per project. Adding/changing/removing a cost is written to the activity log.
+//        Separate from Budget's bills (monthly GBP entries in the budget config with no ids), so nothing is shared.
 // status: 'idea' | 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
 // Tasks of idea / paused / not_pursued / shut_down projects are shelved (out of Overdue and the counts).
 // Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
 // a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
-// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup17.sql.
+// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup18.sql.
 var todos = require('./todos.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var STATUS = ['idea', 'in_progress', 'live', 'paused', 'not_pursued', 'shut_down', 'active'];
@@ -78,6 +85,25 @@ function cleanMeta(m) { // trims, keeps known keys; links must be https (the dat
     v = httpsOf(v); if (v) out[k] = v;
   }
   return out;
+}
+var FREQ = ['monthly', 'yearly', 'one_off'];
+function cleanCost(b) { // -> {cost} or {error}
+  b = b || {};
+  var name = typeof b.name === 'string' ? b.name.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  if (!name) return { error: 'name required' };
+  var amount = typeof b.amount === 'number' ? b.amount : parseFloat(String(b.amount == null ? '' : b.amount).replace(/[£$€,\s]/g, ''));
+  if (!isFinite(amount) || amount < 0 || amount >= 1e8) return { error: 'amount must be a number' };
+  var cur = typeof b.currency === 'string' && b.currency.trim() ? b.currency.trim().toUpperCase() : 'GBP';
+  if (!/^[A-Z]{3}$/.test(cur)) return { error: 'currency must be 3 letters, e.g. GBP' };
+  var freq = b.freq || 'monthly';
+  if (FREQ.indexOf(freq) < 0) return { error: 'bad frequency' };
+  var due = typeof b.next_due === 'string' && b.next_due.trim() ? b.next_due.trim() : null;
+  if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return { error: 'bad date' };
+  var link = null;
+  if (typeof b.link === 'string' && b.link.trim()) { link = httpsOf(b.link); if (!link) return { error: 'the link must be a public https address' }; }
+  var email = typeof b.email === 'string' && b.email.trim() ? b.email.trim().toLowerCase() : null;
+  if (email && (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 120)) return { error: 'that email does not look right' };
+  return { cost: { name: name, amount: Math.round(amount * 100) / 100, currency: cur, freq: freq, next_due: due, link: link, email: email } };
 }
 function timed(p, ms) { return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error('timed out')); }, ms); })]); }
 
@@ -213,6 +239,21 @@ module.exports = async function handler(req, res) {
       return send(res, 200, { projects: all });
     }
     var b = readBody(req), meta = null;
+    if (q.cost !== undefined) { // subscriptions / costs
+      var cid = String(q.cost);
+      if (req.method === 'DELETE') {
+        if (!UUID.test(cid)) return send(res, 400, { error: 'bad id' });
+        await todos.rpc('pcost_delete', { p_token: token, p_id: cid });
+        return send(res, 200, { ok: true });
+      }
+      if (req.method !== 'POST' && req.method !== 'PATCH') return send(res, 405, { error: 'method not allowed' });
+      var cc = cleanCost(b);
+      if (cc.error) return send(res, 400, { error: cc.error });
+      if (req.method === 'POST' && (typeof b.project_id !== 'string' || !UUID.test(b.project_id))) return send(res, 400, { error: 'bad project' });
+      if (req.method === 'PATCH' && !UUID.test(cid)) return send(res, 400, { error: 'bad id' });
+      var saved = await todos.rpc('pcost_save', { p_token: token, p_id: req.method === 'PATCH' ? cid : null, p_project: req.method === 'POST' ? b.project_id : null, p_cost: cc.cost });
+      return send(res, req.method === 'POST' ? 201 : 200, { cost: saved });
+    }
     if (req.method === 'PATCH' && q.order !== undefined) {
       var ids = Array.isArray(b.ids) ? b.ids : null;
       if (!ids || !ids.length || ids.length > 200 || ids.some(function (x) { return typeof x !== 'string' || !UUID.test(x); })) return send(res, 400, { error: 'bad order' });
@@ -257,11 +298,12 @@ module.exports = async function handler(req, res) {
     if (e.code === 'P0002') return send(res, 404, { error: 'not found' });
     if (e.code === '23505') return send(res, 409, { error: 'a project with that name already exists' });
     if (e.code === '23514') return send(res, 400, { error: 'invalid input' });
-    if (e.code === 'PGRST202') return send(res, 409, { error: 'run setup17.sql first' });
+    if (e.code === 'PGRST202') return send(res, 409, { error: 'run setup18.sql first' });
     console.error('pprojects api error', e.code, e.message);
     return send(res, 502, { error: 'upstream error' });
   }
 };
 module.exports.parseVercel = parseVercel; // for local tests
 module.exports.cleanMeta = cleanMeta;
+module.exports.cleanCost = cleanCost;
 module.exports.findIcon = findIcon;
