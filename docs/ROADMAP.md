@@ -9,11 +9,18 @@
 5a. Decide whether to make the repo private and rotate the access token (the old token hash was committed in `db/setup01.sql` while the repo was public).
 5b. Add a `todos` base-table migration so the database can be rebuilt from `db/` alone.
 
+## My projects plan (agreed 1 Nov 2026, one deploy each, Luc tests between)
+- ~~Deploy 1: layout/scroll fixes, icon kept on failed lookup, Vercel picker replaces its own domains~~ Done v1044.
+- Deploy 2: Idea status (shelved, tasks default to Backlog), Reason field (Idea/Paused/Not pursued/Shut down, logged), "paused but live on Vercel" warning, manual order within a lane by **drag and drop** (reuse board.js touch drag, not arrows), stored in a new `pos` column (not meta), new projects at top.
+- Deploy 3: subscriptions/costs per project in their own table (Budget bills have no ids and are monthly-only, so not reused; show "also in Budget" on a name match). Cross-project totals = follow-up only.
+- Deploy 4: account labels in meta; stored icon copies in a new icon table (custom upload + cached site icons, fixes paused-site icons); per-project vault (server-side AES-GCM, key from vault password + env `VAULT_PEPPER`); Supabase token research only.
+
 ## P1 — cleanup
 5. ~~Remove legacy `api/shopping.js` and the Shopping tab~~ Done 1 Nov 2026 (v1040).
 6. Add a build/minify step (terser `--ecma 5`) in a `tools/` script so deployed JS is small again, and a lint check that rejects ES6 syntax in `public/js`.
 7. ~~Single `docs/` source of truth~~ Done 1 Nov 2026: `CLAUDE.md` + `docs/` in the repo are the source of truth; the Claude Project only points here.
 8. Add a GitHub Action: ES5 lint + `build.py` smoke test on PRs.
+8a. Work board lanes: replace `max-height: calc(100vh - 290px)` with the JS-height pattern My projects uses (v1044).
 
 ## P2 — features
 9. Undo for complete/delete/pause (toast with Undo).

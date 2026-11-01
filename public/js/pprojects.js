@@ -12,7 +12,7 @@
   var SHELF = { paused: 1, not_pursued: 1, shut_down: 1 }; // tasks of these projects are out of Overdue and the counts
   var LINKS = [['vercel', 'Vercel'], ['supabase', 'Supabase'], ['github', 'GitHub']];
   var DOT = { green: 'Live', orange: 'Deploying', red: 'Deploy failed', paused: 'Paused in Vercel', grey: 'Status unknown' };
-  var draft = null, vlist = { configured: null, projects: [], loading: false, at: 0 }, vfill = false, showAct = store.get('ppAct') === '1';
+  var draft = null, vseq = 0, vlist = { configured: null, projects: [], loading: false, at: 0 }, vfill = false, showAct = store.get('ppAct') === '1';
   var list = [], known = false, failed = false, tries = 0, busy = false, onView = false;
   var sel = store.get('ppSel') || '', editId = '', moveId = '', editing = false, showDone = false;
   var addTo = store.get('ppAddTo') === 'list' ? 'list' : 'backlog';
@@ -89,7 +89,20 @@
     '.ppev li span{-webkit-flex:1;flex:1;min-width:0;word-wrap:break-word}.ppev li small{-webkit-flex:none;flex:none;margin-left:10px;color:var(--muted);font-size:12px}' +
     '.ppwhere{margin-top:6px}' +
     '.pjc{border-style:dashed}' +
-    '@media (max-width:760px){.ppwrap{-webkit-flex-direction:column;flex-direction:column;-webkit-align-items:stretch;align-items:stretch}.ppmain{-webkit-order:1;order:1}.ppside{-webkit-order:2;order:2;width:auto;margin:20px 0 0}}';
+    /* tablet / desktop (wider than 760px): the page itself never scrolls. Heights are set in px from window.innerHeight by
+       layout() (iPad Safari's vh is unreliable). Board: only the lanes strip scrolls sideways and each lane body scrolls on
+       its own. Project page: the "All projects" bar stays put, the side panel is frozen, only the right side scrolls. */
+    '#vPprojects.ppfix .scrollview{overflow:hidden}' +
+    '#vPprojects.ppfix .pane{padding-bottom:0}' +
+    '.ppfix .bdcols{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:12px}' +
+    '.ppfix .bdcol{overflow:hidden}' +
+    '.ppfix .pplane{overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px}' +
+    '.ppfix .pptop{margin:6px 0 10px}' +
+    '.ppfix .ppwrap{-webkit-align-items:stretch;align-items:stretch}' +
+    '.ppfix .ppside{overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch}' +
+    '.ppfix .ppmain{overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 6px 24px 0}' +
+    '@media (max-width:760px){#ppPane .bdcols{white-space:normal;overflow:visible;margin:0;padding:0 0 12px}#ppPane .bdcol{display:block;width:auto;margin:0 0 12px}' +
+    '.ppwrap{-webkit-flex-direction:column;flex-direction:column;-webkit-align-items:stretch;align-items:stretch}.ppmain{-webkit-order:1;order:1}.ppside{-webkit-order:2;order:2;width:auto;margin:20px 0 0}}';
   var st = document.createElement('style'); st.type = 'text/css';
   if (st.styleSheet) st.styleSheet.cssText = css; else st.appendChild(document.createTextNode(css));
   document.getElementsByTagName('head')[0].appendChild(st);
@@ -231,8 +244,10 @@
       h += '<section class="bdcol' + (f ? ' ppcolf' : '') + (SHELF[s] ? ' hold' : '') + '">' +
         '<button class="bdhead" data-pp="fold" data-val="' + s + '" aria-expanded="' + (f ? 'false' : 'true') + '"><span class="bdname">' + LABEL[s] + '</span><span class="bdn">' + by[s].length + '</span><span class="bdcaret">' + (f ? '▸' : '▾') + '</span></button>';
       if (!f) {
+        h += '<div class="pplane" data-lane="' + s + '">';
         if (!by[s].length) h += '<div class="bdempty">' + (s === 'in_progress' ? 'Nothing in progress.' : s === 'live' ? 'Nothing live yet.' : 'None.') + '</div>';
         for (var j = 0; j < by[s].length; j++) h += cardHTML(by[s][j]);
+        h += '</div>';
       }
       h += '</section>';
     }
@@ -244,8 +259,21 @@
     for (i = 0; i < ls.length; i++) draft.links.push({ l: ls[i].l || '', u: ls[i].u || '' });
     if (!draft.sites.length) draft.sites.push('');
     if (!draft.links.length) draft.links.push({ l: '', u: '' });
+    draft.vsites = {}; draft.vgh = ''; // websites / GitHub link that came from the Vercel picker (replaced when the pick changes)
     if (vlist.configured !== false && !vlist.at) loadVercelList();
+    var pv = /^https:\/\/vercel\.com\/([^\/?#]+)\/([^\/?#]+)/i.exec(draft.vercel);
+    if (pv && vlist.configured !== false) { // already linked: find out which of the saved websites are that project's domains
+      var dr = draft, seq = ++vseq;
+      App.api('GET', '?vercel=' + encodeURIComponent(pv[1]) + '/' + encodeURIComponent(pv[2]), null, function (s, d) {
+        if (draft !== dr || seq !== vseq || s !== 200 || !d) return;
+        var j, ours = {};
+        for (j = 0; j < (d.sites || []).length; j++) ours[normU(d.sites[j])] = 1;
+        for (j = 0; j < dr.sites.length; j++) if (dr.sites[j] && ours[normU(dr.sites[j])]) dr.vsites[normU(dr.sites[j])] = 1;
+        if (d.github && normU(dr.github) === normU(d.github)) dr.vgh = dr.github;
+      }, '/api/pprojects');
+    }
   }
+  function normU(u) { return (u || '').replace(/^\s+|\s+$/g, '').replace(/\/+$/, '').toLowerCase(); }
   function loadVercelList() {
     if (vlist.loading) return;
     vlist.loading = true;
@@ -293,24 +321,30 @@
       '<button class="btn primary" type="submit"' + (busy ? ' disabled' : '') + '>Save details</button><button class="btn" type="button" data-pp="detx">Cancel</button></form>';
     return h;
   }
-  function fillFromVercel(key) {
+  function fillFromVercel(key) { // replace the websites / GitHub link the picker filled in before; keep what was typed by hand
     if (!draft) return;
-    if (!key) { draft.vercel = ''; paint(); return; }
+    var dr = draft, seq = ++vseq;
+    function swap(sites, gh) {
+      var keep = [], i, have = {}, added = 0;
+      for (i = 0; i < dr.sites.length; i++) if (dr.sites[i] && !dr.vsites[normU(dr.sites[i])]) { keep.push(dr.sites[i]); have[normU(dr.sites[i])] = 1; }
+      dr.vsites = {};
+      for (i = 0; i < sites.length; i++) if (!have[normU(sites[i])] && keep.length < 8) { keep.push(sites[i]); have[normU(sites[i])] = 1; dr.vsites[normU(sites[i])] = 1; added++; }
+      dr.sites = keep.length ? keep : [''];
+      var ghMine = !dr.github || (dr.vgh && normU(dr.github) === normU(dr.vgh)); // empty, or still what the picker put there
+      if (ghMine) { dr.github = gh || ''; dr.vgh = gh || ''; if (gh) added++; }
+      return added;
+    }
+    if (!key) { dr.vercel = ''; swap([], ''); paint(); return; }
     var m = /^([^\/]+)\/(.+)$/.exec(key); if (!m) return;
-    draft.vercel = 'https://vercel.com/' + m[1] + '/' + m[2];
+    dr.vercel = 'https://vercel.com/' + m[1] + '/' + m[2];
     vfill = true; paint();
     App.api('GET', '?vercel=' + encodeURIComponent(m[1]) + '/' + encodeURIComponent(m[2]), null, function (s, d) {
+      if (seq !== vseq) return; // a newer pick is on its way
       vfill = false;
-      if (!draft) return;
+      if (draft !== dr) return;
       if (s === 200 && d) {
-        var added = 0, i, have = {};
-        for (i = 0; i < draft.sites.length; i++) if (draft.sites[i]) have[draft.sites[i].replace(/\/$/, '').toLowerCase()] = 1;
-        draft.sites = draft.sites.filter(function (x) { return !!x; });
-        for (i = 0; i < (d.sites || []).length; i++) if (!have[d.sites[i].replace(/\/$/, '').toLowerCase()]) { draft.sites.push(d.sites[i]); added++; }
-        if (!draft.sites.length) draft.sites.push('');
-        if (d.github && !draft.github) { draft.github = d.github; added++; }
-        if (d.vercel) draft.vercel = d.vercel;
-        App.toast(added ? 'Filled in from Vercel' : 'Nothing new to fill in');
+        if (d.vercel) dr.vercel = d.vercel;
+        App.toast(swap(d.sites || [], d.github || '') ? 'Filled in from Vercel' : 'Nothing new to fill in');
       } else App.toast(d && d.error ? d.error : 'Could not reach Vercel');
       paint();
     }, '/api/pprojects');
@@ -397,6 +431,62 @@
     if (evTimer) clearTimeout(evTimer);
     evTimer = setTimeout(function () { evTimer = null; loadEvents(p.id); }, 1500);
   }
+  /* ---------- fixed-height layout (wider than 760px) ---------- */
+  var boardScroll = null, pageScroll = null, lt = null;
+  function fixedMode() { return !(window.matchMedia && window.matchMedia('(max-width:760px)').matches); }
+  function setH(el, px) { if (el) el.style.height = px === '' ? '' : Math.max(px, 60) + 'px'; }
+  function layout() { // size the scroll areas from the real window height
+    var v = $('vPprojects'), pane = $('ppPane'); if (!v || !pane || !onView) return;
+    var fix = fixedMode(), on = /(^|\s)ppfix(\s|$)/.test(v.className), cols = pane.querySelector('.bdcols'), wrap = pane.querySelector('.ppwrap'), i, ls, cs;
+    if (fix !== on) v.className = fix ? v.className + ' ppfix' : v.className.replace(/\s*ppfix/g, '');
+    if (!fix) { // phone: the page scrolls as usual
+      if (cols) { cs = cols.querySelectorAll('.bdcol, .pplane'); for (i = 0; i < cs.length; i++) setH(cs[i], ''); setH(cols, ''); }
+      if (wrap) { setH(wrap, ''); setH(pane.querySelector('.ppside'), ''); setH(pane.querySelector('.ppmain'), ''); }
+      return;
+    }
+    if (pane.parentNode) pane.parentNode.scrollTop = 0;
+    var H = window.innerHeight || document.documentElement.clientHeight, GAP = 10;
+    if (cols) {
+      setH(cols, H - cols.getBoundingClientRect().top - GAP);
+      var inner = cols.clientHeight - 14; // .bdcols padding: 2px top, 12px bottom
+      cs = cols.querySelectorAll('.bdcol');
+      for (i = 0; i < cs.length; i++) setH(cs[i], /ppcolf/.test(cs[i].className) ? '' : inner);
+      ls = cols.querySelectorAll('.pplane');
+      for (i = 0; i < ls.length; i++) { // lane body = from its top to the lane's bottom padding (12px) and border (1px)
+        var col = ls[i].parentNode;
+        setH(ls[i], col.getBoundingClientRect().bottom - 13 - ls[i].getBoundingClientRect().top);
+      }
+    }
+    if (wrap) {
+      var wh = H - wrap.getBoundingClientRect().top - GAP;
+      setH(wrap, wh); setH(pane.querySelector('.ppside'), wh); setH(pane.querySelector('.ppmain'), wh);
+    }
+  }
+  function grabScroll() { // remember where each scroll area is before the pane is redrawn
+    var pane = $('ppPane'); if (!pane) return;
+    var cols = pane.querySelector('.bdcols'), main = pane.querySelector('.ppmain'), side = pane.querySelector('.ppside'), ls, i;
+    if (cols) {
+      boardScroll = { left: cols.scrollLeft, lanes: {} };
+      ls = cols.querySelectorAll('.pplane');
+      for (i = 0; i < ls.length; i++) boardScroll.lanes[ls[i].getAttribute('data-lane')] = ls[i].scrollTop;
+    }
+    if (main && side && pane.getAttribute('data-sel')) pageScroll = { id: pane.getAttribute('data-sel'), main: main.scrollTop, side: side.scrollTop };
+  }
+  function putScroll() {
+    var pane = $('ppPane'); if (!pane || !fixedMode()) return;
+    var cols = pane.querySelector('.bdcols'), main = pane.querySelector('.ppmain'), side = pane.querySelector('.ppside'), ls, i, k;
+    if (cols && boardScroll) {
+      cols.scrollLeft = boardScroll.left;
+      ls = cols.querySelectorAll('.pplane');
+      for (i = 0; i < ls.length; i++) { k = ls[i].getAttribute('data-lane'); if (boardScroll.lanes.hasOwnProperty(k)) ls[i].scrollTop = boardScroll.lanes[k]; }
+    }
+    if (main && side && pageScroll && pageScroll.id === sel) { main.scrollTop = pageScroll.main; side.scrollTop = pageScroll.side; }
+  }
+  function relayout() { if (lt) clearTimeout(lt); lt = setTimeout(function () { lt = null; grabScroll(); layout(); putScroll(); }, 120); }
+  window.addEventListener('resize', relayout, false);
+  window.addEventListener('orientationchange', function () { relayout(); setTimeout(relayout, 500); }, false); // iOS 9 reports the new height late
+  window.addEventListener('load', relayout, false);
+
   function paint() {
     if (!onView) return;
     var p = sel ? byId(sel) : null;
@@ -406,7 +496,10 @@
     for (i = 0; i < ids.length; i++) if ($(ids[i])) keep[ids[i]] = $(ids[i]).value;
     var ae = document.activeElement, focusId = ae && ae.id ? ae.id : '', focusF = ae && ae.getAttribute ? ae.getAttribute('data-f') : null;
     if (p) watchEvents(p);
+    grabScroll();
+    $('ppPane').setAttribute('data-sel', p ? p.id : '');
     App.setHTML($('ppPane'), p ? detailPage(p) : boardPage());
+    layout(); putScroll();
     for (i = 0; i < ids.length; i++) if ($(ids[i]) && keep[ids[i]] !== undefined) $(ids[i]).value = keep[ids[i]];
     if (focusId && $(focusId) && /^pp/.test(focusId)) $(focusId).focus();
     else if (focusF) { var fe = $('ppPane').querySelector('[data-f="' + focusF + '"]'); if (fe) fe.focus(); }
@@ -480,7 +573,7 @@
   }
   function openProject(id) {
     sel = id; editId = ''; editing = false; draft = null; showDone = false; moveId = ''; setStore('ppSel', id);
-    paint(); window.scrollTo(0, 0); loadEvents(id);
+    pageScroll = null; paint(); window.scrollTo(0, 0); loadEvents(id);
   }
 
   document.addEventListener('click', function (e) {
@@ -501,7 +594,7 @@
     else if (a === 'edit') { editId = id; editing = false; paint(); if ($('ppEdit')) $('ppEdit').focus(); }
     else if (a === 'cancel') { editId = ''; paint(); }
     else if (a === 'save') rename(id);
-    else if (a === 'det') { var dp = byId(sel); if (!dp) return; startDraft(dp); editing = true; editId = ''; paint(); window.scrollTo(0, 0); }
+    else if (a === 'det') { var dp = byId(sel); if (!dp) return; startDraft(dp); editing = true; editId = ''; paint(); window.scrollTo(0, 0); var sd = $('ppPane').querySelector('.ppside'); if (sd) sd.scrollTop = 0; }
     else if (a === 'detx') { editing = false; draft = null; paint(); }
     else if (a === 'addsite' && draft) { if (draft.sites.length < 8) draft.sites.push(''); paint(); }
     else if (a === 'rmsite' && draft) { draft.sites.splice(+v, 1); if (!draft.sites.length) draft.sites.push(''); paint(); }

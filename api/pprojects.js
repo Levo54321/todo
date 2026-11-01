@@ -13,7 +13,8 @@
 //   PATCH ?id {name?, status?, meta?} -> update; meta replaces the details (empty fields are dropped) -> { project }
 //   DELETE ?id               -> remove (its tasks stay, they just lose the link)
 // status: 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
-// Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
+// Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
+// a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
 // Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql, setup15.sql and setup16.sql.
 var todos = require('./todos.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -75,12 +76,14 @@ function cleanMeta(m) { // trims, keeps known keys; links must be https (the dat
 function timed(p, ms) { return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error('timed out')); }, ms); })]); }
 
 // Find a site's icon: its apple-touch-icon or icon link, else /favicon.ico. Best effort, ~4s.
+// Returns null when the site cannot be read (down, paused in Vercel = 503 DEPLOYMENT_PAUSED, timeout): the caller then
+// keeps the icon it already has. A failed lookup never clears or replaces a stored icon.
 async function findIcon(site) {
   var base = safeHttps(site); if (!base) return null;
   var fallback = new URL('/favicon.ico', base).href;
   try {
     var r = await timed(fetch(base.href, { redirect: 'follow', headers: { 'User-Agent': 'luc-todo icon lookup' } }), 4000);
-    if (!r.ok) return fallback;
+    if (!r.ok) return null;
     var html = (await timed(r.text(), 3000)).slice(0, 200000), tags = html.match(/<link\b[^>]*>/gi) || [], best = null, rank = 0, i;
     for (i = 0; i < tags.length; i++) {
       var rel = (/\brel\s*=\s*["']?([^"'>]+)/i.exec(tags[i]) || [])[1] || '', href = (/\bhref\s*=\s*["']?([^"'\s>]+)/i.exec(tags[i]) || [])[1];
@@ -92,7 +95,7 @@ async function findIcon(site) {
     if (!best) return fallback;
     var abs = new URL(best, r.url || base.href);
     return abs.protocol === 'https:' ? abs.href.slice(0, 300) : fallback;
-  } catch (e) { return fallback; }
+  } catch (e) { return null; }
 }
 
 // "https://vercel.com/<team>/<project>[/...]" -> { team, project }
@@ -212,7 +215,7 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST') {
       var name = cleanName(b.name);
       if (!name) return send(res, 400, { error: 'name required' });
-      if (meta && meta.sites) meta.icon = await findIcon(meta.sites[0]);
+      if (meta && meta.sites) { var ic = await findIcon(meta.sites[0]); if (ic) meta.icon = ic; }
       var made = await todos.rpc('pproj_save', { p_token: token, p_id: null, p_name: name, p_status: b.status || 'in_progress', p_meta: meta });
       return send(res, 201, { project: made });
     }
@@ -221,13 +224,13 @@ module.exports = async function handler(req, res) {
     if (req.method === 'PATCH') {
       var nn = b.name !== undefined ? cleanName(b.name) : null;
       if (b.name !== undefined && !nn) return send(res, 400, { error: 'name required' });
-      if (meta) { // keep the icon we already found unless the site changed
+      if (meta) { // keep the stored icon; look again only when the first website changed (or there is none yet)
         var cur = null, list = (await todos.rpc('pproj_list', { p_token: token })) || [], i;
         for (i = 0; i < list.length; i++) if (list[i].id === id) cur = list[i];
         var om = (cur && cur.meta) || {};
-        var first = meta.sites && meta.sites[0], ofirst = (om.sites && om.sites[0]) || om.site;
-        if (first && first === ofirst && om.icon) meta.icon = om.icon;
-        else if (first) meta.icon = await findIcon(first);
+        var first = meta.sites && meta.sites[0], ofirst = (om.sites && om.sites[0]) || om.site, found = null;
+        if (first && (first !== ofirst || !om.icon)) found = await findIcon(first);
+        if (found) meta.icon = found; else if (om.icon) meta.icon = om.icon; // never lose the icon because a lookup failed
       }
       var row = await todos.rpc('pproj_save', { p_token: token, p_id: id, p_name: nn, p_status: b.status || null, p_meta: meta });
       return send(res, 200, { project: row });

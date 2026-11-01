@@ -84,7 +84,8 @@ change the header in the endpoint file and regenerate._
 //   PATCH ?id {name?, status?, meta?} -> update; meta replaces the details (empty fields are dropped) -> { project }
 //   DELETE ?id               -> remove (its tasks stay, they just lose the link)
 // status: 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
-// Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
+// Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
+// a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
 // Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql, setup15.sql and setup16.sql.
 ```
 

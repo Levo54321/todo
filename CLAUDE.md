@@ -90,11 +90,18 @@ Keep it short: facts and rules, not history.
 - Vercel MCP file reads truncate at ~2 KB: read source from the repo. The workspace shell cannot reach the public
   internet (allowlist), so live-site checks go through the Vercel/Supabase tools or Luc.
 - Vercel tokens cannot be read-only; `VERCEL_TOKEN` is scoped to team teamevo with an expiry.
+- iPad Safari 9 `vh` is unreliable and nested scrollers in two directions fight over swipes. For fixed panes, turn the
+  outer `.scrollview` off and set px heights from `window.innerHeight` in JS on paint/resize/orientationchange (see
+  `layout()` in `pprojects.js`); give each scroll area `-webkit-overflow-scrolling:touch`, and the sideways strip
+  `overflow-y:hidden`. Keep scroll positions across repaints (`App.setHTML` replaces innerHTML).
+- My projects has an agreed 4-deploy plan in `docs/ROADMAP.md`; follow it and stop after each deploy for Luc to test.
 - Fetching a protected Vercel URL with `web_fetch_vercel_url` creates a temporary shareable bypass link on the
   alias; avoid it unless needed and tell Luc if it happens.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — My projects reordering must be drag and drop (Luc dislikes up/down arrows); reuse board.js touch drag.
+- 2026-11-01 — Fixed-height panes use JS heights from innerHeight, not vh (see Pitfalls).
 - 2026-11-01 — Moved all detailed instructions and context into this repo (CLAUDE.md, docs/, docs/API.md,
   docs/claude-project/). The Claude Project keeps only short stable instructions pointing here; skills are thin
   pointers to this file. Claude updates this file instead of asking Luc to re-upload docs.

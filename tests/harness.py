@@ -68,6 +68,8 @@ class H:
                 if 'events' in q: return 200, {'events': [e for e in self.pevents if e['pid'] == q['events'][0]][::-1]}
                 if 'vercel' in q:
                     if q['vercel'][0] == '1': return 200, {'configured': True, 'projects': [{'team': 'teamevo', 'name': 'holmlodge-hub', 'paused': False}, {'team': 'teamevo', 'name': 'old-app', 'paused': True}]}
+                    if q['vercel'][0] == 'teamevo/old-app':
+                        return 200, {'vercel': 'https://vercel.com/teamevo/old-app', 'sites': ['https://old-app.vercel.app'], 'github': 'https://github.com/Levo54321/old', 'paused': True}
                     return 200, {'vercel': 'https://vercel.com/' + q['vercel'][0], 'sites': ['https://hub.example.com', 'https://holmlodge-hub.vercel.app'], 'github': 'https://github.com/Levo54321/hub', 'paused': False}
                 if 'deploy' in q:
                     st = {}
