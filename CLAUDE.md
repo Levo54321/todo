@@ -94,12 +94,18 @@ Keep it short: facts and rules, not history.
   outer `.scrollview` off and set px heights from `window.innerHeight` in JS on paint/resize/orientationchange (see
   `layout()` in `pprojects.js`); give each scroll area `-webkit-overflow-scrolling:touch`, and the sideways strip
   `overflow-y:hidden`. Keep scroll positions across repaints (`App.setHTML` replaces innerHTML).
+- core.js reloads tasks and calls `App.render()` every 15 s, so a module's `paint()` runs constantly. It must be a no-op
+  when nothing changed: use `App.setHTML`'s return value and, when false, write nothing (no `.value`, `focus()`,
+  `scrollTop`, style heights). iOS 9 moves the cursor to the start when `.value` is set (even to the same text) and
+  repaints touch-scroll areas on scrollTop/height writes (flicker). Desktop Chrome hides both, so tests spy on the
+  writes (`idle_checks` in `tests/t_projects.py`). On a real redraw, restore focus and `setSelectionRange`.
 - My projects has an agreed 4-deploy plan in `docs/ROADMAP.md`; follow it and stop after each deploy for Luc to test.
 - Fetching a protected Vercel URL with `web_fetch_vercel_url` creates a temporary shareable bypass link on the
   alias; avoid it unless needed and tell Luc if it happens.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — My projects: the Idea lane shows only when it holds a project (In progress is first otherwise). Background redraws must write nothing (see Pitfalls).
 - 2026-11-01 — Personal project statuses live in four places: DB check + `pproj_save` (latest `db/setupNN.sql`), `api/pprojects.js` STATUS, `core.js` PP_SHELF, `pprojects.js` STAT/LABEL/SHELF/REASON/NOTLIVE/fold. Change all together.
 - 2026-11-01 — My projects reordering must be drag and drop (Luc dislikes up/down arrows); reuse board.js touch drag.
 - 2026-11-01 — Fixed-height panes use JS heights from innerHeight, not vh (see Pitfalls).

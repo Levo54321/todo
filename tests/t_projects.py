@@ -3,7 +3,9 @@ collapsible activity (plus core regression flows first).
 v1044 (Deploy 1): fixed-height layout (lanes scroll on their own, frozen side panel, back bar always visible) at iPad
 landscape, iPad portrait and iPhone sizes, and the Vercel picker replacing only the websites/GitHub it filled in.
 v1045 (Deploy 2): Idea status (shelved, Backlog default), Reason (edit, log, card), "still live on Vercel" warning,
-drag-and-drop order within a lane (mouse and synthetic touch), new projects first, order kept across lanes."""
+drag-and-drop order within a lane (mouse and synthetic touch), new projects first, order kept across lanes.
+v1046: Idea lane hidden when empty; background refreshes touch nothing (no flicker, cursor kept) and a real redraw
+keeps the cursor position in the field being typed in."""
 import importlib.util, os
 D = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(D, 'out'); os.makedirs(OUT, exist_ok=True)  # screenshots (git-ignored)
@@ -24,7 +26,7 @@ def run(h):
     old = [x for x in h.pprojects if x['name'] == 'Old App'][0]['id']
     chk('new projects default to In progress', all(x['status'] == 'in_progress' for x in h.pprojects))
     heads = [e.inner_text() for e in p.query_selector_all('#ppPane .bdhead .bdname')]
-    chk('6 status columns, Idea first', heads == ['Idea', 'In progress', 'Live', 'Paused', 'Not pursued', 'Shut down'], heads)
+    chk('5 status columns, In progress first (empty Idea lane hidden)', heads == ['In progress', 'Live', 'Paused', 'Not pursued', 'Shut down'], heads)
     for v in ('not_pursued', 'shut_down'):
         nm = p.query_selector('[data-pp=fold][data-val=%s] .bdname' % v)
         box = nm.bounding_box(); lh = p.evaluate('e => parseFloat(getComputedStyle(e).lineHeight)', nm)
@@ -34,7 +36,7 @@ def run(h):
     p.click('.ppcard[data-id="%s"] [data-pp=stat][data-val=live]' % hub); wait(500)
     chk('move to Live', calls('PATCH', '/api/pprojects')[-1][3] == {'status': 'live'})
     cols = p.query_selector_all('#ppPane .bdcol')
-    chk('card in Live column, not dimmed', 'Holmlodge Hub' in cols[2].inner_text() and 'off' not in p.get_attribute('.ppcard[data-id="%s"]' % hub, 'class'))
+    chk('card in Live column, not dimmed', 'Holmlodge Hub' in cols[1].inner_text() and 'off' not in p.get_attribute('.ppcard[data-id="%s"]' % hub, 'class'))
     # details with Vercel picker + multiple links
     p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait()
     p.fill('#ppTask', 'Fix the login bug'); p.press('#ppTask', 'Enter'); wait(500)
@@ -94,6 +96,7 @@ def run(h):
     layout_checks(h, chk, wait)
     picker_checks(h, chk, wait, calls)
     d2_checks(h, chk, wait, calls)
+    idle_checks(h, chk, wait)
     return R
 
 def layout_checks(h, chk, wait):
@@ -125,10 +128,11 @@ def layout_checks(h, chk, wait):
         chk(tag + ': In progress lane scrolls on its own', ip['sh'] > ip['ch'] and ip['ov'] == 'auto' and ip['bottom'] <= m['H'], ip)
         chk(tag + ': no horizontal page overflow', m['docW'] <= m['W'] and m['paneSW'] <= m['paneCW'] + 1, m)
         top0 = p.evaluate("document.getElementById('ppNew').getBoundingClientRect().top")
+        lv0 = p.evaluate("document.querySelector('.pplane[data-lane=live]').scrollTop")  # Playwright may have scrolled it to click a card
         p.evaluate("document.querySelector('.pplane[data-lane=in_progress]').scrollTop = 300"); wait(200)
         r = p.evaluate("""() => ({lane: document.querySelector('.pplane[data-lane=in_progress]').scrollTop, live: document.querySelector('.pplane[data-lane=live]').scrollTop,
             sv: document.querySelector('#vPprojects .scrollview').scrollTop, top: document.getElementById('ppNew').getBoundingClientRect().top})""")
-        chk(tag + ': scrolling one lane moves nothing else', r['lane'] > 0 and r['live'] == 0 and r['sv'] == 0 and abs(r['top'] - top0) < 1, r)
+        chk(tag + ': scrolling one lane moves nothing else', r['lane'] > 0 and r['live'] == lv0 and r['sv'] == 0 and abs(r['top'] - top0) < 1, (r, lv0))
         if m['colsSW'] > m['colsCW']:
             p.evaluate("document.querySelector('#ppPane .bdcols').scrollLeft = 200")
         p.click('[data-pp=fold][data-val=shut_down]'); wait(300)  # repaint
@@ -216,6 +220,8 @@ def d2_checks(h, chk, wait, calls):
     p.click('.ppcard[data-id="%s"] [data-pp=stat][data-val=idea]' % dream); wait(500)
     chk('move to Idea patches status idea', calls('PATCH', '/api/pprojects')[-1][3] == {'status': 'idea'})
     chk('card sits in the Idea lane', lane_ids('idea') == [dream], lane_ids('idea'))
+    heads = [e.inner_text() for e in p.query_selector_all('#ppPane .bdhead .bdname')]
+    chk('Idea lane appears first once it holds a project', heads[:2] == ['Idea', 'In progress'], heads)
     # project page: idea hint, Backlog default, reason
     p.click('.ppcard[data-id="%s"] .ppnm' % dream); wait(500)
     side = p.inner_text('.ppside')
@@ -242,6 +248,7 @@ def d2_checks(h, chk, wait, calls):
     chk('reason hidden for In progress', 'Why:' not in p.inner_text('.ppside') and not p.query_selector('[data-pp=redit]'))
     p.click('[data-pp=back]'); wait(300)
     chk('reason hidden on card for In progress', 'Why:' not in p.inner_text('.ppcard[data-id="%s"]' % dream))
+    chk('Idea lane hidden again once empty', not p.query_selector('[data-pp=fold][data-val=idea]') and p.inner_text('#ppPane .bdhead .bdname') == 'In progress')
     hub = pid('Holmlodge Hub')
     p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(500)
     p.click('[data-pp=stat][data-val=paused]'); wait(500)
@@ -302,4 +309,48 @@ def d2_checks(h, chk, wait, calls):
     gb = p.query_selector('.pplane[data-lane=in_progress] [data-pp=grip]').bounding_box()
     chk('drag handle is a 44px target', gb['width'] >= 44 and gb['height'] >= 44, gb)
     p.screenshot(path=os.path.join(OUT, 'd2_iphone.png'), full_page=True)
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)
+
+
+SPY = """() => { window._w = {value: 0, focus: 0, scroll: 0}; window._undo = [];
+  function wrap(proto, prop, key) { var d = Object.getOwnPropertyDescriptor(proto, prop);
+    Object.defineProperty(proto, prop, {get: d.get, set: function (v) { window._w[key]++; d.set.call(this, v); }, configurable: true});
+    window._undo.push(function () { Object.defineProperty(proto, prop, d); }); }
+  wrap(HTMLInputElement.prototype, 'value', 'value'); wrap(HTMLTextAreaElement.prototype, 'value', 'value');
+  wrap(Element.prototype, 'scrollTop', 'scroll'); wrap(Element.prototype, 'scrollLeft', 'scroll');
+  var f = HTMLElement.prototype.focus; HTMLElement.prototype.focus = function () { window._w.focus++; return f.apply(this, arguments); };
+  window._undo.push(function () { HTMLElement.prototype.focus = f; });
+  window._attr = 0; window._kids = 0;
+  window._mo = new MutationObserver(function (ms) { for (var i = 0; i < ms.length; i++) if (ms[i].type === 'attributes') window._attr++; else window._kids++; });
+  window._mo.observe(document.getElementById('vPprojects'), {attributes: true, childList: true, subtree: true}); }"""
+UNSPY = """() => { window._mo.disconnect(); for (var i = 0; i < window._undo.length; i++) window._undo[i]();
+  return {value: window._w.value, focus: window._w.focus, scroll: window._w.scroll, attr: window._attr, kids: window._kids}; }"""
+
+def idle_checks(h, chk, wait):
+    """The background refresh (core load() every 15s -> App.render) must not touch My projects when nothing changed."""
+    p = h.page
+    for (w, ht, tag) in ((1024, 768, 'iPad'), (390, 844, 'iPhone')):
+        p.set_viewport_size({'width': w, 'height': ht}); wait(400)
+        p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(800)
+        if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(400)
+        for where in ('board', 'page'):
+            if where == 'page': p.click('.pplane[data-lane=in_progress] .ppcard .ppnm'); wait(800)
+            fid = '#ppNew' if where == 'board' else '#ppTask'
+            p.click(fid); p.fill(fid, 'half-typed words'); p.evaluate("s => { var e = document.querySelector(s); e.focus(); e.setSelectionRange(4, 4); }", fid)
+            if where == 'page': p.evaluate("document.querySelector('.ppmain').scrollTop = 40")
+            p.evaluate(SPY)
+            for k in range(3):  # what core's 15-second refresh does: fresh copies of every task, then App.render()
+                p.evaluate("() => { var a = App.todos(), c = JSON.parse(JSON.stringify(a)); a.length = 0; for (var i = 0; i < c.length; i++) a.push(c[i]); App.render(); }"); wait(150)
+            r = p.evaluate(UNSPY)
+            sel = p.evaluate("s => [document.activeElement === document.querySelector(s), document.querySelector(s).selectionStart, document.querySelector(s).value]", fid)
+            chk('%s %s: background refresh writes nothing (no flicker)' % (tag, where), r == {'value': 0, 'focus': 0, 'scroll': 0, 'attr': 0, 'kids': 0}, r)
+            chk('%s %s: cursor stays where it was while typing' % (tag, where), sel == [True, 4, 'half-typed words'], sel)
+        # a real change while typing: the field is redrawn but the cursor comes back to the same place
+        p.evaluate("s => { var e = document.querySelector(s); e.focus(); e.setSelectionRange(6, 6); }", '#ppTask')
+        pid = p.evaluate("document.getElementById('ppPane').getAttribute('data-sel')")
+        p.evaluate("""pid => { var t = JSON.parse(JSON.stringify(App.todos()[0])); t.id = 'x' + Math.random(); t.title = 'Arrived from the phone'; t.pproject_id = pid;
+            t.pp_backlog = true; t.done = false; t.list = 'personal'; App.todos().push(t); App.render(); }""", pid); wait(300)
+        sel = p.evaluate("[document.activeElement && document.activeElement.id, document.getElementById('ppTask').selectionStart, document.getElementById('ppTask').value, document.getElementById('ppPane').innerText.indexOf('Arrived from the phone') >= 0]")
+        chk('%s: real redraw shows the change and keeps focus + cursor' % tag, sel == ['ppTask', 6, 'half-typed words', True], sel)
+        p.fill('#ppTask', ''); p.click('[data-pp=back]'); wait(300); p.fill('#ppNew', '')
     p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)

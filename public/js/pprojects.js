@@ -270,12 +270,13 @@
     h += '<div class="bdcols">';
     for (i = 0; i < STAT.length; i++) {
       s = STAT[i];
+      if (s === 'idea' && !by.idea.length) continue; // the Idea lane only shows when it holds a project
       var f = !!fold[s];
       h += '<section class="bdcol' + (f ? ' ppcolf' : '') + (NOTLIVE[s] ? ' hold' : '') + '">' +
         '<button class="bdhead" data-pp="fold" data-val="' + s + '" aria-expanded="' + (f ? 'false' : 'true') + '"><span class="bdname">' + LABEL[s] + '</span><span class="bdn">' + by[s].length + '</span><span class="bdcaret">' + (f ? '▸' : '▾') + '</span></button>';
       if (!f) {
         h += '<div class="pplane" data-lane="' + s + '">';
-        if (!by[s].length) h += '<div class="bdempty">' + (s === 'in_progress' ? 'Nothing in progress.' : s === 'live' ? 'Nothing live yet.' : s === 'idea' ? 'No ideas parked yet.' : 'None.') + '</div>';
+        if (!by[s].length) h += '<div class="bdempty">' + (s === 'in_progress' ? 'Nothing in progress.' : s === 'live' ? 'Nothing live yet.' : 'None.') + '</div>';
         for (var j = 0; j < by[s].length; j++) h += cardHTML(by[s][j], by[s].length > 1);
         h += '</div>';
       }
@@ -473,7 +474,10 @@
   /* ---------- fixed-height layout (wider than 760px) ---------- */
   var boardScroll = null, pageScroll = null, lt = null;
   function fixedMode() { return !(window.matchMedia && window.matchMedia('(max-width:760px)').matches); }
-  function setH(el, px) { if (el) el.style.height = px === '' ? '' : Math.max(px, 60) + 'px'; }
+  // Every write below is skipped when the value is already right: on iOS 9 writing a height or scrollTop on a
+  // touch-scrolling area repaints it (visible flicker), and the background refresh redraws every 15 seconds.
+  function setH(el, px) { if (!el) return; var v = px === '' ? '' : Math.round(Math.max(px, 60)) + 'px'; if (el.style.height !== v) el.style.height = v; }
+  function setTop(el, v) { if (el && el.scrollTop !== v) el.scrollTop = v; }
   function layout() { // size the scroll areas from the real window height
     var v = $('vPprojects'), pane = $('ppPane'); if (!v || !pane || !onView) return;
     var fix = fixedMode(), on = /(^|\s)ppfix(\s|$)/.test(v.className), cols = pane.querySelector('.bdcols'), wrap = pane.querySelector('.ppwrap'), i, ls, cs;
@@ -483,7 +487,7 @@
       if (wrap) { setH(wrap, ''); setH(pane.querySelector('.ppside'), ''); setH(pane.querySelector('.ppmain'), ''); }
       return;
     }
-    if (pane.parentNode) pane.parentNode.scrollTop = 0;
+    setTop(pane.parentNode, 0);
     var H = window.innerHeight || document.documentElement.clientHeight, GAP = 10;
     if (cols) {
       setH(cols, H - cols.getBoundingClientRect().top - GAP);
@@ -515,11 +519,11 @@
     var pane = $('ppPane'); if (!pane || !fixedMode()) return;
     var cols = pane.querySelector('.bdcols'), main = pane.querySelector('.ppmain'), side = pane.querySelector('.ppside'), ls, i, k;
     if (cols && boardScroll) {
-      cols.scrollLeft = boardScroll.left;
+      if (cols.scrollLeft !== boardScroll.left) cols.scrollLeft = boardScroll.left;
       ls = cols.querySelectorAll('.pplane');
-      for (i = 0; i < ls.length; i++) { k = ls[i].getAttribute('data-lane'); if (boardScroll.lanes.hasOwnProperty(k)) ls[i].scrollTop = boardScroll.lanes[k]; }
+      for (i = 0; i < ls.length; i++) { k = ls[i].getAttribute('data-lane'); if (boardScroll.lanes.hasOwnProperty(k)) setTop(ls[i], boardScroll.lanes[k]); }
     }
-    if (main && side && pageScroll && pageScroll.id === sel) { main.scrollTop = pageScroll.main; side.scrollTop = pageScroll.side; }
+    if (main && side && pageScroll && pageScroll.id === sel) { setTop(main, pageScroll.main); setTop(side, pageScroll.side); }
   }
   function relayout() { if (lt) clearTimeout(lt); lt = setTimeout(function () { lt = null; grabScroll(); layout(); putScroll(); }, 120); }
   window.addEventListener('resize', relayout, false);
@@ -533,15 +537,22 @@
     App.setHTML($('viewTitle'), p ? 'My projects<small>' + esc(p.name) + '</small>' : 'My projects');
     var keep = {}, ids = ['ppNew', 'ppTask', 'ppEdit'], i;
     for (i = 0; i < ids.length; i++) if ($(ids[i])) keep[ids[i]] = $(ids[i]).value;
-    var ae = document.activeElement, focusId = ae && ae.id ? ae.id : '', focusF = ae && ae.getAttribute ? ae.getAttribute('data-f') : null;
+    var ae = document.activeElement, focusId = ae && ae.id ? ae.id : '', focusF = ae && ae.getAttribute ? ae.getAttribute('data-f') : null, s0 = null, s1 = null;
+    try { if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) { s0 = ae.selectionStart; s1 = ae.selectionEnd; } } catch (e) {} // date inputs throw
     if (p) watchEvents(p);
     grabScroll();
-    $('ppPane').setAttribute('data-sel', p ? p.id : '');
-    App.setHTML($('ppPane'), p ? detailPage(p) : boardPage());
-    layout(); putScroll();
-    for (i = 0; i < ids.length; i++) if ($(ids[i]) && keep[ids[i]] !== undefined) $(ids[i]).value = keep[ids[i]];
-    if (focusId && $(focusId) && /^pp/.test(focusId)) $(focusId).focus();
-    else if (focusF) { var fe = $('ppPane').querySelector('[data-f="' + focusF + '"]'); if (fe) fe.focus(); }
+    var pane = $('ppPane'), sid = p ? p.id : '';
+    if (pane.getAttribute('data-sel') !== sid) pane.setAttribute('data-sel', sid);
+    var changed = App.setHTML(pane, p ? detailPage(p) : boardPage());
+    layout(); // writes nothing when the sizes are already right
+    if (!changed) return; // nothing new to show: leave the fields, focus and scroll exactly as they are
+    putScroll();
+    for (i = 0; i < ids.length; i++) if ($(ids[i]) && keep[ids[i]] !== undefined && $(ids[i]).value !== keep[ids[i]]) $(ids[i]).value = keep[ids[i]];
+    var fe = focusId && /^pp/.test(focusId) ? $(focusId) : (focusF ? pane.querySelector('[data-f="' + focusF + '"]') : null);
+    if (fe && fe !== ae) { // the field was redrawn: focus it again and put the cursor back where it was
+      fe.focus();
+      if (s0 !== null) try { fe.setSelectionRange(s0, s1); } catch (e2) {}
+    }
   }
 
   /* ---------- actions ---------- */
