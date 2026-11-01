@@ -1,7 +1,7 @@
 """Playwright mock harness for luc-todo. Serves public/ and mocks /api/* with an in-memory store.
 Usage (from the repo root): python3 tests/harness.py . tests/t_projects.py   (a test module exposes run(h))
 Needs: pip install playwright (Chromium: set CHROME=/path/to/chrome or run python3 -m playwright install chromium)."""
-import json, os, sys, uuid, datetime, importlib.util, mimetypes, re
+import json, os, sys, uuid, datetime, importlib.util, mimetypes, re, hashlib
 from urllib.parse import urlparse, parse_qs
 from playwright.sync_api import sync_playwright
 
@@ -34,6 +34,8 @@ class H:
         self.pprojects = []
         self.pevents = []
         self.calls = []
+        self.same = 0  # how many GET /api/todos?v= were answered "same" (unchanged)
+        self.fail_delete = False  # make DELETE /api/todos answer 500 (the task stays on the server)
         self.errors = []
         self.extra = {}
         self.vault = {'configured': True, 'pw': None, 'pass': None, 'n': 0, 'fails': 0, 'entries': {}, 'gets': 0}
@@ -44,7 +46,10 @@ class H:
         self.calls.append((method, path, q, body))
         if path in self.extra: return self.extra[path](self, method, q, body)
         if path == '/api/todos':
-            if method == 'GET': return 200, {'today': TODAY, 'now': NOW, 'todos': self.todos}
+            if method == 'GET':
+                v = hashlib.sha1(json.dumps(self.todos, sort_keys=True).encode()).hexdigest()[:20]  # like api/todos.js: fingerprint of the list, not of `now`
+                if q.get('v', [None])[0] == v: self.same += 1; return 200, {'same': True, 'today': TODAY, 'now': NOW}
+                return 200, {'today': TODAY, 'now': NOW, 'v': v, 'todos': self.todos}
             if method == 'POST':
                 title = body.get('text') or body.get('title')
                 t = task(title, list='work' if (re.search(r'\swork$', title or '') or body.get('list') == 'work') else 'personal')
@@ -63,6 +68,7 @@ class H:
                     elif k in t: t[k] = v
                 return 200, {'todo': t, 'next': nxt}
             if method == 'DELETE':
+                if self.fail_delete: return 500, {'error': 'upstream error'}
                 self.todos = [t for t in self.todos if t['id'] != q['id'][0]]; return 200, {'ok': True}
         if path == '/api/pprojects' and 'vault' in q:  # mirrors api/_vault.js (crypto itself is tested in tests/vault_node.js)
             V = self.vault; a = body.get('action')

@@ -1,6 +1,10 @@
 // /api/todos — thin, token-gated API in front of Supabase.
 // The iPad (iOS 9) and phone only ever talk to this endpoint, never to Supabase directly.
-// GET    /api/todos                 -> { today, todos: [...] }
+// GET    /api/todos                 -> { today, now, v, todos: [...] }
+// GET    /api/todos?v=<fingerprint> -> the same, unless the list is unchanged since the one with fingerprint v: then only
+//                                      { same:true, today, now } (about 70 bytes instead of the full list, about 80 KB). v is a short hash
+//                                      of the list (not of `now`) and comes back in every full reply. No ?v= (an older cached app, the
+//                                      Shortcuts, the ?open=latest check) always gets the full list.
 // POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id?, pp_backlog? }
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
@@ -8,9 +12,14 @@
 // DELETE /api/todos?id=<uuid>
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
 
+var crypto = require('crypto');
+
 var SB_URL = process.env.SUPABASE_URL;
 var SB_KEY = process.env.SUPABASE_KEY;
 var TZ = 'Europe/London';
+
+// Short fingerprint of the list the database returned, so the app can ask "has anything changed?" without downloading it all.
+function fingerprint(list) { return crypto.createHash('sha1').update(JSON.stringify(list)).digest('hex').slice(0, 20); }
 
 var DAYS = {
   mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, weds: 3, wednesday: 3,
@@ -250,8 +259,9 @@ module.exports = async function handler(req, res) {
     var today = todayISO();
 
     if (req.method === 'GET') {
-      var list = await rpc('todo_list', { p_token: token });
-      return send(res, 200, { today: today, now: new Date().toISOString(), todos: list });
+      var list = await rpc('todo_list', { p_token: token }), fp = fingerprint(list), nowIso = new Date().toISOString();
+      if (typeof query.v === 'string' && query.v === fp) return send(res, 200, { same: true, today: today, now: nowIso });
+      return send(res, 200, { today: today, now: nowIso, v: fp, todos: list });
     }
 
     if (req.method === 'POST') {
@@ -416,3 +426,4 @@ module.exports.parseQuick = parseQuick; // exported for local tests
 module.exports.rpc = rpc;
 module.exports.projectList = projectList;
 module.exports.todayISO = todayISO;
+module.exports.fingerprint = fingerprint;

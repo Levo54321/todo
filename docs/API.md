@@ -167,7 +167,11 @@ change the header in the endpoint file and regenerate._
 ```
 // /api/todos — thin, token-gated API in front of Supabase.
 // The iPad (iOS 9) and phone only ever talk to this endpoint, never to Supabase directly.
-// GET    /api/todos                 -> { today, todos: [...] }
+// GET    /api/todos                 -> { today, now, v, todos: [...] }
+// GET    /api/todos?v=<fingerprint> -> the same, unless the list is unchanged since the one with fingerprint v: then only
+//                                      { same:true, today, now } (about 70 bytes instead of the full list, about 80 KB). v is a short hash
+//                                      of the list (not of `now`) and comes back in every full reply. No ?v= (an older cached app, the
+//                                      Shortcuts, the ?open=latest check) always gets the full list.
 // POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id?, pp_backlog? }
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.

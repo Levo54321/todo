@@ -67,7 +67,7 @@ Keep it short: facts and rules, not history.
    frontend and keep the old value accepted for a release.
 5. **Tests** (`tests/`, see `tests/README.md`): Playwright with every `/api/*` mocked (`tests/harness.py`), the built
    `public/index.html` in Chromium, real clicks and DOM assertions; `node tests/es5.js public/js/*.js` parses every
-   module as ES5. Extend the mock and add a test module for new work. Cover the new work plus the existing flows that
+   module as ES5; `node tests/todos_node.js`, `vault_node.js` and `gcal_node.js` cover the server side without a network. Extend the mock and add a test module for new work. Cover the new work plus the existing flows that
    must not break: quick add and the iPhone Shortcut (`POST /api/todos {text}`), recurring tasks, Work ordering
    (`cmpWork`), pause and blocked, projects/board, calendar prompts, budget, Insights, screensaver. Check iPad
    (1024×768) and iPhone (390×844) widths for horizontal overflow. Set localStorage `railOpen=1` and
@@ -94,11 +94,25 @@ Keep it short: facts and rules, not history.
   outer `.scrollview` off and set px heights from `window.innerHeight` in JS on paint/resize/orientationchange (see
   `layout()` in `pprojects.js`); give each scroll area `-webkit-overflow-scrolling:touch`, and the sideways strip
   `overflow-y:hidden`. Keep scroll positions across repaints (`App.setHTML` replaces innerHTML).
-- core.js reloads tasks and calls `App.render()` every 15 s, so a module's `paint()` runs constantly. It must be a no-op
+- core.js checks for changes every 30 s and calls `App.render()` whenever the list came back in full, and about once a
+  minute otherwise (see "Polling" below), so a module's `paint()` runs constantly. It must be a no-op
   when nothing changed: use `App.setHTML`'s return value and, when false, write nothing (no `.value`, `focus()`,
   `scrollTop`, style heights). iOS 9 moves the cursor to the start when `.value` is set (even to the same text) and
   repaints touch-scroll areas on scrollTop/height writes (flicker). Desktop Chrome hides both, so tests spy on the
   writes (`idle_checks` in `tests/t_projects.py`). On a real redraw, restore focus and `setSelectionRange`.
+- **Polling (v1052)**: `GET /api/todos?v=<fingerprint>` answers `{same:true,today,now}` when the list is unchanged, else
+  the full list plus its fingerprint `v` (no `?v=` always means the full list: older cached apps, Shortcuts, the
+  `?open=latest` check in `shell.html`). In core.js `load()` sends `v` only while nothing was edited here since the list
+  it belongs to (`vMut === lastMutation`). Rules that keep the screen honest: (1) code that changes `todos` locally must set
+  `lastMutation` (`App.mutated()`); (2) every "refresh and trust the server over what is on screen" path must call
+  `forceLoad()` (clears `v`), never `lastMutation = 0; load()`, or a failed save would be answered "same" and stay wrong;
+  (3) a "same" reply skips `render()` except when offline/not loaded/day changed/the minute moved on, because the glance
+  strip greys finished events and the "new" quick-chips expire by the clock; (4) the idle counter counts 30 s ticks
+  (20 = 10 minutes), `CAL_EVERY` (5 min) governs Apple calendar sync and its 30 s retry. Run `node tests/todos_node.js`
+  after touching `api/todos.js` GET.
+- Playwright's `clock.install(time=...)` reads a bare number as **seconds** (a millisecond value puts the page in year
+  58804); pass a `datetime`. `h.calls` in the harness is shared by every open page: count a page's own requests with
+  `pg.on('request')` when timing matters.
 - **Vercel Hobby plan: max 12 serverless functions per deployment** (every `api/*.js` is one; there are 12). A 13th file
   makes the deploy fail with `exceeded_serverless_functions_per_deployment` while the old version stays live. Add new
   endpoints as a route inside an existing file, with shared code in `api/_name.js` (a leading `_` is not a function).
@@ -108,6 +122,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Audit Deploy D (v1052, polling diet C5) done: `GET /api/todos?v=` "same" replies, 30 s refresh (idle still 10 min), Apple calendar sync every 5 min; rules in Pitfalls "Polling (v1052)". Two things beyond the approved plan, both to keep behaviour: `forceLoad()` for every refresh-and-trust-server path, and a "same" reply still redraws once a minute (clock-driven bits). New `tests/todos_node.js`; Deploy D browser checks are `deploy_d()` in `tests/t_deploya.py`. `docs/audit-2026-11/scripts/audit_calls.py` now also reports bytes. Next: Luc picks from `docs/AUDIT-2026-11.md` section 5 after testing v1052.
 - 2026-11-01 — Luc's iPhone Shortcuts use `?t=`: do NOT remove `?t=` support from any endpoint until he says (tabled with C1 token rotation). Anything that needs work from Luc (rotation, updating Shortcuts, env changes) is tabled until he asks. Google sign-in now starts by POST (v1051); run `node tests/gcal_node.js` after touching `api/gcal.js`.
 - 2026-11-01 — Modules needing the token use `App.whenToken(fn)` (never poll with retries); `/api/projects` is fetched via `App.getProjects(cb)` (shared in-flight). Audit Deploy A (v1050) done; B (token safety), C (rotation), D (polling) wait for Luc's go-ahead after he tests each. New test module `tests/t_deploya.py` (chains t_projects); run it instead of t_projects.
 - 2026-11-01 — Audit `docs/AUDIT-2026-11.md` (findings + prioritised list; Luc picks what gets fixed). Its measuring scripts live in `docs/audit-2026-11/scripts/` (they import `tests/harness.py` minus its last `main()` line); re-run them before/after performance work.

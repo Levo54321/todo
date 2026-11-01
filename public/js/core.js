@@ -14,6 +14,7 @@
 
   var token = null, todos = [], today = null, serverOffset = 0;
   var loaded = false, inflight = false, online = true, lastMutation = 0;
+  var lastV = null, vMut = 0, lastLoadMin = 0; // list fingerprint from the server, the lastMutation it belongs to, minute of the last render from load()
   var settings = { city: '', place: '', units: 'c', calendar_set: false, caldav: false, stale_days: 14, night_start: 22, night_end: 6 };
   try { var sc = JSON.parse(store.get('settingsCache') || 'null'); if (sc) for (var sk in sc) if (sc.hasOwnProperty(sk)) settings[sk] = sc[sk]; } catch (e) {}
   var pv = null, autoPrev = false, sess = null, setDraft = null, pendingOpen = null, itemsSaving = false, itemsDirty = false;
@@ -77,17 +78,31 @@
     x.send(body ? JSON.stringify(body) : null);
   }
 
+  function forceLoad() { lastMutation = 0; lastV = null; load(); } // "trust the server over what is on screen": always asks for the full list
   function load() {
     if (!token || inflight || editing || rv || sess || setDraft || pv || drag || askCb) return;
     inflight = true;
-    api('GET', '', null, function (status, data) {
+    /* Ask "has anything changed?": send the fingerprint of the list we hold, but only while nothing was edited here since
+       (any local edit sets lastMutation, and then we want the full list back to be sure the screen matches the server). */
+    var qs = (lastV && vMut === lastMutation) ? '?v=' + encodeURIComponent(lastV) : '';
+    api('GET', qs, null, function (status, data) {
       inflight = false;
       if (status === 200 && data) {
-        if (Date.now() - lastMutation > 2500) todos = data.todos || [];
+        var wasOnline = online, wasLoaded = loaded, wasToday = today, min = Math.floor(Date.now() / 60000);
         today = data.today || today;
         if (data.now) { var t = Date.parse(data.now); if (!isNaN(t)) serverOffset = t - Date.now(); }
         loaded = true; online = true;
-        render();
+        if (data.same === true) {
+          /* Unchanged on the server: keep the list as it is. Redraw only if something visible can have changed: we were
+             offline or not loaded, the day turned over, or the minute moved on (calendar events grey out once over, the
+             "new" quick-chips expire after 30 minutes). The redraw is local (no network) and writes nothing when the page is the same. */
+          if (!wasOnline || !wasLoaded || today !== wasToday || min !== lastLoadMin) { lastLoadMin = min; render(); }
+        } else {
+          if (Date.now() - lastMutation > 2500) { todos = data.todos || []; lastV = data.v || null; vMut = lastMutation; }
+          else lastV = null; // list not taken (edited a moment ago): ask for the full list next time
+          lastLoadMin = min;
+          render();
+        }
         maybeAutoReview();
         maybeAutoPreview();
         maybeOpenPending();
@@ -686,7 +701,7 @@
       if (s === 200 && d && d.todo) {
         merge(d.todo); lastMutation = Date.now(); render();
         if (d.cal === 'error') toast('Saved, but Apple Calendar did not update');
-        if (d.todo.recur && patch.hasOwnProperty('done')) { lastMutation = 0; load(); } // pick up the next repeat
+        if (d.todo.recur && patch.hasOwnProperty('done')) { forceLoad(); } // pick up the next repeat
       }
       else {
         var t = find(id);
@@ -925,8 +940,8 @@
   function doDelete(id, scope) {
     closeSheet(); remove(id); render(); lastMutation = Date.now();
     api('DELETE', '?id=' + encodeURIComponent(id) + (scope === 'one' ? '&scope=one' : ''), null, function (s) {
-      if (s !== 200) { toast('Could not delete, refreshing'); lastMutation = 0; load(); }
-      else if (scope === 'one') { lastMutation = 0; load(); } // the next repeat appears
+      if (s !== 200) { toast('Could not delete, refreshing'); forceLoad(); }
+      else if (scope === 'one') { forceLoad(); } // the next repeat appears
     });
   }
   function ask(o, cb) {
@@ -938,13 +953,14 @@
     $('askCard').innerHTML = h + '</div>'; askCb = cb; $('ask').style.display = 'flex';
   }
   function askDone(i) { var cb = askCb; askCb = null; $('ask').style.display = 'none'; if (cb) cb(i); }
+  var CAL_EVERY = 5 * 60000;
   function maybeCalSync() { // pull any edits made in the Calendar app, at most every 5 minutes
-    if (!settings.caldav || idle || calBusy || Date.now() - lastCalSync < 2 * 60000) return;
+    if (!settings.caldav || idle || calBusy || Date.now() - lastCalSync < CAL_EVERY) return;
     calBusy = true;
     api('POST', '?sync=1', {}, function (s, d) {
       calBusy = false;
-      if (s === 200 && d) { lastCalSync = Date.now(); if (d.changed) { lastMutation = 0; load(); } }
-      else lastCalSync = Date.now() - 90000; /* failed: retry in ~30s */
+      if (s === 200 && d) { lastCalSync = Date.now(); if (d.changed) { forceLoad(); } }
+      else lastCalSync = Date.now() - (CAL_EVERY - 30000); /* failed: retry in ~30s */
     }, '/api/cal');
   }
 
@@ -981,7 +997,7 @@
   }
   function closePreview() {
     pv = null; $('preview').style.display = 'none';
-    lastMutation = 0; load();
+    forceLoad();
   }
   function maybeAutoPreview() {
     if (autoPrev || !loaded) return;
@@ -1364,7 +1380,7 @@
 
   /* reviews */
   function showReview() { $('review').style.display = 'flex'; }
-  function closeReview() { rv = null; $('review').style.display = 'none'; lastMutation = 0; load(); }
+  function closeReview() { rv = null; $('review').style.display = 'none'; forceLoad(); }
   function openStale() {
     var g = groups();
     if (!g.stale.length) { toast('Nothing to review'); return; }
@@ -1444,7 +1460,7 @@
     } else if (act === 'rvdrop') {
       remove(id); render(); lastMutation = Date.now();
       api('DELETE', '?id=' + encodeURIComponent(id), null, function (s) {
-        if (s !== 200) { toast('Could not delete, refreshing'); lastMutation = 0; load(); }
+        if (s !== 200) { toast('Could not delete, refreshing'); forceLoad(); }
       });
     }
     rvAdvance();
@@ -1683,7 +1699,7 @@
   document.addEventListener('webkitvisibilitychange', function () { if (!hidden()) load(); }, false);
   window.addEventListener('pageshow', load, false);
   window.addEventListener('focus', load, false);
-  setInterval(function () { if (hidden()) return; if (idle && ++idleTicks < 40) return; idleTicks = 0; load(); }, 15000); // idle: refresh every 10 minutes
+  setInterval(function () { if (hidden()) return; if (idle && ++idleTicks < 20) return; idleTicks = 0; load(); }, 30000); // every 30 s; idle: every 10 minutes (20 ticks)
   setInterval(tickClock, 10000);
   setInterval(function () { if (!idle) loadGlance(); }, 10 * 60000);
 
@@ -1699,7 +1715,7 @@
   App.settings = settings;
   App.render = render;
   App.ask = ask;
-  App.reload = function () { lastMutation = 0; load(); };
+  App.reload = function () { forceLoad(); };
   // Projects board <-> Work list
   App.isPaused = isPaused;
   App.isShelved = isShelved;

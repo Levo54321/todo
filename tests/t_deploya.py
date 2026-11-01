@@ -6,9 +6,9 @@ from urllib.parse import urlparse, parse_qs
 D = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(D)
 spec = importlib.util.spec_from_file_location('tp', os.path.join(D, 't_projects.py')); tp = importlib.util.module_from_spec(spec); spec.loader.exec_module(tp)
 
-def fresh(h, token_js, w=1024, hh=768):
+def fresh(h, token_js, w=1024, hh=768, tz=None):
     b = h.page.context.browser
-    ctx = b.new_context(viewport={'width': w, 'height': hh})
+    ctx = b.new_context(viewport={'width': w, 'height': hh}, timezone_id=tz) if tz else b.new_context(viewport={'width': w, 'height': hh})
     ctx.add_init_script("if(!sessionStorage.getItem('x')){sessionStorage.setItem('x','1');" + token_js + "localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');localStorage.setItem('weekSeen','2026-11-01');}")
     def route(r):
         u = urlparse(r.request.url)
@@ -97,4 +97,108 @@ def run(h):
     ctx = fresh(h, ''); pg = ctx.new_page(); pg.goto('http://todo.test/#t=tok'); pg.wait_for_timeout(1200)
     chk('#t= link signs in and clears the token from the address bar', pg.url == 'http://todo.test/' and pg.evaluate("localStorage.getItem('todoToken')") == 'tok' and not pg.is_visible('#gate'), pg.url)
     ctx.close()
+    deploy_d(h, chk)
     return R
+
+def deploy_d(h, chk):
+    """v1052 (Deploy D, polling diet): the list is only downloaded when it changed ("same" replies), refresh every 30 s,
+    idle still every 10 minutes, calendar sync every 5 minutes."""
+    import uuid
+    def gets(n0): return [c for c in h.calls[n0:] if c[0] == 'GET' and c[1] == '/api/todos']
+    SPY = """(function(){window.__w={html:0,scroll:0};
+      var d=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
+      Object.defineProperty(Element.prototype,'innerHTML',{get:d.get,set:function(v){window.__w.html++;d.set.call(this,v);},configurable:true});
+      var s=Object.getOwnPropertyDescriptor(Element.prototype,'scrollTop');
+      Object.defineProperty(Element.prototype,'scrollTop',{get:s.get,set:function(v){window.__w.scroll++;s.set.call(this,v);},configurable:true});})()"""
+    FOCUS = "window.dispatchEvent(new Event('focus'))"
+    h.page.evaluate('App.setIdle(true)')  # the suite's own page keeps polling on a real timer; quiet it so it cannot add calls to the counts below
+    def extra(*pairs):  # set mock overrides, return what to restore
+        saved = [(p, h.extra.get(p)) for p, _ in pairs]
+        for p, f in pairs: h.extra[p] = f
+        return saved
+    def restore(saved):
+        for p, f in saved:
+            if f: h.extra[p] = f
+            else: h.extra.pop(p, None)
+
+    # 1. a "same" reply leaves the list in memory and the screen untouched
+    ctx = fresh(h, "localStorage.setItem('todoToken','tok');"); pg = ctx.new_page()
+    n0 = len(h.calls); pg.goto('http://todo.test/'); pg.wait_for_timeout(1500)
+    g = gets(n0)
+    chk('D: first load sends no ?v= and gets the full list', g and 'v' not in g[0][2] and pg.evaluate('App.todos().length') == len(h.todos), [x[2] for x in g])
+    pg.evaluate(SPY); pg.evaluate('window.__ref = App.todos()')
+    n1, s1 = len(h.calls), h.same
+    pg.evaluate(FOCUS); pg.wait_for_timeout(800)
+    g = gets(n1)
+    chk('D: next refresh sends ?v= and is answered "same"', len(g) == 1 and 'v' in g[0][2] and h.same == s1 + 1, ([x[2] for x in g], h.same - s1))
+    chk('D: a "same" reply keeps the very same list in memory', pg.evaluate('App.todos() === window.__ref'))
+    w = pg.evaluate('window.__w')
+    chk('D: a "same" reply writes nothing to the page (no innerHTML, no scroll writes)', w['html'] == 0 and w['scroll'] == 0, w)
+
+    # 2. a change made elsewhere comes back as the full list and shows up
+    h.todos.append(dict(h.todos[2], id=str(uuid.uuid4()), title='Added on another device', due_date=None, done=False, list='personal', pproject_id=None, pp_backlog=False, paused=False, blocked=False))
+    n2, s2 = len(h.calls), h.same
+    pg.evaluate(FOCUS); pg.wait_for_timeout(800)
+    g = gets(n2)
+    chk('D: a change elsewhere gives the full list again (not "same") and shows on screen', len(g) == 1 and 'v' in g[0][2] and h.same == s2 and 'Added on another device' in pg.inner_text('body'), (h.same - s2, len(g)))
+    n3, s3 = len(h.calls), h.same
+    pg.evaluate(FOCUS); pg.wait_for_timeout(800)
+    chk('D: ...and the refresh after that is "same" again', h.same == s3 + 1 and 'v' in gets(n3)[0][2])
+
+    # 3. after an edit made here, the next refreshes ask for the full list until it has been taken in
+    pg.evaluate('App.mutated()')
+    n4 = len(h.calls); pg.evaluate(FOCUS); pg.wait_for_timeout(600)
+    g1 = gets(n4)
+    pg.wait_for_timeout(2600)
+    n5 = len(h.calls); pg.evaluate(FOCUS); pg.wait_for_timeout(600)
+    g2 = gets(n5)
+    n6, s6 = len(h.calls), h.same; pg.evaluate(FOCUS); pg.wait_for_timeout(600)
+    g3 = gets(n6)
+    chk('D: right after a local edit the refresh asks for the full list (no ?v=)', len(g1) == 1 and 'v' not in g1[0][2], [x[2] for x in g1])
+    chk('D: ...and again once the 2.5 s edit guard has passed, so the list is taken in', len(g2) == 1 and 'v' not in g2[0][2], [x[2] for x in g2])
+    chk('D: ...then back to "same"', len(g3) == 1 and 'v' in g3[0][2] and h.same == s6 + 1, ([x[2] for x in g3], h.same - s6))
+    ctx.close()
+
+    # 4. a failed delete heals: the task comes back even though nothing was edited before (the "refresh and trust the server" paths)
+    ctx = fresh(h, "localStorage.setItem('todoToken','tok');"); pg = ctx.new_page(); pg.goto('http://todo.test/'); pg.wait_for_timeout(1500)
+    tid = pg.evaluate("(function(){var a=App.todos();for(var i=0;i<a.length;i++)if(!a[i].done&&!a[i].recur&&!a[i].due_date&&a[i].list==='personal'&&!a[i].paused&&!a[i].pproject_id)return a[i].id+'|'+a[i].title;return ''})()")
+    tid, ttitle = tid.split('|', 1)
+    pg.evaluate(FOCUS); pg.wait_for_timeout(600)  # now holding a fingerprint, as a long-open page would
+    h.fail_delete = True; h.allow.append('500')
+    pg.locator('[data-act=edit][data-id="%s"]' % tid).first.click(position={'x': 12, 'y': 10}); pg.wait_for_timeout(400)  # the title, not a chip
+    pg.click('#eMoreBtn'); pg.wait_for_timeout(200)  # Delete lives under "More options"
+    pg.once('dialog', lambda dlg: dlg.accept())
+    pg.click('[data-act=delete]'); pg.wait_for_timeout(1500)
+    h.fail_delete = False
+    chk('D: failed delete (server says 500): the task is back on screen after the refresh', pg.evaluate("App.find('%s') !== null" % tid) and ttitle in pg.inner_text('body'), ttitle)
+    ctx.close()
+
+    # 5. timers, on a fake clock: 30 s refresh, idle every 10 minutes, calendar sync every 5 minutes, clock-driven changes still redraw
+    import datetime
+    T0 = datetime.datetime(2026, 11, 1, 10, 0, tzinfo=datetime.timezone.utc)  # a datetime: a bare number is read as seconds
+    saved = extra(('/api/glance', lambda hh, m, q, body: (200, {'calendar': True, 'events': [{'s': '09:00', 'e': '10:30', 'title': 'Standup', 'allDay': False}]})),
+                  ('/api/settings', lambda hh, m, q, body: (200, {'settings': {'caldav': True}})),
+                  ('/api/cal', lambda hh, m, q, body: (200, {'connected': True, 'changed': False})))
+    ctx = fresh(h, "localStorage.setItem('todoToken','tok');localStorage.setItem('saverTimeout','0');", tz='UTC'); pg = ctx.new_page()
+    pg.clock.install(time=T0)
+    pg.goto('http://todo.test/'); pg.wait_for_timeout(1500); pg.clock.run_for(3000); pg.wait_for_timeout(300)
+    chk('D: calendar event shows and is not greyed at 10:00 (ends 10:30)', pg.query_selector('#glance .ev') is not None and pg.query_selector('#glance .ev.past') is None, pg.inner_html('#glance')[:120])
+    n7 = len(h.calls)
+    for i in range(10): pg.clock.run_for(30000); pg.wait_for_timeout(60)
+    g = gets(n7)
+    chk('D: foreground refresh runs every 30 s (about 10 in 5 minutes, was 20)', 9 <= len(g) <= 10, len(g))
+    chk('D: ...and each one asks with ?v=', all('v' in x[2] for x in g), [x[2] for x in g][:3])
+    for i in range(52): pg.clock.run_for(30000); pg.wait_for_timeout(40)  # on to 10:31
+    chk('D: a "same" refresh still redraws as the clock moves on (calendar event greys out after 10:30)', pg.query_selector('#glance .ev.past') is not None, pg.inner_html('#glance')[:160])
+    syncs = [c for c in h.calls[n7:] if c[0] == 'POST' and c[1] == '/api/cal']
+    mins = 31
+    chk('D: Apple calendar sync about every 5 minutes (%d syncs in %d minutes, was about every 2)' % (len(syncs), mins), mins // 6 <= len(syncs) <= mins // 5 + 1, len(syncs))
+    pg.evaluate('App.setIdle(true)')
+    n8 = len(h.calls); mine = []  # this page's own requests (h.calls also holds other open pages' polls)
+    pg.on('request', lambda r: mine.append(r.url) if '/api/todos' in r.url and r.method == 'GET' else None)
+    for i in range(10): pg.clock.run_for(30000); pg.wait_for_timeout(40)
+    c5 = len(mine)
+    for i in range(12): pg.clock.run_for(30000); pg.wait_for_timeout(40)
+    c11 = len(mine)
+    chk('D: idle slowdown unchanged: no refresh in the first 5 minutes, one by 11 minutes', c5 == 0 and c11 == 1, (c5, c11, 'all pages: %d' % len(gets(n8))))
+    ctx.close(); restore(saved)
