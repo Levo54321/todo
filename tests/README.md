@@ -8,6 +8,7 @@
   (mouse and synthetic touch), project costs, account labels and icons, the vault UI, Vercel picker, fixed-height layout at 1024×768, 768×1024 and 390×844, and idle checks that
   spy on value/focus/scroll writes during the 15 s background refresh (Chrome hides iOS 9's cursor and flicker issues).
 - `t_deploya.py` (v1050, chains `t_projects`): late token (3 s and 15 s) still loads every module with one `/api/projects` fetch, Work board writes no scroll on idle ticks, board error + Try again, header not clipped at 1024/768/390. Run this one for the full suite.
+- `gcal_node.js` (v1051): Google sign-in start/state with no network (token not in the address, tampered state refused, old GET start retired).
 - `es5.js`: parses every `public/js/*.js` as ES5 and warns about iOS 9 gaps.
 - `vault_node.js`: the vault's server-side crypto with an in-memory database (`node tests/vault_node.js`): ciphertext only,
   locked state, pass expiry, lockout, wrong pepper, reset, nothing sensitive in logs.

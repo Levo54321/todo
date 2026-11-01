@@ -1,7 +1,7 @@
 # luc-todo — roadmap
 
 _Audit 1 Nov 2026: see `docs/AUDIT-2026-11.md` for findings and a prioritised list (C1–C6, W1–W10, P1–P8). Items move here once Luc approves them._
-_Done in v1050 (Deploy A): C3, C4, W3, W4, P1. Next: Deploy B (C2, W2)._
+_Done: v1050 (Deploy A) C3, C4, W3, W4, P1; v1051 (Deploy B) C2 and the `#t=` half of W2. Tabled by Luc (needs work from him): C1 token rotation and the `?t=` restriction (his Shortcuts use `?t=`). Next: Deploy D (polling diet, C5) unless Luc says otherwise._
 
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.

@@ -108,6 +108,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Luc's iPhone Shortcuts use `?t=`: do NOT remove `?t=` support from any endpoint until he says (tabled with C1 token rotation). Anything that needs work from Luc (rotation, updating Shortcuts, env changes) is tabled until he asks. Google sign-in now starts by POST (v1051); run `node tests/gcal_node.js` after touching `api/gcal.js`.
 - 2026-11-01 — Modules needing the token use `App.whenToken(fn)` (never poll with retries); `/api/projects` is fetched via `App.getProjects(cb)` (shared in-flight). Audit Deploy A (v1050) done; B (token safety), C (rotation), D (polling) wait for Luc's go-ahead after he tests each. New test module `tests/t_deploya.py` (chains t_projects); run it instead of t_projects.
 - 2026-11-01 — Audit `docs/AUDIT-2026-11.md` (findings + prioritised list; Luc picks what gets fixed). Its measuring scripts live in `docs/audit-2026-11/scripts/` (they import `tests/harness.py` minus its last `main()` line); re-run them before/after performance work.
 - 2026-11-01 — Vault (`api/_vault.js`, via `POST /api/pprojects?vault=1`): never log, return, or put in URLs/activity any vault value, name, password or pass; POST only; Luc sets the vault password in the app and `VAULT_PEPPER` in Vercel himself (never ask for or handle either). Run `node tests/vault_node.js` after touching the vault.
