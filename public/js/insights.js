@@ -105,7 +105,7 @@
       h += '<div style="flex:1;text-align:center;margin:0 2px"><div style="height:44px;border-radius:8px;border:1px solid var(--rule);background:var(--chip);position:relative;overflow:hidden">' +
         (a ? '<div style="position:absolute;left:0;right:0;top:0;bottom:0;background:var(--accent);opacity:' + a.toFixed(2) + '"></div>' : '') +
         '<div style="position:relative;line-height:44px;font-weight:600;font-size:14px;color:var(--ink)">' + vals[i] + '</div></div>' +
-        '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + esc(labels[i]) + '</div></div>';
+        '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + esc(labels[i]) + '</div></div>';
     }
     return h + '</div>';
   }

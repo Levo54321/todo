@@ -30,10 +30,18 @@ def run(h):
     chk('resume calls /api/pause', calls('POST', '/api/pause'))
     # board, insights, budget, plan views
     for v, sel, word in [('board', '#boardPane', 'Alpha'), ('insights', '#insightsPane', ''), ('budget', '#budgetPane', ''), ('plan', '#planPane', '')]:
-        p.click('[data-act=nav][data-view=%s]' % v); p.wait_for_timeout(400)
+        p.click('#nProjects' if v == 'board' else '[data-act=nav][data-view=%s]' % v); p.wait_for_timeout(400)
         on = p.get_attribute('#v' + v[0].upper() + v[1:], 'class') or ''
         inner = p.inner_text(sel)
         chk('view %s opens' % v, 'on' in on and len(inner.strip()) > 0 and word in inner, (on, inner[:120]))
+    # v1053: one Projects tab with a Work | Personal switch; no Workouts, no separate My projects / board tabs
+    chk('no Workouts / old tabs', p.query_selector('#nWorkouts') is None and p.query_selector('#nBoard') is None and p.query_selector('#nPprojects') is None)
+    p.click('#nProjects'); p.wait_for_timeout(300)
+    chk('Projects tab switch visible', p.is_visible('#projSwitch'))
+    p.click('#psP'); p.wait_for_timeout(500)
+    chk('switch to Personal projects', 'on' in (p.get_attribute('#vPprojects', 'class') or '') and 'on' in (p.get_attribute('#psP', 'class') or ''))
+    p.click('#psW'); p.wait_for_timeout(500)
+    chk('switch back to Work board', 'Alpha' in p.inner_text('#boardPane'))
     # settings + screensaver try
     p.click('#nSettings'); p.wait_for_timeout(300)
     tabs = p.inner_text('#settings')

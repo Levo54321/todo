@@ -26,7 +26,7 @@ def run(h):
     def tid(title): return [t for t in h.todos if t['title'] == title][0]['id']
     def wait(ms=400): p.wait_for_timeout(ms)
 
-    p.click('#nPprojects'); wait()
+    p.click('#nProjects'); p.click('#psP'); wait()
     for n in ('Holmlodge Hub', 'Old App'):
         p.fill('#ppNew', n); p.press('#ppNew', 'Enter'); wait()
     hub = [x for x in h.pprojects if x['name'] == 'Holmlodge Hub'][0]['id']
@@ -93,7 +93,7 @@ def run(h):
     p.click('#nPersonal'); wait()
     chk('Live project task is not shelved', p.evaluate('id => App.isShelved(App.find(id))', tid('Fix the login bug')) is False)
     p.set_viewport_size({'width': 390, 'height': 844}); wait()
-    p.click('#nPprojects'); wait()
+    p.click('#nProjects'); p.click('#psP'); wait()
     chk('board fits iPhone width', p.evaluate('document.documentElement.scrollWidth') <= 392, p.evaluate('document.documentElement.scrollWidth'))
     for v in ('not_pursued', 'shut_down'):
         nm = p.query_selector('[data-pp=fold][data-val=%s] .bdname' % v)
@@ -127,7 +127,7 @@ def layout_checks(h, chk, wait):
         paneSW:document.getElementById('ppPane').scrollWidth, paneCW:document.getElementById('ppPane').clientWidth}; }"""
     for (w, ht, tag) in ((1024, 768, 'iPad landscape'), (768, 1024, 'iPad portrait')):
         p.set_viewport_size({'width': w, 'height': ht}); wait(300)
-        p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(600)
+        p.click('#nPersonal'); wait(200); p.click('#nProjects'); p.click('#psP'); wait(600)
         if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
         if p.query_selector('[data-pp=fold][data-val=paused][aria-expanded=false]'): p.click('[data-pp=fold][data-val=paused]'); wait(300)
         m = p.evaluate(js_metrics)
@@ -219,7 +219,7 @@ def d2_checks(h, chk, wait, calls):
     p = h.page
     def pid(name): return [x for x in h.pprojects if x['name'] == name][0]['id']
     def lane_ids(k): return p.evaluate("k => [].map.call(document.querySelectorAll('.pplane[data-lane=' + k + '] .ppcard'), function(c){return c.getAttribute('data-id');})", k)
-    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(600)
+    p.click('#nPersonal'); wait(200); p.click('#nProjects'); p.click('#psP'); wait(600)
     if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
     # new project goes to the top of its lane
     p.fill('#ppNew', 'Dream App'); p.press('#ppNew', 'Enter'); wait(500)
@@ -309,7 +309,7 @@ def d2_checks(h, chk, wait, calls):
     p.click('.ppcard[data-id="%s"] [data-pp=stat][data-val=live]' % mover); wait(500)
     live = lane_ids('live'); pos = dict((x['id'], x.get('pos', 0)) for x in h.pprojects)
     chk('project keeps its place by position in the new lane', mover in live and [pos[i] for i in live] == sorted(pos[i] for i in live), [(i[:4], pos[i]) for i in live])
-    p.reload(); wait(1200); p.click('#nPprojects'); wait(600)
+    p.reload(); wait(1200); p.click('#nProjects'); p.click('#psP'); wait(600)
     if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
     chk('order survives a reload', lane_ids('in_progress')[0] == before[2], lane_ids('in_progress'))
     p.screenshot(path=os.path.join(OUT, 'd2_board.png'))
@@ -341,7 +341,7 @@ def idle_checks(h, chk, wait):
     p = h.page
     for (w, ht, tag) in ((1024, 768, 'iPad'), (390, 844, 'iPhone')):
         p.set_viewport_size({'width': w, 'height': ht}); wait(400)
-        p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(800)
+        p.click('#nPersonal'); wait(200); p.click('#nProjects'); p.click('#psP'); wait(800)
         if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(400)
         for where in ('board', 'page'):
             if where == 'page': p.click('.pplane[data-lane=in_progress] .ppcard .ppnm'); wait(800)
@@ -370,7 +370,7 @@ def cost_checks(h, chk, wait, calls):
     p = h.page
     def pid(name): return [x for x in h.pprojects if x['name'] == name][0]['id']
     p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
-    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(700)
+    p.click('#nPersonal'); wait(200); p.click('#nProjects'); p.click('#psP'); wait(700)
     if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
     hub = pid('Holmlodge Hub')
     p.click('.ppcard[data-id="%s"] .ppnm' % hub); p.wait_for_selector('.ppside .ppcosts'); wait(300)
@@ -442,7 +442,7 @@ def d4a_checks(h, chk, wait, calls):
     p = h.page
     def pid(name): return [x for x in h.pprojects if x['name'] == name][0]['id']
     p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
-    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(700)
+    p.click('#nPersonal'); wait(200); p.click('#nProjects'); p.click('#psP'); wait(700)
     if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
     p.fill('#ppNew', 'Icon Test'); p.press('#ppNew', 'Enter'); wait(500)
     it = pid('Icon Test')
@@ -489,7 +489,7 @@ def d4a_checks(h, chk, wait, calls):
     # paused site: from website fails politely
     old = pid('Old App')
     pj = [x for x in h.pprojects if x['id'] == old][0]; pj['meta']['sites'] = ['https://paused.example.com']
-    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(600)
+    p.click('#nPersonal'); wait(200); p.click('#nProjects'); p.click('#psP'); wait(600)
     p.click('.ppcard[data-id="%s"] .ppnm' % old); wait(400); p.click('[data-pp=det]'); wait(400)
     h.allow.append('status of 422')
     p.click('[data-pp=icsite]'); wait(600)
@@ -511,7 +511,7 @@ def vault_checks(h, chk, wait, calls):
     def main(): return p.inner_text('.ppmain')
     def vtoast(): return p.inner_text('#toast')
     p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
-    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(700)
+    p.click('#nPersonal'); wait(200); p.click('#nProjects'); p.click('#psP'); wait(700)
     if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
     hub = pid('Holmlodge Hub')
     h.vault['configured'] = False
@@ -560,7 +560,7 @@ def vault_checks(h, chk, wait, calls):
     p.click('[data-pp=back]'); wait(300); p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(700)
     chk('vault: leaving the project page locks it', p.query_selector('#ppVunForm') and 'STRIPE_KEY' not in p.inner_html('#ppPane'))
     p.fill('#ppVpw', 'correct horse battery'); p.click('#ppVunForm button[type=submit]'); wait(700)
-    p.click('#nPersonal'); wait(300); p.click('#nPprojects'); wait(800)
+    p.click('#nPersonal'); wait(300); p.click('#nProjects'); p.click('#psP'); wait(800)
     chk('vault: switching tabs locks it', p.query_selector('#ppVunForm') is not None)
     # idle lock after 5 minutes
     p.fill('#ppVpw', 'correct horse battery'); p.click('#ppVunForm button[type=submit]'); wait(700)

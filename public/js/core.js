@@ -395,8 +395,9 @@
     setCls($('nPlan'), 'ritem' + (view === 'plan' ? ' on' : ''));
     setCls($('nBudget'), 'ritem' + (view === 'budget' ? ' on' : ''));
     setCls($('nInsights'), 'ritem' + (view === 'insights' ? ' on' : ''));
-    setCls($('nBoard'), 'ritem' + (view === 'board' ? ' on' : ''));
-    setCls($('nPprojects'), 'ritem' + (view === 'pprojects' ? ' on' : ''));
+    setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' ? ' on' : ''));
+    setCls($('psW'), view === 'board' ? 'on' : '');
+    setCls($('psP'), view === 'pprojects' ? 'on' : '');
     if (document.body.getAttribute('data-view') !== view) document.body.setAttribute('data-view', view);
     var bc = railOpen ? 'rail-open' : '';
     if (document.body.className !== bc) document.body.className = bc;
@@ -526,6 +527,8 @@
   /* ---------- navigation ---------- */
   var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects' };
   function navTo(name) {
+    if (name === 'projects') name = (view === 'tasks' || !store.get('projMode')) ? (mode === 'work' ? 'board' : 'pprojects') : store.get('projMode'); // one Projects tab, Work | Personal switch inside
+    if (name === 'board' || name === 'pprojects') store.set('projMode', name);
     var next = (name === 'personal' || name === 'work') ? 'tasks' : name;
     if (next !== 'tasks' && next !== 'plan' && !App.views[next]) { toast('Not available yet'); return; }
     if (next === 'tasks' && name !== mode) {
@@ -1626,7 +1629,6 @@
     else if (act === 'askbtn') askDone(+el.getAttribute('data-i'));
     else if (act === 'nav') navTo(el.getAttribute('data-view'));
     else if (act === 'rail') toggleRail();
-    else if (act === 'soon') toast('Workouts is coming soon');
     else if (act === 'ptnum') { var pj = +el.getAttribute('data-i'); ptPick = ptPick === pj ? null : pj; renderPlan(); }
     else if (act === 'ptto') ptMove(+el.getAttribute('data-i'), +el.getAttribute('data-to'));
     else if (act === 'ptpush') ptPush(id);
@@ -1782,6 +1784,7 @@
     App.views[name] = def;
     var n = $('n' + name.charAt(0).toUpperCase() + name.slice(1));
     if (n) n.style.display = '';
+    if ((name === 'board' || name === 'pprojects') && $('nProjects')) $('nProjects').style.display = '';
     if (view === name) render();
   };
 

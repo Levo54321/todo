@@ -45,7 +45,7 @@ def run(h):
 
     # Work board: idle ticks write no scroll positions
     ctx = fresh(h, "localStorage.setItem('todoToken','tok');"); pg = ctx.new_page(); pg.goto('http://todo.test/'); pg.wait_for_timeout(1500)
-    pg.click('[data-act=nav][data-view=board]'); pg.wait_for_timeout(1200)
+    pg.click('#nWork'); pg.click('#nProjects'); pg.wait_for_timeout(1200)
     pg.evaluate("""(function(){window.__w=0;var d=Object.getOwnPropertyDescriptor(Element.prototype,'scrollTop');
       Object.defineProperty(Element.prototype,'scrollTop',{get:d.get,set:function(v){window.__w++;d.set.call(this,v);},configurable:true});
       var l=Object.getOwnPropertyDescriptor(Element.prototype,'scrollLeft');
@@ -58,7 +58,7 @@ def run(h):
     # board error state + retry
     saved = h.extra.get('/api/projects'); h.extra['/api/projects'] = lambda hh, m, q, body: (500, {'error': 'x'})
     ctx = fresh(h, "localStorage.setItem('todoToken','tok');"); pg = ctx.new_page(); h.allow.append('500'); pg.goto('http://todo.test/'); pg.wait_for_timeout(1500)
-    pg.click('[data-act=nav][data-view=board]'); pg.wait_for_timeout(1200)
+    pg.click('#nWork'); pg.click('#nProjects'); pg.wait_for_timeout(1200)
     chk('board failure shows message and Try again', 'Could not load' in pg.inner_text('#boardPane') and pg.is_visible('[data-bd=retry]'), pg.inner_text('#boardPane')[:100])
     if saved: h.extra['/api/projects'] = saved
     else: del h.extra['/api/projects']

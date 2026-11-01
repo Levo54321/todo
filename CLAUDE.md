@@ -15,6 +15,12 @@ Keep it short: facts and rules, not history.
 - After shipping, give a short "what changed / what to try on your devices" note and say plainly what could not be
   tested (Luc tests on his real iPad 2 and iPhone 13).
 
+## Efficiency (Luc asked for lower usage and faster replies, 1 Nov 2026)
+- Read this file first, then only the doc sections the task needs (grep `docs/ARCHITECTURE.md` / `docs/ROADMAP.md`); do not read whole docs, `core.js` or `app.css` unless editing them. Use Grep for targeted reads.
+- Batch independent tool calls in one turn; no sub-agents; poll deploys sparingly (one check after ~60 s).
+- While building run targeted checks only; run the full suite (`python3 tests/harness.py . tests/t_deploya.py`) once before push, with the node suites. Skip before/after measuring unless the task is performance, and skip mutation proofs unless the change is risky.
+- One screenshot sheet per design batch; short notes, no recaps of steps.
+
 ## Where things are (read these at the start of a session)
 | File | What it holds |
 |---|---|
@@ -122,6 +128,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Deploy E (v1053) design batch: one **Projects** rail tab (`#nProjects`, data-view `projects`) with a Work | Personal switch (`#projSwitch`, `#psW`/`#psP`) that opens the existing `board` / `pprojects` views (`navTo` maps `projects`; last choice in localStorage `projMode`). `#nBoard`, `#nPprojects`, `#nWorkouts` and the `soon` handler are gone; tests click `#nProjects` (+ `#psP`). Phone bar is icons only (labels hidden, `aria-label` set); phone header compact; Idea lane after In progress on phones (`ppl-<status>` classes). Visual layer = end of `app.css` ("v1053 premium layer"), sans-serif, `--sh` shadow token, muted text darkened for contrast, no text under 12px. Still open: chips are 36px, board tab/number buttons 26–30px (not 44px). Efficiency rules added above.
 - 2026-11-01 — Audit Deploy D (v1052, polling diet C5) done: `GET /api/todos?v=` "same" replies, 30 s refresh (idle still 10 min), Apple calendar sync every 5 min; rules in Pitfalls "Polling (v1052)". Two things beyond the approved plan, both to keep behaviour: `forceLoad()` for every refresh-and-trust-server path, and a "same" reply still redraws once a minute (clock-driven bits). New `tests/todos_node.js`; Deploy D browser checks are `deploy_d()` in `tests/t_deploya.py`. `docs/audit-2026-11/scripts/audit_calls.py` now also reports bytes. Next: Luc picks from `docs/AUDIT-2026-11.md` section 5 after testing v1052.
 - 2026-11-01 — Luc's iPhone Shortcuts use `?t=`: do NOT remove `?t=` support from any endpoint until he says (tabled with C1 token rotation). Anything that needs work from Luc (rotation, updating Shortcuts, env changes) is tabled until he asks. Google sign-in now starts by POST (v1051); run `node tests/gcal_node.js` after touching `api/gcal.js`.
 - 2026-11-01 — Modules needing the token use `App.whenToken(fn)` (never poll with retries); `/api/projects` is fetched via `App.getProjects(cb)` (shared in-flight). Audit Deploy A (v1050) done; B (token safety), C (rotation), D (polling) wait for Luc's go-ahead after he tests each. New test module `tests/t_deploya.py` (chains t_projects); run it instead of t_projects.

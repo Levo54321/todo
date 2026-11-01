@@ -445,7 +445,7 @@
       s = STAT[i];
       if (s === 'idea' && !by.idea.length) continue; // the Idea lane only shows when it holds a project
       var f = !!fold[s];
-      h += '<section class="bdcol' + (f ? ' ppcolf' : '') + (NOTLIVE[s] ? ' hold' : '') + '">' +
+      h += '<section class="bdcol ppl-' + s + (f ? ' ppcolf' : '') + (NOTLIVE[s] ? ' hold' : '') + '">' +
         '<button class="bdhead" data-pp="fold" data-val="' + s + '" aria-expanded="' + (f ? 'false' : 'true') + '"><span class="bdname">' + LABEL[s] + '</span><span class="bdn">' + by[s].length + '</span><span class="bdcaret">' + (f ? '▸' : '▾') + '</span></button>';
       if (!f) {
         h += '<div class="pplane" data-lane="' + s + '">';
@@ -1203,6 +1203,6 @@
   document.addEventListener('click', function (e) {
     var el = e.target;
     while (el && el !== document && !(el.getAttribute && el.getAttribute('data-act'))) el = el.parentNode;
-    if (el && el !== document && el.getAttribute('data-act') === 'nav' && el.getAttribute('data-view') !== 'pprojects') { onView = false; vaultLock(true); } // leaving My projects locks the vault
+    if (el && el !== document && el.getAttribute('data-act') === 'nav' && el.getAttribute('data-view') !== 'pprojects' && el.getAttribute('data-view') !== 'projects') { onView = false; vaultLock(true); } // leaving My projects locks the vault
   }, true);
 })();

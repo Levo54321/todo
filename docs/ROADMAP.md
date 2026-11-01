@@ -7,6 +7,8 @@ _Done: v1050 (Deploy A) C3, C4, W3, W4, P1; v1051 (Deploy B) C2 and the `#t=` ha
 
 Tabled (needs work from Luc, only when he asks): C1 token rotation, the `?t=` restriction (his Shortcuts use `?t=`), C6 server-only key. Remaining audit items are in `docs/AUDIT-2026-11.md` section 5 (W1 to W10, P1 to P8); Luc picks after testing v1052.
 
+**Deploy E (v1053) design batch** built and approved 1 Nov 2026: single Projects tab with Work | Personal switch, Workouts removed, icon-only phone bar, compact phone header, premium visual layer, W5 partly (no text <12px; buttons 40-44px; chips 36px; board tabs/number buttons 26-30px still small) and P2 (contrast). Next candidates: finish 44px targets on the board, W8 injected CSS to files, P3 density option, W1 minify.
+
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
 2. **Real-device pass** on iPad 2 and iPhone 13 for Pause, Blocked, board drag/number reorder, Insights and the Google work-calendar prompt.

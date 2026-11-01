@@ -85,7 +85,7 @@
     if (!list.length) return h + '<div class="rvsub" style="margin:0">Nothing due in the next 10 days.</div></div>';
     for (i = 0; i < list.length; i++) {
       var x = list[i], r = remOf(x.b);
-      h += '<div class="billrow"><span class="bn">' + esc(x.b.n) + (x.b.c ? ' <span class="pill bad" style="font-size:11px;padding:2px 8px">to cancel</span>' : '') + '</span><span class="ba">' + money(+x.b.a) + '</span><span class="bd" style="width:auto;min-width:80px;text-align:right">' + when(x.d) + (r >= 0 ? ' ⏰' : '') + '</span></div>';
+      h += '<div class="billrow"><span class="bn">' + esc(x.b.n) + (x.b.c ? ' <span class="pill bad" style="font-size:12px;padding:2px 8px">to cancel</span>' : '') + '</span><span class="ba">' + money(+x.b.a) + '</span><span class="bd" style="width:auto;min-width:80px;text-align:right">' + when(x.d) + (r >= 0 ? ' ⏰' : '') + '</span></div>';
     }
     return h + '</div>';
   }
@@ -105,7 +105,7 @@
       shown++;
       for (j = 0; j < RLAB.length; j++) opts += '<option value="' + RLAB[j][0] + '"' + (RLAB[j][0] === r ? ' selected' : '') + '>' + RLAB[j][1] + '</option>';
       h += '<div style="border-top:1px solid var(--rule);padding:10px 0">' +
-        '<div style="font-weight:600">' + esc(b.n) + (b.c ? ' <span class="pill bad" style="font-size:11px;padding:2px 8px">to cancel</span>' : '') + '</div>' +
+        '<div style="font-weight:600">' + esc(b.n) + (b.c ? ' <span class="pill bad" style="font-size:12px;padding:2px 8px">to cancel</span>' : '') + '</div>' +
         '<div class="f2" style="margin-top:6px"><div><div class="sethint" style="margin:0 0 3px">Amount (£)</div><input class="setinput" style="margin:0;width:100%;box-sizing:border-box" type="number" step="0.01" inputmode="decimal" data-sub="a" data-i="' + i + '" value="' + (+b.a || 0) + '"></div>' +
         '<div><div class="sethint" style="margin:0 0 3px">Day of month</div><input class="setinput" style="margin:0;width:100%;box-sizing:border-box" type="number" inputmode="numeric" data-sub="d" data-i="' + i + '" value="' + (+b.d || 1) + '"></div>' +
         '<div><div class="sethint" style="margin:0 0 3px">Reminder</div><select class="setinput" style="margin:0;width:100%;box-sizing:border-box" data-sub="r" data-i="' + i + '">' + opts + '</select></div></div>' +
@@ -276,7 +276,7 @@
         odd = ((e.k === 'open' || e.k === 'current') && bal.length >= 3 && med > 0 && (e.a > 3 * med || e.a < med / 3)) || (e.k === 'pay' && c.income > 0 && e.a > 2 * c.income),
         id = 'ent_' + e.d + '_' + e.k;
       h += '<tr style="border-top:1px solid var(--rule)"><td style="padding:7px 6px 7px 0;font-size:13px;vertical-align:middle">' + App.fmtDate(e.d) + '<br><span style="opacity:.75">' + KIND[e.k] + '</span>' +
-        (inUse ? '<br><span style="font-size:11px;opacity:.75">used this month</span>' : '') + (odd ? '<br><span style="font-size:11px;color:var(--alert)">looks unusual</span>' : '') + '</td>' +
+        (inUse ? '<br><span style="font-size:12px;opacity:.75">used this month</span>' : '') + (odd ? '<br><span style="font-size:12px;color:var(--alert)">looks unusual</span>' : '') + '</td>' +
         '<td style="vertical-align:middle"><input class="setinput" style="margin:0;width:100%;box-sizing:border-box" id="' + id + '" type="number" step="0.01" inputmode="decimal" value="' + e.a + '"></td>' +
         '<td style="white-space:nowrap;text-align:right;vertical-align:middle;padding-left:6px"><button class="btn sm" data-b="entSave" data-d="' + e.d + '" data-k="' + e.k + '">Save</button> <button class="sdel" data-b="entDel" data-d="' + e.d + '" data-k="' + e.k + '" aria-label="Remove">×</button></td></tr>';
     }
