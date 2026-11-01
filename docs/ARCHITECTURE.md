@@ -1,6 +1,6 @@
 # luc-todo — current state and architecture
 
-_Snapshot: 1 Nov 2026 (v1052). Repo `Levo54321/todo`, live at https://luc-todo.vercel.app._
+_Snapshot: 1 Nov 2026 (v1057). Repo `Levo54321/todo`, live at https://luc-todo.vercel.app._
 
 ## 1. Big picture
 ```
@@ -16,7 +16,7 @@ Only the API layer holds the Supabase key. The browser holds the access token (l
 |---|---|
 | `shell.html` | HTML template with `@@V@@` and `@@SCRIPTS@@` placeholders |
 | `tools/build.py` | `python3 tools/build.py <ver> <modules...>` -> `public/index.html` |
-| `public/app.css`, `work.css` | styles; tokens in `:root` (`--bg`, `--alert`, `--serif`, `--r1`, `--s1`, `--fs-xs`, `--rail`) |
+| `public/app.css`, `work.css`, `pprojects.css` | styles. `app.css` = design system and everything shared (tokens in `:root`: `--bg --paper --ink --muted --rule --chip --accent --accentbg --alert --alertbg --ok --warn --pz*`, radii `--r1..3`, spacing `--s1..6`, type `--fs-xs..xl`, `--rail`); `work.css` = Work board/manager; `pprojects.css` = My projects |
 | `public/js/core.js` | `App` shell, router, state, editor sheet, Personal/Work columns, pause/resume handlers |
 | `public/js/board.js` | Projects board, row states (overdue, blocked `st-bl`, paused `st-pz`), drag/number ordering, health chips |
 | `public/js/insights.js` | completion stats, "time to finish" (excludes paused time), behind/open counts |
@@ -73,5 +73,6 @@ Push to `main` -> Vercel production build (no build step beyond static + functio
 - The Work board's lane lists still use `max-height: calc(100vh - 290px)`; My projects no longer does (JS heights).
 - Test folders (t8-t12), old index versions and `.token` are intentionally not in the repo.
 - Time zone is fixed to Europe/London in `api/todos.js`.
+- **Design system (v1056/57)**: see CLAUDE.md "Design" and Pitfalls (44px chips via transparent border, `background-color` not `background`). Meta line on task rows: categories and states are pills, time/repeat plain text. Phone: header compact, Glance and category filters scroll sideways, bottom bar icon-only. Board rows mark state with a 3-4px edge bar (blocked red, due today amber, high priority accent, paused grey) instead of tinted rows. The Work board lists still use `max-height: calc(100vh - 290px)`.
 - **Navigation and look (v1053)**: rail = Personal, Work, Projects, Tomorrow, Budget, Insights, Settings (no Workouts). `Projects` (`#nProjects`) is shown once `board` or `pprojects` registers; `navTo('projects')` opens the Work board from the Work list and My projects from the Personal list, otherwise the last choice (`projMode`). The Work | Personal switch lives in the header (`#projSwitch`, visible only when `body[data-view]` is `board`/`pprojects`). Phone (<700px): icon-only bottom bar, compact header (hint hidden), My projects lanes reordered by CSS `order` (In progress, Idea, rest). Styling: tokens at the top of `app.css` plus the "v1053 premium layer" block at its end; board and My projects CSS now live in `work.css` / `pprojects.css` (v1054, audit W8 done).
 

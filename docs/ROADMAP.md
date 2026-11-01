@@ -13,6 +13,8 @@ Tabled (needs work from Luc, only when he asks): C1 token rotation, the `?t=` re
 
 **Deploy G (v1055) UI round 3** done: one sans-serif look everywhere, readable Insights chart labels, full-screen button hidden on phones. Budget line-chart labels not changed.
 
+**Deploys H and I (v1056, v1057) UI redesign** built 1 Nov 2026: Batch A (design system, lists, editor, nav) and Batch B (Work board, My projects, shared views). Not individually reworked: Budget/Insights internals, screensaver, gate (they pick up the new tokens and controls only). Next candidates: P3 density option, Work board JS heights (8a), a lighter project card, real-device pass.
+
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
 2. **Real-device pass** on iPad 2 and iPhone 13 for Pause, Blocked, board drag/number reorder, Insights and the Google work-calendar prompt.

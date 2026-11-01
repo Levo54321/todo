@@ -57,9 +57,12 @@ Keep it short: facts and rules, not history.
   Projects, Work), workcal (Google work-calendar prompt), board (Projects board, Work), pprojects (My projects).
 - One document-level click handler dispatches `data-act`; modules use their own attributes: `data-bd` (board),
   `data-pj` (projects), `data-wc` (work calendar), `data-pp` (My projects), `data-sv` (screensaver settings).
-- Design: warm paper `--bg:#f4eee1`, alert `--alert:#b8432b`, Georgia serif headings, 8px radius, 4px spacing unit,
-  76px left rail (bottom bar on phones), night theme via `html.night`. CSS in `public/app.css`, `public/work.css`;
-  board and My projects styles live in `public/work.css` and `public/pprojects.css`.
+- Design (v1056/57): warm paper `--bg:#f5f2eb`, one accent per mode (navy Personal, green Work), sans-serif only, radii 8/12/16,
+  4px spacing unit, type scale 12/14/16/17/20/28, 76px left rail (icon-only bottom bar on phones), night theme via
+  `html.night`. `public/app.css` is ONE ordered file (tokens, base, shell, header, lists, tags/chips/buttons, sheets and
+  editor, views, saver/gate, breakpoints) and owns everything shared; `work.css` = Work board and manager only,
+  `pprojects.css` = My projects only. Do not restyle an `app.css` class from another file: later files win at equal
+  specificity and that is how the old layers piled up.
 
 ## How to work
 1. Read the files involved before editing; keep changes surgical. Feature order: SQL migration (if needed) → RPC →
@@ -123,11 +126,13 @@ Keep it short: facts and rules, not history.
   makes the deploy fail with `exceeded_serverless_functions_per_deployment` while the old version stays live. Add new
   endpoints as a route inside an existing file, with shared code in `api/_name.js` (a leading `_` is not a function).
 - My projects has an agreed 4-deploy plan in `docs/ROADMAP.md`; follow it and stop after each deploy for Luc to test.
+- **Chips and pills keep a 44px tap area** with a transparent 6px border plus `background-clip:padding-box` (the visible pill is 32px). Therefore colour them with `background-color`, never the `background` shorthand (it resets the clip and the border shows). Same trick: `.pplk`, `.ppmv`, `.weekbtn`, `.bdnum`.
 - Fetching a protected Vercel URL with `web_fetch_vercel_url` creates a temporary shareable bypass link on the
   alias; avoid it unless needed and tell Luc if it happens.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Redesign Batches A+B (v1056, v1057; Luc asked for two big batches and skipped the full suite): `app.css` rewritten as one ordered design-system file (override layers merged; list tags, editor sheet and segmented controls moved in from `work.css`); `work.css`/`pprojects.css` trimmed to board/My projects only. Chip/pill look unified (`.cat .qk .mst .blk .pau .bdh .bdp .pplk`: categories and states are pills, times/repeats plain text; only Must-today is solid). Board rows: coloured edge bar instead of tinted rows. Phones: Glance and category filters are one sideways-scrolling line. Checked with a Playwright audit (tap targets, font size, overflow at 1024x768, 768x1024, 390x844, 1440x900) and screenshots, not the mock suites. No JS or API changes.
 - 2026-11-01 — Deploy G (v1055) UI round 3: `--serif` token now points at the sans stack (no serif/italic headings, gate, editor title, saver clock); Insights bar-chart labels every other bar (viewBox text is scaled, so keep SVG text >= 14 units); `.fsbtn` hidden under 700px. SVG text size is NOT covered by the min-font check (it measures CSS size, not scaled size). Luc once saw the iPad load slowly with only Personal/Work/Tomorrow tabs right after a deploy; it cleared by itself (likely the old page loading while the new files arrived), so wait and reload before debugging.
 - 2026-11-01 — Deploy F (v1054) UI round 2: board.js/pprojects.js no longer inject CSS — styles are in `public/work.css` and `public/pprojects.css` (linked in `shell.html`); board/pprojects colours use tokens (`--warnink --warnbg --alertbg --pz --pzbg --pzink`, night variants in `app.css`). 44px targets via the "round 2" block at the end of `app.css` (uses `body .bdnum` etc. to beat later-loaded work.css: later files override app.css at equal specificity). Overdue "Move to" is one button (`data-act=moveopen`, `moveOpen` in core.js) that reveals the chips. Board priority numbers stay beside rows (side by side with the grip). Flex items with an input need `min-width:0` or they overflow narrow phones. Budget/Insights/editor/saver/gate not individually restyled.
 - 2026-11-01 — Deploy E (v1053) design batch: one **Projects** rail tab (`#nProjects`, data-view `projects`) with a Work | Personal switch (`#projSwitch`, `#psW`/`#psP`) that opens the existing `board` / `pprojects` views (`navTo` maps `projects`; last choice in localStorage `projMode`). `#nBoard`, `#nPprojects`, `#nWorkouts` and the `soon` handler are gone; tests click `#nProjects` (+ `#psP`). Phone bar is icons only (labels hidden, `aria-label` set); phone header compact; Idea lane after In progress on phones (`ppl-<status>` classes). Visual layer = end of `app.css` ("v1053 premium layer"), sans-serif, `--sh` shadow token, muted text darkened for contrast, no text under 12px. Still open: chips are 36px, board tab/number buttons 26–30px (not 44px). Efficiency rules added above.
