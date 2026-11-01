@@ -371,7 +371,6 @@
     setCls($('nPlan'), 'ritem' + (view === 'plan' ? ' on' : ''));
     setCls($('nBudget'), 'ritem' + (view === 'budget' ? ' on' : ''));
     setCls($('nInsights'), 'ritem' + (view === 'insights' ? ' on' : ''));
-    setCls($('nShopping'), 'ritem' + (view === 'shopping' ? ' on' : ''));
     setCls($('nBoard'), 'ritem' + (view === 'board' ? ' on' : ''));
     if (document.body.getAttribute('data-view') !== view) document.body.setAttribute('data-view', view);
     var bc = railOpen ? 'rail-open' : '';
@@ -496,7 +495,7 @@
     if (window.pageYOffset !== pageY) window.scrollTo(0, pageY);
   }
   /* ---------- navigation ---------- */
-  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', shopping: 'vShopping', board: 'vBoard' };
+  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard' };
   function navTo(name) {
     var next = (name === 'personal' || name === 'work') ? 'tasks' : name;
     if (next !== 'tasks' && next !== 'plan' && !App.views[next]) { toast('Not available yet'); return; }

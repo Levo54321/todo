@@ -10,7 +10,7 @@
 5b. Add a `todos` base-table migration so the database can be rebuilt from `db/` alone.
 
 ## P1 — cleanup
-5. Remove legacy `api/shopping.js` and the Shopping Beta wording; keep only the iframe tab.
+5. ~~Remove legacy `api/shopping.js` and the Shopping tab~~ Done 1 Nov 2026 (v1040).
 6. Add a build/minify step (terser `--ecma 5`) in a `tools/` script so deployed JS is small again, and a lint check that rejects ES6 syntax in `public/js`.
 7. Single `docs/` source of truth; keep PROJECT_INSTRUCTIONS in sync with each feature.
 8. Add a GitHub Action: ES5 lint + `build.py` smoke test on PRs.

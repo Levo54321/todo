@@ -14,8 +14,8 @@ You are the maintainer of **luc-todo**, Luc Evans's personal to-do system (live 
 
 ## Stack and repo
 - Repo `Levo54321/todo` (branch `main` auto-deploys to Vercel project `luc-todo`, team `teamevo`, region dub1).
-- `shell.html` -> `tools/build.py <ver> budget saver calendar insights shopping projects workcal board` -> `public/index.html` (module load order matters; bump `ver`, the `?v=` cache buster, on every frontend change).
-- `public/js/core.js` (~100 KB) is the shell: `window.App`, view registry (`App.register(name,{title,render,show})`), state, editor sheet, tasks lists. Other modules: budget, saver (screensaver), calendar, insights, shopping (iframe of the separate shop app), projects (Manage Projects), workcal (Google work-calendar prompt), board (Projects board).
+- `shell.html` -> `tools/build.py <ver> budget saver calendar insights projects workcal board` -> `public/index.html` (module load order matters; bump `ver`, the `?v=` cache buster, on every frontend change).
+- `public/js/core.js` (~100 KB) is the shell: `window.App`, view registry (`App.register(name,{title,render,show})`), state, editor sheet, tasks lists. Other modules: budget, saver (screensaver), calendar, insights, projects (Manage Projects), workcal (Google work-calendar prompt), board (Projects board).
 - A single document-level click handler dispatches on `data-act`; modules add `data-bd` (board), `data-pj` (projects), `data-wc` (work calendar).
 - Design system: warm paper background `--bg:#f4eee1`, alert `--alert:#b8432b`, Georgia serif headings, 8px radius, 4px spacing unit, 12px min font, 76px left rail. CSS in `public/app.css` and `public/work.css`; board.js injects its own `<style>`.
 - Deployed files are minified (terser `-c -m --ecma 5`) historically; git deploys currently serve the readable source. Both are fine.
@@ -27,8 +27,8 @@ You are the maintainer of **luc-todo**, Luc Evans's personal to-do system (live 
 - Project config (priority 0-3, status active|hold|done, order) lives in cfg key `projects` via `/api/projects`.
 
 ## Active features (all live)
-Personal + Work lists; quick-add shorthand and iOS Shortcut ingestion (`POST /api/todos {text}`); recurring tasks; Work ordering (`cmpWork`: timed, must-do, priority, project priority, quick wins, due, created); Blocked flag; Paused ("waiting on someone": leaves Overdue/counts, resume shifts due date by whole days paused, history excludes paused time); Projects board with drag/number reorder and row colour signals; Manage Projects; Insights (Board | Insights); Budget; screensaver photos + Google Calendar glance; Apple CalDAV sync (personal timed tasks); Google Calendar events for timed Work tasks (OAuth); weather glance; Shopping tab = iframe of holmlodge-shop (key in localStorage `shopKey`).
-- `api/shopping.js` is a **legacy beta** and unused; do not extend it.
+Personal + Work lists; quick-add shorthand and iOS Shortcut ingestion (`POST /api/todos {text}`); recurring tasks; Work ordering (`cmpWork`: timed, must-do, priority, project priority, quick wins, due, created); Blocked flag; Paused ("waiting on someone": leaves Overdue/counts, resume shifts due date by whole days paused, history excludes paused time); Projects board with drag/number reorder and row colour signals; Manage Projects; Insights (Board | Insights); Budget; screensaver photos + Google Calendar glance; Apple CalDAV sync (personal timed tasks); Google Calendar events for timed Work tasks (OAuth); weather glance.
+- The shopping list is **not** part of this app (removed in v1040); it lives only in holmlodge-shop. Never call its endpoints or change `shop_*` objects or the `shop` config key.
 
 ## How to work
 1. Read the relevant file before editing; keep changes surgical. For a feature: SQL migration (if needed) -> RPC -> `api/*.js` -> UI module -> bump `?v=`.
