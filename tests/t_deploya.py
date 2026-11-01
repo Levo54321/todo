@@ -1,4 +1,5 @@
-"""v1050 (Deploy A): late token still loads every module, one shared /api/projects fetch, Work board writes no scroll
+"""v1051 (Deploy B): Google sign-in starts by POST (token only in a header, never in the address) and #t= is cleared from the address bar.
+v1050 (Deploy A): late token still loads every module, one shared /api/projects fetch, Work board writes no scroll
 on idle ticks, board error state with retry, Work header fits at 1024, project page title written once."""
 import importlib.util, os, json, mimetypes
 from urllib.parse import urlparse, parse_qs
@@ -76,4 +77,24 @@ def run(h):
               return {clipped:o, over:document.documentElement.scrollWidth-innerWidth};})()""")
             chk('header not clipped, no sideways scroll: %s %dx%d' % (lst, w, hh), not info['clipped'] and info['over'] <= 0, info)
         ctx.close()
+    # Deploy B: Google sign-in start is a POST with the token in a header; #t= leaves the address bar
+    seen = {}
+    def gc(hh, m, q, body):
+        if m == 'POST' and body and body.get('start'): seen['hit'] = True; return 200, {'url': 'http://todo.test/signed-in-ok'}
+        return 200, {'configured': True, 'connected': False, 'events': []}
+    prev = h.extra.get('/api/gcal'); h.extra['/api/gcal'] = gc
+    ctx = fresh(h, "localStorage.setItem('todoToken','tok');"); pg = ctx.new_page()
+    reqs = []; pg.on('request', lambda r: reqs.append((r.method, r.url, r.headers.get('x-todo-token'))))
+    pg.goto('http://todo.test/'); pg.wait_for_timeout(1200)
+    pg.evaluate("var b=document.createElement('button');b.setAttribute('data-sv','gsign');b.id='gtest';b.textContent='g';document.body.appendChild(b)")
+    pg.evaluate("document.getElementById('gtest').click()"); pg.wait_for_timeout(1000)
+    chk('Google sign-in start is a POST with the token in a header', seen.get('hit') and any(m == 'POST' and u.endswith('/api/gcal') and t == 'tok' for m, u, t in reqs), [r for r in reqs if 'gcal' in r[1]])
+    chk('no request carries the token in its address', not any('tok' in u.split('?', 1)[-1] for m, u, t in reqs if '?' in u and 'gcal' in u), [u for m, u, t in reqs if 'gcal' in u])
+    chk('app followed the returned address', pg.url.endswith('/signed-in-ok'), pg.url)
+    if prev: h.extra['/api/gcal'] = prev
+    else: del h.extra['/api/gcal']
+    ctx.close()
+    ctx = fresh(h, ''); pg = ctx.new_page(); pg.goto('http://todo.test/#t=tok'); pg.wait_for_timeout(1200)
+    chk('#t= link signs in and clears the token from the address bar', pg.url == 'http://todo.test/' and pg.evaluate("localStorage.getItem('todoToken')") == 'tok' and not pg.is_visible('#gate'), pg.url)
+    ctx.close()
     return R

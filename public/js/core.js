@@ -1771,7 +1771,7 @@
 
   /* ---------- boot ---------- */
   var m = /[#&]t=([^&]+)/.exec(window.location.hash || '');
-  if (m) { token = decodeURIComponent(m[1]).toLowerCase(); store.set('todoToken', token); }
+  if (m) { token = decodeURIComponent(m[1]).toLowerCase(); store.set('todoToken', token); try { if (history.replaceState) history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {} } // keep the token out of the address bar
   else token = store.get('todoToken');
   var qm = /[?&]open=([^&#]+)/.exec(window.location.search || '');
   if (qm) pendingOpen = decodeURIComponent(qm[1]);

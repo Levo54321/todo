@@ -1,7 +1,8 @@
 // /api/gcal — a Google Calendar shown on the screensaver, and (optionally) a calendar your timed Work tasks are added to.
 //   GET                 -> { configured, connected, email, calendars:[{id,name,color,primary}], selected:[id], expired }
 //   GET ?events=1       -> { events:[...], now }   today + tomorrow from the selected calendars
-//   GET ?action=start&t=<token> -> redirects to Google sign-in
+//   POST {start:true}   -> { url } the Google sign-in address (token only in the header; `state` is encrypted)
+//   GET ?action=start   -> retired (a page asking you to reload the app); the token never goes in a sign-in link
 //   GET ?code=..&state=.. (Google's redirect back) -> stores the login, redirects to the app
 //   POST {selected:[id]} -> choose calendars       POST {refresh:true} -> reload the calendar list
 //   GET ?sched=1        -> { map:{ taskId:{on,dur,vis} } }   per-task 'add to calendar' choices
@@ -32,14 +33,10 @@ function dec(s) {
 }
 function b64u(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function sign(payload) { return b64u(crypto.createHmac('sha256', key()).update(payload).digest()); }
-function makeState(token) { var p = b64u(JSON.stringify({ t: token, e: Date.now() + 10 * 60000 })); return p + '.' + sign(p); }
+function makeState(token) { return enc(JSON.stringify({ t: token, e: Date.now() + 10 * 60000 })); } // encrypted: Google only sees ciphertext
 function readState(s) {
-  var parts = String(s || '').split('.');
-  if (parts.length !== 2) return null;
-  var want = sign(parts[0]), a = Buffer.from(want), b = Buffer.from(parts[1]);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
-    var o = JSON.parse(Buffer.from(parts[0].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    var o = JSON.parse(dec(String(s || '')));
     return o && o.e > Date.now() && typeof o.t === 'string' ? o : null;
   } catch (e) { return null; }
 }
@@ -243,16 +240,14 @@ async function syncTask(token, id, gone) {
 }
 
 /* ---------- OAuth ---------- */
-async function start(req, res, q) {
-  if (!configured()) return page(res, 503, 'Google not set up yet', 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are missing on the server.');
-  var token = q.t;
-  if (!token) return page(res, 401, 'Not signed in', 'Open the To-Do app first, then try again from Settings.');
-  try { await todos.rpc('cfg_get', { p_token: token, p_key: 'gcal' }); } catch (e) { return page(res, 401, 'Not signed in', 'That token was not accepted.'); }
+async function start(req, res, token) {
+  if (!configured()) return send(res, 503, { error: 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are missing on the server' });
+  try { await todos.rpc('cfg_get', { p_token: token, p_key: 'gcal' }); } catch (e) { return send(res, 401, { error: 'token not accepted' }); }
   var url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: REDIRECT, response_type: 'code', scope: SCOPE,
     access_type: 'offline', prompt: 'consent select_account', state: makeState(token)
   }).toString();
-  res.statusCode = 302; res.setHeader('Location', url); res.setHeader('Cache-Control', 'no-store'); res.end();
+  send(res, 200, { url: url });
 }
 async function callback(req, res, q) {
   var st = readState(q.state);
@@ -284,7 +279,7 @@ async function callback(req, res, q) {
 module.exports = async function handler(req, res) {
   var q = req.query || {};
   if (req.method === 'GET' && (q.code || q.error)) return callback(req, res, q);
-  if (req.method === 'GET' && q.action === 'start') return start(req, res, q);
+  if (req.method === 'GET' && q.action === 'start') return page(res, 410, 'Reload the app', 'Sign-in now starts from inside the app. Reload To-Do, then use Settings, Screensaver, Sign in with Google.');
   var token = req.headers['x-todo-token'] || q.t;
   if (!token) return send(res, 401, { error: 'missing token' });
   try {
@@ -307,8 +302,9 @@ module.exports = async function handler(req, res) {
       return send(res, 200, view(cfg));
     }
     if (req.method === 'POST') {
-      if (!cfg || !cfg.rt) return send(res, 409, { error: 'not connected' });
       var b = readBody(req);
+      if (b.start) return start(req, res, token);
+      if (!cfg || !cfg.rt) return send(res, 409, { error: 'not connected' });
       if (b.sched) {
         var sid = b.sched && typeof b.sched.id === 'string' ? b.sched.id : '';
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid)) return send(res, 400, { error: 'bad task id' });

@@ -1,6 +1,6 @@
 # luc-todo — current state and architecture
 
-_Snapshot: 1 Nov 2026 (v1050). Repo `Levo54321/todo`, live at https://luc-todo.vercel.app._
+_Snapshot: 1 Nov 2026 (v1051). Repo `Levo54321/todo`, live at https://luc-todo.vercel.app._
 
 ## 1. Big picture
 ```

@@ -259,7 +259,9 @@
     } else if (a === 'try') {
       startSaver();
     } else if (a === 'gsign') {
-      window.location.href = '/api/gcal?action=start&t=' + encodeURIComponent(App.token());
+      App.api('POST', '', { start: true }, function (s, d) {
+        if (s === 200 && d && d.url) window.location.href = d.url; else App.toast((d && d.error) || 'Could not start Google sign-in, try again');
+      }, '/api/gcal');
     } else if (a === 'gwrite') {
       gc.writeCal = el.getAttribute('data-id') || '';
       App.refreshTab();

@@ -49,7 +49,8 @@ change the header in the endpoint file and regenerate._
 // /api/gcal — a Google Calendar shown on the screensaver, and (optionally) a calendar your timed Work tasks are added to.
 //   GET                 -> { configured, connected, email, calendars:[{id,name,color,primary}], selected:[id], expired }
 //   GET ?events=1       -> { events:[...], now }   today + tomorrow from the selected calendars
-//   GET ?action=start&t=<token> -> redirects to Google sign-in
+//   POST {start:true}   -> { url } the Google sign-in address (token only in the header; `state` is encrypted)
+//   GET ?action=start   -> retired (a page asking you to reload the app); the token never goes in a sign-in link
 //   GET ?code=..&state=.. (Google's redirect back) -> stores the login, redirects to the app
 //   POST {selected:[id]} -> choose calendars       POST {refresh:true} -> reload the calendar list
 //   GET ?sched=1        -> { map:{ taskId:{on,dur,vis} } }   per-task 'add to calendar' choices
