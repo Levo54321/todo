@@ -163,8 +163,8 @@
   function isPaused(t) { return !!t.paused && !t.done && t.list === 'work'; } // waiting on someone else: out of Overdue and the counts
   /* Personal Projects (pprojects.js loads them). A Personal task in a project that is Paused, Not Pursued or Shut Down is "shelved":
      like a paused Work task it stays out of Overdue, the badges, the counts, Today's order and the review nudges. */
-  var pprojs = [], ppStat = {}, ppName = {}, ppSig = '', showShelved = false;
-  function isShelved(t) { return !t.done && (t.list || 'personal') === 'personal' && !!t.pproject_id && !!ppStat[t.pproject_id] && ppStat[t.pproject_id] !== 'active'; }
+  var pprojs = [], ppStat = {}, ppName = {}, ppSig = '', showShelved = false, PP_SHELF = { paused: 1, not_pursued: 1, shut_down: 1 }; // In progress and Live projects count as normal
+  function isShelved(t) { return !t.done && (t.list || 'personal') === 'personal' && !!t.pproject_id && PP_SHELF[ppStat[t.pproject_id]] === 1; }
   function isOut(t) { return isPaused(t) || isShelved(t) || inBacklog(t); }
   function pausedAge(t) { var d = Math.floor((nowMs() - parseTS(t.paused_at)) / 86400000); return d < 1 ? 'today' : d + 'd'; }
   /* Work list auto-order: timed first, then "must do today", then priority (!!! first, unmarked, ! last), then quick wins, then oldest. */
@@ -763,8 +763,8 @@
     var pc = '', showPP = editing.list === 'personal' && (pprojs.length || editing.pp);
     if (showPP) {
       pc = '<button class="chip' + (!editing.pp ? ' on' : '') + '" data-act="sproj" data-val="">None</button>';
-      for (i = 0; i < pprojs.length; i++) if (pprojs[i].status === 'active' || pprojs[i].id === editing.pp) {
-        pc += '<button class="chip' + (editing.pp === pprojs[i].id ? ' on' : '') + '" data-act="sproj" data-val="' + esc(pprojs[i].id) + '">' + esc(pprojs[i].name) + (pprojs[i].status !== 'active' ? ' (on hold)' : '') + '</button>';
+      for (i = 0; i < pprojs.length; i++) if (!PP_SHELF[pprojs[i].status] || pprojs[i].id === editing.pp) {
+        pc += '<button class="chip' + (editing.pp === pprojs[i].id ? ' on' : '') + '" data-act="sproj" data-val="' + esc(pprojs[i].id) + '">' + esc(pprojs[i].name) + (PP_SHELF[pprojs[i].status] ? ' (on hold)' : '') + '</button>';
       }
     }
     if (showPP && editing.pp) pc += '<div class="sg sm ppwhere"><button class="' + (!editing.bl ? 'on' : '') + '" data-act="sppbl" data-val="0">In my list</button><button class="' + (editing.bl ? 'on' : '') + '" data-act="sppbl" data-val="1">Backlog only</button></div>';

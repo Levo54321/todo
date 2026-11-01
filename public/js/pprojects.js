@@ -7,15 +7,18 @@
   'use strict';
   var App = window.App; if (!App) return;
   var $ = App.$, esc = App.esc, store = App.store;
-  var STAT = ['active', 'paused', 'not_pursued', 'shut_down'];
-  var LABEL = { active: 'Active', paused: 'Paused', not_pursued: 'Not pursued', shut_down: 'Shut down' };
-  var LINKS = [['site', 'Website'], ['vercel', 'Vercel'], ['supabase', 'Supabase'], ['github', 'GitHub'], ['claude', 'Claude']];
-  var DOT = { green: 'Live', orange: 'Deploying', red: 'Deploy failed', grey: 'Status unknown' };
+  var STAT = ['in_progress', 'live', 'paused', 'not_pursued', 'shut_down'];
+  var LABEL = { in_progress: 'In progress', live: 'Live', paused: 'Paused', not_pursued: 'Not pursued', shut_down: 'Shut down' };
+  var SHELF = { paused: 1, not_pursued: 1, shut_down: 1 }; // tasks of these projects are out of Overdue and the counts
+  var LINKS = [['vercel', 'Vercel'], ['supabase', 'Supabase'], ['github', 'GitHub']];
+  var DOT = { green: 'Live', orange: 'Deploying', red: 'Deploy failed', paused: 'Paused in Vercel', grey: 'Status unknown' };
+  var draft = null, vlist = { configured: null, projects: [], loading: false, at: 0 }, vfill = false, showAct = store.get('ppAct') === '1';
   var list = [], known = false, failed = false, tries = 0, busy = false, onView = false;
   var sel = store.get('ppSel') || '', editId = '', moveId = '', editing = false, showDone = false;
   var addTo = store.get('ppAddTo') === 'list' ? 'list' : 'backlog';
-  var fold = { not_pursued: true, shut_down: true };
-  try { var fs = JSON.parse(store.get('ppFold') || 'null'); if (fs && typeof fs === 'object') fold = fs; } catch (e) {}
+  var fold = { paused: true, not_pursued: true, shut_down: true }; // In progress and Live open by default
+  function statusOf(p) { return p.status === 'active' ? 'in_progress' : p.status; }
+  try { var fs = JSON.parse(store.get('ppFold') || 'null'), fk; if (fs && typeof fs === 'object') for (fk in fs) if (fs.hasOwnProperty(fk) && fold.hasOwnProperty(fk)) fold[fk] = !!fs[fk]; } catch (e) {}
   var dep = { configured: null, status: {}, at: 0, loading: false };
   var events = {}, evSig = {}, evTimer = null;
 
@@ -25,7 +28,14 @@
     '.pptools .ppadd{-webkit-flex:1 1 280px;flex:1 1 280px;max-width:460px;margin:0 12px 8px 0}' +
     '.pptools .ppadd input,.pptools .ppadd button{min-height:44px}' +
     '.ppsum{color:var(--muted);font-size:13px;margin:0 0 8px}' +
-    '.bdcol.ppcolf{width:128px}.bdcol.ppcolf .bdname{font-size:17px}' +
+    '.bdcol.ppcolf{width:auto;min-width:0}.bdcol.ppcolf .bdname{font-size:17px;white-space:nowrap;-webkit-flex:none;flex:none}.bdcol .bdname{white-space:nowrap}' +
+    '.ppdot.paused{background:transparent;border:2px solid var(--muted);width:8px;height:8px}' +
+    '.pplrow{display:-webkit-flex;display:flex;margin-bottom:6px}.pplrow .setinput{-webkit-flex:1;flex:1;min-width:0}.pplrow .setinput.lb{-webkit-flex:none;flex:none;width:96px;margin-right:6px}' +
+    '.pplrow .rm{-webkit-flex:none;flex:none;width:44px;min-height:40px;margin-left:6px;border:1px solid var(--rule);border-radius:10px;background:var(--chip);color:var(--alert);font-size:20px;-webkit-appearance:none}' +
+    '.ppform .addl{min-height:40px;margin:0 0 10px;padding:6px 12px;border:1px dashed var(--rule);border-radius:10px;background:none;color:var(--accent);font-size:14px;-webkit-appearance:none}' +
+    '.ppform select.setinput{-webkit-appearance:none;appearance:none}' +
+    '.ppform .fill{margin:8px 0 12px;padding:10px;border:1px solid var(--rule);border-radius:10px;background:var(--bg)}' +
+    '.ppacth{border:0;background:none;padding:0;margin:22px 0 6px;font:italic 600 24px/1.2 var(--serif);color:var(--ink);-webkit-appearance:none;outline:none;min-height:44px}.ppacth small{font:13px/1 -apple-system,Helvetica,Arial,sans-serif;color:var(--muted);margin-left:8px;font-style:normal}' +
     '.ppcard{position:relative;display:block;margin:10px 0 0;padding:12px 12px 10px;border:1px solid var(--rule);border-radius:var(--r2);background:var(--bg);cursor:pointer}' +
     '.ppcard.off{opacity:.78}' +
     '.pphd{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center}' +
@@ -167,9 +177,19 @@
     var d = depOf(p); if (!d) return '';
     return '<span class="ppdot ' + esc(d.color || 'grey') + '" title="' + esc(DOT[d.color] || DOT.grey) + '" aria-label="' + esc(DOT[d.color] || DOT.grey) + '"></span>';
   }
+  function sitesOf(m) { return (m.sites && m.sites.length) ? m.sites : (m.site ? [m.site] : []); }
+  function linksOf(m) { return (m.links && m.links.length) ? m.links : (m.claude ? [{ l: 'Claude', u: m.claude }] : []); }
+  function allLinks(p, chips) { // [label, url, small text] in display order; chips: label several websites by domain
+    var m = p.meta || {}, out = [], i, ss = sitesOf(m), ls = linksOf(m);
+    for (i = 0; i < ss.length; i++) out.push([chips && ss.length > 1 ? host(ss[i]).split('/')[0] : 'Website', ss[i], host(ss[i])]);
+    for (i = 0; i < LINKS.length; i++) if (m[LINKS[i][0]]) out.push([LINKS[i][1], m[LINKS[i][0]], host(m[LINKS[i][0]])]);
+    for (i = 0; i < ls.length; i++) out.push([ls[i].l || 'Link', ls[i].u, host(ls[i].u)]);
+    return out;
+  }
   function linkChips(p) {
-    var m = p.meta || {}, h = '', i;
-    for (i = 0; i < LINKS.length; i++) if (m[LINKS[i][0]]) h += '<a class="pplk" href="' + esc(m[LINKS[i][0]]) + '" target="_blank" rel="noopener">' + LINKS[i][1] + ' ↗</a>';
+    var a = allLinks(p, true), h = '', i;
+    for (i = 0; i < a.length && i < 6; i++) h += '<a class="pplk" href="' + esc(a[i][1]) + '" target="_blank" rel="noopener">' + esc(a[i][0]) + ' ↗</a>';
+    if (a.length > 6) h += '<span class="pplk">+' + (a.length - 6) + ' more</span>';
     return h;
   }
   function progHTML(pg, bare) {
@@ -179,14 +199,14 @@
   }
   function cardHTML(p) {
     var pg = progress(p), m = p.meta || {}, h;
-    h = '<div class="ppcard' + (p.status !== 'active' ? ' off' : '') + '" data-pp="open" data-id="' + esc(p.id) + '">' +
+    h = '<div class="ppcard' + (SHELF[statusOf(p)] ? ' off' : '') + '" data-pp="open" data-id="' + esc(p.id) + '">' +
       '<div class="pphd">' + logoHTML(p) + '<div class="ppnm"><b>' + esc(p.name) + '</b>' + (m.desc ? '<div class="ppdesc">' + esc(m.desc) + '</div>' : '') + '</div>' + dotHTML(p) + '</div>' +
       (pg.all ? progHTML(pg) : '<div class="ppempty">No tasks yet</div>') +
       '<div class="ppfoot"><span>' + (pg.back ? pg.back + ' in backlog · ' : '') + 'Active ' + ago(p.last_at || p.created_at) + '</span><span class="sp"></span></div>' +
       (linkChips(p) ? '<div>' + linkChips(p) + '</div>' : '');
     if (moveId === p.id) {
       h += '<div class="ppmvl">';
-      for (var i = 0; i < STAT.length; i++) if (STAT[i] !== p.status) h += '<button class="chip" data-pp="stat" data-id="' + esc(p.id) + '" data-val="' + STAT[i] + '">' + LABEL[STAT[i]] + '</button>';
+      for (var i = 0; i < STAT.length; i++) if (STAT[i] !== statusOf(p)) h += '<button class="chip" data-pp="stat" data-id="' + esc(p.id) + '" data-val="' + STAT[i] + '">' + LABEL[STAT[i]] + '</button>';
       h += '<button class="chip" data-pp="mvx">Cancel</button></div>';
     } else h += '<button class="ppmv" data-pp="mv" data-id="' + esc(p.id) + '">Move to…</button>';
     return h + '</div>';
@@ -195,10 +215,11 @@
     var h = '<div class="pptools"><form class="ppadd" id="ppNewForm" autocomplete="off"><input id="ppNew" type="text" maxlength="60" placeholder="New project, e.g. Holmlodge Hub" autocorrect="off" autocapitalize="words">' +
       '<button type="submit"' + (busy ? ' disabled' : '') + '>Add</button></form></div>';
     if (!known) return h + '<div class="ppsum">' + (failed ? 'Could not load your projects. Check your connection.' : 'Loading…') + '</div>';
-    var by = { active: [], paused: [], not_pursued: [], shut_down: [] }, i, s, anyV = false;
-    for (i = 0; i < list.length; i++) { (by[list[i].status] || by.active).push(list[i]); if (list[i].meta && list[i].meta.vercel) anyV = true; }
+    var i, s, anyV = false;
+    var by = { in_progress: [], live: [], paused: [], not_pursued: [], shut_down: [] };
+    for (i = 0; i < list.length; i++) { (by[statusOf(list[i])] || by.in_progress).push(list[i]); if (list[i].meta && list[i].meta.vercel) anyV = true; }
     for (s in by) if (by.hasOwnProperty(s)) by[s].sort(function (a, b) { return App.parseTS(b.last_at || b.created_at) - App.parseTS(a.last_at || a.created_at); });
-    var sum = by.active.length + ' active · ' + by.paused.length + ' paused';
+    var sum = by.in_progress.length + ' in progress · ' + by.live.length + ' live · ' + by.paused.length + ' paused';
     if (anyV && dep.configured === false) sum += ' · add a VERCEL_TOKEN to show live deploy status';
     else if (anyV && dep.at) sum += ' · deploy status checked ' + ago(new Date(dep.at).toISOString());
     h += '<div class="ppsum">' + sum + '. Tap a card to open it; most recently active first.</div>';
@@ -207,32 +228,92 @@
     for (i = 0; i < STAT.length; i++) {
       s = STAT[i];
       var f = !!fold[s];
-      h += '<section class="bdcol' + (f ? ' ppcolf' : '') + (s !== 'active' ? ' hold' : '') + '">' +
+      h += '<section class="bdcol' + (f ? ' ppcolf' : '') + (SHELF[s] ? ' hold' : '') + '">' +
         '<button class="bdhead" data-pp="fold" data-val="' + s + '" aria-expanded="' + (f ? 'false' : 'true') + '"><span class="bdname">' + LABEL[s] + '</span><span class="bdn">' + by[s].length + '</span><span class="bdcaret">' + (f ? '▸' : '▾') + '</span></button>';
       if (!f) {
-        if (!by[s].length) h += '<div class="bdempty">' + (s === 'active' ? 'Nothing active.' : 'None.') + '</div>';
+        if (!by[s].length) h += '<div class="bdempty">' + (s === 'in_progress' ? 'Nothing in progress.' : s === 'live' ? 'Nothing live yet.' : 'None.') + '</div>';
         for (var j = 0; j < by[s].length; j++) h += cardHTML(by[s][j]);
       }
       h += '</section>';
     }
     return h + '</div>';
   }
+  function startDraft(p) {
+    var m = p.meta || {}, ls = linksOf(m), i;
+    draft = { desc: m.desc || '', sites: sitesOf(m).slice(0), links: [], vercel: m.vercel || '', supabase: m.supabase || '', github: m.github || '', started: m.started || '', target: m.target || '' };
+    for (i = 0; i < ls.length; i++) draft.links.push({ l: ls[i].l || '', u: ls[i].u || '' });
+    if (!draft.sites.length) draft.sites.push('');
+    if (!draft.links.length) draft.links.push({ l: '', u: '' });
+    if (vlist.configured !== false && !vlist.at) loadVercelList();
+  }
+  function loadVercelList() {
+    if (vlist.loading) return;
+    vlist.loading = true;
+    App.api('GET', '?vercel=1', null, function (s, d) {
+      vlist.loading = false; vlist.at = Date.now();
+      if (s === 200 && d) { vlist.configured = !!d.configured; vlist.projects = d.projects || []; }
+      if (editing) paint();
+    }, '/api/pprojects');
+  }
+  function inp(f, val, type, ph, extra) {
+    return '<input class="setinput' + (extra || '') + '" data-f="' + f + '" type="' + type + '" value="' + esc(val || '') + '" placeholder="' + esc(ph) + '" autocorrect="off" autocapitalize="off" spellcheck="false">';
+  }
   function editForm(p) {
-    var m = p.meta || {}, h = '<form class="ppform" id="ppDetForm" autocomplete="off">', i;
-    function fld(k, label, type, ph) {
-      return '<div class="frow2"><label for="ppf_' + k + '">' + label + '</label><input class="setinput" id="ppf_' + k + '" type="' + type + '" value="' + esc(m[k] || '') + '" placeholder="' + ph + '" autocorrect="off" autocapitalize="off" spellcheck="false"></div>';
+    var d = draft, h = '<form class="ppform" id="ppDetForm" autocomplete="off">', i, cur = '';
+    var pv = /^https:\/\/vercel\.com\/([^\/?#]+)\/([^\/?#]+)/i.exec(d.vercel || '');
+    if (pv) cur = pv[1] + '/' + pv[2];
+    h += '<div class="frow2"><label>One-line description</label>' + inp('desc', d.desc, 'text', 'What is it?') + '</div>';
+    h += '<div class="frow2"><label>Vercel project</label>';
+    if (vlist.configured === false) h += inp('vercel', d.vercel, 'url', 'https://vercel.com/teamevo/my-app') + '<div class="pphint">Add VERCEL_TOKEN to pick from a list.</div>';
+    else {
+      h += '<select class="setinput" id="ppVsel"><option value="">' + (vlist.loading && !vlist.at ? 'Loading your Vercel projects…' : 'None') + '</option>';
+      var found = false;
+      for (i = 0; i < vlist.projects.length; i++) {
+        var key = vlist.projects[i].team + '/' + vlist.projects[i].name, on = key.toLowerCase() === cur.toLowerCase();
+        if (on) found = true;
+        h += '<option value="' + esc(key) + '"' + (on ? ' selected' : '') + '>' + esc(vlist.projects[i].name) + (vlist.projects[i].paused ? ' (paused)' : '') + '</option>';
+      }
+      if (cur && !found) h += '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>';
+      h += '</select>';
+      h += '<div class="pphint">' + (vfill ? 'Filling in from Vercel…' : 'Picking a project fills in its websites and GitHub repo.') + '</div>';
     }
-    h += '<div class="frow2"><label for="ppf_desc">One-line description</label><input class="setinput" id="ppf_desc" type="text" maxlength="200" value="' + esc(m.desc || '') + '" placeholder="What is it?"></div>';
-    h += fld('site', 'Website', 'url', 'https://my-app.vercel.app');
-    h += fld('vercel', 'Vercel project', 'url', 'https://vercel.com/teamevo/my-app');
-    h += fld('supabase', 'Supabase project', 'url', 'https://supabase.com/dashboard/project/…');
-    h += fld('github', 'GitHub repo', 'url', 'https://github.com/Levo54321/…');
-    h += fld('claude', 'Claude Project', 'url', 'https://claude.ai/project/…');
-    h += fld('started', 'Started', 'date', '');
-    h += fld('target', 'Target date', 'date', '');
+    h += '</div>';
+    h += '<div class="frow2"><label>Websites</label>';
+    for (i = 0; i < d.sites.length; i++) h += '<div class="pplrow">' + inp('site:' + i, d.sites[i], 'url', 'https://my-app.vercel.app') + '<button class="rm" type="button" data-pp="rmsite" data-val="' + i + '" aria-label="Remove website">×</button></div>';
+    h += '<button class="addl" type="button" data-pp="addsite">+ Add website</button></div>';
+    h += '<div class="frow2"><label>Supabase project</label>' + inp('supabase', d.supabase, 'url', 'https://supabase.com/dashboard/project/…') + '</div>';
+    h += '<div class="frow2"><label>GitHub repo</label>' + inp('github', d.github, 'url', 'https://github.com/Levo54321/…') + '</div>';
+    h += '<div class="frow2"><label>Other links (Claude projects, sessions, docs…)</label>';
+    for (i = 0; i < d.links.length; i++) h += '<div class="pplrow">' + inp('ll:' + i, d.links[i].l, 'text', 'Label', ' lb') + inp('lu:' + i, d.links[i].u, 'url', 'https://claude.ai/project/…') +
+      '<button class="rm" type="button" data-pp="rmlink" data-val="' + i + '" aria-label="Remove link">×</button></div>';
+    h += '<button class="addl" type="button" data-pp="addlink">+ Add link</button></div>';
+    h += '<div class="frow2"><label>Started</label>' + inp('started', d.started, 'date', '') + '</div>';
+    h += '<div class="frow2"><label>Target date</label>' + inp('target', d.target, 'date', '') + '</div>';
     h += '<div class="pphint">Leave anything blank to hide it. Links must start with https.</div>' +
       '<button class="btn primary" type="submit"' + (busy ? ' disabled' : '') + '>Save details</button><button class="btn" type="button" data-pp="detx">Cancel</button></form>';
     return h;
+  }
+  function fillFromVercel(key) {
+    if (!draft) return;
+    if (!key) { draft.vercel = ''; paint(); return; }
+    var m = /^([^\/]+)\/(.+)$/.exec(key); if (!m) return;
+    draft.vercel = 'https://vercel.com/' + m[1] + '/' + m[2];
+    vfill = true; paint();
+    App.api('GET', '?vercel=' + encodeURIComponent(m[1]) + '/' + encodeURIComponent(m[2]), null, function (s, d) {
+      vfill = false;
+      if (!draft) return;
+      if (s === 200 && d) {
+        var added = 0, i, have = {};
+        for (i = 0; i < draft.sites.length; i++) if (draft.sites[i]) have[draft.sites[i].replace(/\/$/, '').toLowerCase()] = 1;
+        draft.sites = draft.sites.filter(function (x) { return !!x; });
+        for (i = 0; i < (d.sites || []).length; i++) if (!have[d.sites[i].replace(/\/$/, '').toLowerCase()]) { draft.sites.push(d.sites[i]); added++; }
+        if (!draft.sites.length) draft.sites.push('');
+        if (d.github && !draft.github) { draft.github = d.github; added++; }
+        if (d.vercel) draft.vercel = d.vercel;
+        App.toast(added ? 'Filled in from Vercel' : 'Nothing new to fill in');
+      } else App.toast(d && d.error ? d.error : 'Could not reach Vercel');
+      paint();
+    }, '/api/pprojects');
   }
   function sideHTML(p, pg) {
     var m = p.meta || {}, h = '', i, d = depOf(p);
@@ -242,8 +323,9 @@
       '<button class="pbtn" data-pp="edit" data-id="' + esc(p.id) + '" aria-label="Rename project">✎</button></div>';
     if (editing) return h + editForm(p);
     h += '<div class="ppsec"><div class="lbl">Status</div>';
-    for (i = 0; i < STAT.length; i++) h += '<button class="chip' + (p.status === STAT[i] ? ' on' : '') + '" data-pp="stat" data-id="' + esc(p.id) + '" data-val="' + STAT[i] + '">' + LABEL[STAT[i]] + '</button>';
-    if (p.status !== 'active') h += '<div class="pphint">Its tasks are out of Overdue and your counts while it is ' + LABEL[p.status].toLowerCase() + '.</div>';
+    for (i = 0; i < STAT.length; i++) h += '<button class="chip' + (statusOf(p) === STAT[i] ? ' on' : '') + '" data-pp="stat" data-id="' + esc(p.id) + '" data-val="' + STAT[i] + '">' + LABEL[STAT[i]] + '</button>';
+    if (SHELF[statusOf(p)]) h += '<div class="pphint">Its tasks are out of Overdue and your counts while it is ' + LABEL[statusOf(p)].toLowerCase() + '.</div>';
+    else if (statusOf(p) === 'live') h += '<div class="pphint">Live: tasks you add still show up as normal.</div>';
     h += '</div>';
     h += '<div class="ppsec"><div class="lbl">Progress</div>' + (pg.all ? progHTML(pg, true) : '<div class="pphint">No tasks yet.</div>') +
       '<div class="pphint">' + pg.open + ' open (' + pg.back + ' in backlog) · last activity ' + ago(p.last_at || p.created_at) + '</div></div>';
@@ -255,8 +337,8 @@
         (d.state && d.state !== 'UNKNOWN' ? ' · ' + esc(d.state.toLowerCase()) : '') + (d.at ? ' · ' + ago(new Date(d.at).toISOString()) : '') + (d.error ? ' · ' + esc(d.error) : '') + '</div>';
       h += '</div>';
     }
-    var lk = '';
-    for (i = 0; i < LINKS.length; i++) if (m[LINKS[i][0]]) lk += '<a class="pplinkrow" href="' + esc(m[LINKS[i][0]]) + '" target="_blank" rel="noopener"><span>' + LINKS[i][1] + ' ↗</span><small>' + esc(host(m[LINKS[i][0]])) + '</small></a>';
+    var lk = '', al = allLinks(p);
+    for (i = 0; i < al.length; i++) lk += '<a class="pplinkrow" href="' + esc(al[i][1]) + '" target="_blank" rel="noopener"><span>' + esc(al[i][0]) + ' ↗</span><small>' + esc(al[i][2]) + '</small></a>';
     if (lk) h += '<div class="ppsec"><div class="lbl">Links</div>' + lk + '</div>';
     if (m.started || m.target) h += '<div class="ppsec"><div class="lbl">Dates</div><div class="ppline">' +
       (m.started ? 'Started ' + fmtD(m.started) : '') + (m.started && m.target ? ' · ' : '') + (m.target ? 'Target ' + fmtD(m.target) : '') + '</div></div>';
@@ -295,8 +377,9 @@
       if (showDone) h += App.listHTML(t.done);
     }
     if (p.done_old) h += '<div class="pphint">Plus ' + p.done_old + ' finished earlier.</div>';
-    h += '<h2>Activity</h2>';
-    if (!ev) h += '<div class="pphint">Loading…</div>';
+    h += '<button class="ppacth" data-pp="act" aria-expanded="' + (showAct ? 'true' : 'false') + '">' + (showAct ? '▾' : '▸') + ' Activity' + (ev ? '<small>' + ev.length + (ev.length >= 40 ? '+' : '') + ' entries' + (ev.length ? ' · latest ' + ago(ev[0].at) : '') + '</small>' : '') + '</button>';
+    if (!showAct) {}
+    else if (!ev) h += '<div class="pphint">Loading…</div>';
     else if (!ev.length) h += '<div class="pphint">Nothing yet.</div>';
     else {
       h += '<ul class="ppev">';
@@ -319,13 +402,14 @@
     var p = sel ? byId(sel) : null;
     if (sel && known && !p) { sel = ''; setStore('ppSel', ''); }
     App.setHTML($('viewTitle'), p ? 'My projects<small>' + esc(p.name) + '</small>' : 'My projects');
-    var keep = {}, ids = ['ppNew', 'ppTask', 'ppEdit', 'ppf_desc', 'ppf_site', 'ppf_vercel', 'ppf_supabase', 'ppf_github', 'ppf_claude', 'ppf_started', 'ppf_target'], i;
+    var keep = {}, ids = ['ppNew', 'ppTask', 'ppEdit'], i;
     for (i = 0; i < ids.length; i++) if ($(ids[i])) keep[ids[i]] = $(ids[i]).value;
-    var ae = document.activeElement, focusId = ae && ae.id ? ae.id : '';
+    var ae = document.activeElement, focusId = ae && ae.id ? ae.id : '', focusF = ae && ae.getAttribute ? ae.getAttribute('data-f') : null;
     if (p) watchEvents(p);
     App.setHTML($('ppPane'), p ? detailPage(p) : boardPage());
     for (i = 0; i < ids.length; i++) if ($(ids[i]) && keep[ids[i]] !== undefined) $(ids[i]).value = keep[ids[i]];
     if (focusId && $(focusId) && /^pp/.test(focusId)) $(focusId).focus();
+    else if (focusF) { var fe = $('ppPane').querySelector('[data-f="' + focusF + '"]'); if (fe) fe.focus(); }
   }
 
   /* ---------- actions ---------- */
@@ -368,14 +452,17 @@
     patch(id, { name: v }, function (q) { q.name = was; });
   }
   function saveDetails() {
-    var p = byId(sel); if (!p || busy) return;
-    var keys = ['desc', 'site', 'vercel', 'supabase', 'github', 'claude', 'started', 'target'], m = {}, i, v;
-    for (i = 0; i < keys.length; i++) { v = $('ppf_' + keys[i]) ? $('ppf_' + keys[i]).value.replace(/^\s+|\s+$/g, '') : ''; if (v) m[keys[i]] = v; }
+    var p = byId(sel); if (!p || busy || !draft) return;
+    var d = draft, m = {}, i, t = function (v) { return (v || '').replace(/^\s+|\s+$/g, ''); };
+    ['desc', 'vercel', 'supabase', 'github', 'started', 'target'].forEach(function (k) { if (t(d[k])) m[k] = t(d[k]); });
+    m.sites = []; m.links = [];
+    for (i = 0; i < d.sites.length; i++) if (t(d.sites[i])) m.sites.push(t(d.sites[i]));
+    for (i = 0; i < d.links.length; i++) if (t(d.links[i].u)) m.links.push({ l: t(d.links[i].l), u: t(d.links[i].u) });
     if (m.started && m.target && m.target < m.started) { App.toast('The target date is before the start'); return; }
     busy = true; paint();
     patch(p.id, { meta: m }, null, function (ok) {
       busy = false;
-      if (ok) { editing = false; dep.at = 0; loadDeploy(true); App.toast('Details saved'); }
+      if (ok) { editing = false; draft = null; dep.at = 0; loadDeploy(true); App.toast('Details saved'); }
       paint();
     });
   }
@@ -392,7 +479,7 @@
     }, '/api/todos');
   }
   function openProject(id) {
-    sel = id; editId = ''; editing = false; showDone = false; moveId = ''; setStore('ppSel', id);
+    sel = id; editId = ''; editing = false; draft = null; showDone = false; moveId = ''; setStore('ppSel', id);
     paint(); window.scrollTo(0, 0); loadEvents(id);
   }
 
@@ -406,7 +493,7 @@
     var a = el.getAttribute('data-pp'), id = el.getAttribute('data-id'), v = el.getAttribute('data-val');
     e.preventDefault();
     if (a === 'open') openProject(id);
-    else if (a === 'back') { sel = ''; editId = ''; editing = false; setStore('ppSel', ''); paint(); window.scrollTo(0, 0); }
+    else if (a === 'back') { sel = ''; editId = ''; editing = false; draft = null; setStore('ppSel', ''); paint(); window.scrollTo(0, 0); }
     else if (a === 'stat') setStatus(id, v);
     else if (a === 'mv') { moveId = id; paint(); }
     else if (a === 'mvx') { moveId = ''; paint(); }
@@ -414,8 +501,13 @@
     else if (a === 'edit') { editId = id; editing = false; paint(); if ($('ppEdit')) $('ppEdit').focus(); }
     else if (a === 'cancel') { editId = ''; paint(); }
     else if (a === 'save') rename(id);
-    else if (a === 'det') { editing = true; editId = ''; paint(); window.scrollTo(0, 0); }
-    else if (a === 'detx') { editing = false; paint(); }
+    else if (a === 'det') { var dp = byId(sel); if (!dp) return; startDraft(dp); editing = true; editId = ''; paint(); window.scrollTo(0, 0); }
+    else if (a === 'detx') { editing = false; draft = null; paint(); }
+    else if (a === 'addsite' && draft) { if (draft.sites.length < 8) draft.sites.push(''); paint(); }
+    else if (a === 'rmsite' && draft) { draft.sites.splice(+v, 1); if (!draft.sites.length) draft.sites.push(''); paint(); }
+    else if (a === 'addlink' && draft) { if (draft.links.length < 12) draft.links.push({ l: '', u: '' }); paint(); }
+    else if (a === 'rmlink' && draft) { draft.links.splice(+v, 1); if (!draft.links.length) draft.links.push({ l: '', u: '' }); paint(); }
+    else if (a === 'act') { showAct = !showAct; store.set('ppAct', showAct ? '1' : '0'); paint(); }
     else if (a === 'to') { addTo = v === 'list' ? 'list' : 'backlog'; store.set('ppAddTo', addTo); paint(); }
     else if (a === 'done') { showDone = !showDone; paint(); }
   }, false);
@@ -424,6 +516,19 @@
     if (f.id === 'ppNewForm') { e.preventDefault(); create($('ppNew').value); }
     else if (f.id === 'ppTaskForm') { e.preventDefault(); addTask($('ppTask').value); }
     else if (f.id === 'ppDetForm') { e.preventDefault(); saveDetails(); }
+  }, false);
+  function onField(e) { // keep the details draft in step with what is typed (the form is redrawn from it)
+    var el = e.target, f = el && el.getAttribute ? el.getAttribute('data-f') : null, m;
+    if (!f || !draft) return;
+    if ((m = /^site:(\d+)$/.exec(f))) draft.sites[+m[1]] = el.value;
+    else if ((m = /^ll:(\d+)$/.exec(f))) draft.links[+m[1]].l = el.value;
+    else if ((m = /^lu:(\d+)$/.exec(f))) draft.links[+m[1]].u = el.value;
+    else if (draft.hasOwnProperty(f)) draft[f] = el.value;
+  }
+  document.addEventListener('input', onField, false);
+  document.addEventListener('change', function (e) {
+    onField(e);
+    if (e.target && e.target.id === 'ppVsel') fillFromVercel(e.target.value);
   }, false);
   document.addEventListener('keydown', function (e) {
     if (e.target && e.target.id === 'ppEdit' && (e.keyCode === 13 || e.keyCode === 27)) { e.preventDefault(); if (e.keyCode === 13) rename(editId); else { editId = ''; paint(); } }
