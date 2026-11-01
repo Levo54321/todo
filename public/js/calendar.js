@@ -9,7 +9,7 @@
     if (App.settings.caldav !== st.connected) App.applySettings({ caldav: st.connected });
   }
   function check() {
-    if (!App.token()) { if (tries++ < 8) setTimeout(check, 1500); return; }
+    if (!App.token()) { App.whenToken(check); return; }
     App.api('GET', '', null, function (s, d) { if (s === 200 && d) { apply(d); App.refreshTab(); } }, '/api/cal');
   }
   setTimeout(check, 800);

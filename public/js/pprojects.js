@@ -143,7 +143,7 @@
 
   /* ---------- data ---------- */
   function load(cb) {
-    if (!App.token()) { if (tries++ < 8) setTimeout(function () { load(cb); }, 1500); return; }
+    if (!App.token()) { App.whenToken(function () { load(cb); }); return; }
     App.api('GET', '', null, function (s, d) {
       if (s === 200 && d && d.projects) {
         for (var i = 0; i < d.projects.length; i++) {

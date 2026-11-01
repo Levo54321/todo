@@ -3,7 +3,7 @@
   /* Projects board: every active Work project as a column, its open tasks in your own order, plus a Work insights tab. */
   var App = window.App; if (!App) return;
   var $ = App.$, esc = App.esc, store = App.store;
-  var projects = [], known = false, tries = 0, fold = {}, msg = '', pick = null, drag = null;
+  var projects = [], known = false, failed = false, fold = {}, msg = '', pick = null, drag = null;
   var tab = store.get('bdTab') === 'ins' ? 'ins' : 'board';
   var rows = null, hErr = '', hLoading = false, hAt = 0;
   try { fold = JSON.parse(store.get('bdFold') || '{}') || {}; } catch (e) { fold = {}; }
@@ -12,10 +12,11 @@
   function syncCore() { if (App.setProjects) App.setProjects(projects); }
   function use(list) { projects = list; known = true; syncCore(); }
   function load(cb) {
-    if (!App.token()) { if (tries++ < 8) setTimeout(function () { load(cb); }, 1500); return; }
-    App.api('GET', '', null, function (s, d) {
-      if (s === 200 && d && d.projects) { use(d.projects); if (cb) cb(); }
-    }, '/api/projects');
+    if (!App.token()) { App.whenToken(function () { load(cb); }); return; }
+    App.getProjects(function (s, d) {
+      if (s === 200 && d && d.projects) { failed = false; use(d.projects); if (cb) cb(); }
+      else if (!known && !failed) { failed = true; paint(); }
+    });
   }
 
   /* ---------- data ---------- */
@@ -274,6 +275,7 @@
       open++;
       if (t.blocked) bl++; else if (t.due_date && t.due_date < today) od++;
     }
+    if (!known && failed) return '<p class="empty">Could not load your projects.</p><div class="row"><button class="btn sm" data-bd="retry">Try again</button></div>';
     if (!known) return '<p class="empty">Loading…</p>';
     if (!g.cols.length) {
       return '<p class="empty">' + (g.archived ? 'All your projects are completed. Tap “Manage projects…” to reopen one or add a new one.' : 'No active projects yet. Tap “Manage projects…” to add your first one, then give Work tasks that project.') + '</p>' + (g.rest.length ? '<div class="bdcols">' + looseColumn(g.rest) + '</div>' : '');
@@ -299,7 +301,7 @@
     var cols = pane.querySelector('.bdcols'), left = cols ? cols.scrollLeft : 0, tops = [], bodies, i, h = tabBar();
     if (cols) { bodies = cols.querySelectorAll('.bdlist'); for (i = 0; i < bodies.length; i++) tops.push(bodies[i].scrollTop); }
     h += tab === 'ins' ? insHTML() : boardHTML();
-    App.setHTML(pane, h);
+    if (!App.setHTML(pane, h)) return; // nothing changed: write no scroll positions (iOS 9 flicker)
     cols = pane.querySelector('.bdcols');
     if (cols && tab === 'board') {
       cols.scrollLeft = left;
@@ -563,6 +565,8 @@
     } else if (a === 'auto') {
       var ap = byId(el.getAttribute('data-pid'));
       if (ap) { setOrder(ap, [], true); App.toast('Back to the automatic order'); }
+    } else if (a === 'retry') {
+      failed = false; paint(); load(function () { paint(); });
     } else if (a === 'tab') {
       tab = el.getAttribute('data-tab') === 'ins' ? 'ins' : 'board';
       store.set('bdTab', tab); pick = null;

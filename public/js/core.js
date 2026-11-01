@@ -385,7 +385,7 @@
     if (document.body.getAttribute('data-view') !== view) document.body.setAttribute('data-view', view);
     var bc = railOpen ? 'rail-open' : '';
     if (document.body.className !== bc) document.body.className = bc;
-    if (view !== 'tasks' && view !== 'plan') setHTML($('viewTitle'), esc((App.views[view] && App.views[view].title) || ''));
+    if (view !== 'tasks' && view !== 'plan' && view !== 'pprojects') setHTML($('viewTitle'), esc((App.views[view] && App.views[view].title) || ''));
   }
   function render() {
     renderChrome();
@@ -1473,6 +1473,18 @@
     x.send(null);
   }
 
+  /* modules that need the token wait here instead of polling for a few seconds and giving up */
+  var tokenQ = [];
+  function whenToken(fn) { if (token) fn(); else tokenQ.push(fn); }
+  function flushTokenQ() { var q = tokenQ; tokenQ = []; for (var i = 0; i < q.length; i++) setTimeout(q[i], 0); }
+  /* one shared GET /api/projects: callers that arrive while it is in flight share the answer */
+  var projQ = null;
+  function getProjects(cb) {
+    if (projQ) { projQ.push(cb); return; }
+    projQ = [cb];
+    api('GET', '', null, function (s, d) { var q = projQ; projQ = null; for (var i = 0; i < q.length; i++) q[i](s, d); }, '/api/projects');
+  }
+
   /* gate */
   function showGate(msg) {
     token = null; store.del('todoToken');
@@ -1483,6 +1495,7 @@
     var v = $('gateInput').value.replace(/\s+/g, '').toLowerCase();
     if (!v) return;
     token = v; store.set('todoToken', v);
+    flushTokenQ();
     $('gate').style.display = 'none'; $('gateMsg').textContent = '';
     $('gateInput').blur();
     loaded = false; render(); load(); loadGlance(); loadSettings();
@@ -1682,6 +1695,7 @@
   App.todos = function () { return todos; };
   App.mode = function () { return mode; };
   App.token = function () { return token; };
+  App.whenToken = whenToken; App.getProjects = getProjects;
   App.settings = settings;
   App.render = render;
   App.ask = ask;

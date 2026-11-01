@@ -6,8 +6,8 @@
   var PRIO = ['None', 'Low', 'Medium', 'High'];
 
   function load(cb) {
-    if (!App.token()) { if (tries++ < 8) setTimeout(function () { load(cb); }, 1500); return; }
-    App.api('GET', '', null, function (s, d) { if (s === 200 && d && d.projects) { list = d.projects; known = true; refreshPicker(); sync(); if (cb) cb(); } }, '/api/projects');
+    if (!App.token()) { App.whenToken(function () { load(cb); }); return; }
+    App.getProjects(function (s, d) { if (s === 200 && d && d.projects) { list = d.projects; known = true; refreshPicker(); sync(); if (cb) cb(); } });
   }
   setTimeout(function () { load(function () { if (sheetOpen()) paint(); }); }, 900);
   document.addEventListener('visibilitychange', function () { if (!App.hidden()) load(function () { if (sheetOpen()) paint(); }); }, false);

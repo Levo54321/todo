@@ -7,7 +7,7 @@
   var DURS = [[15, '15 min'], [30, '30 min'], [45, '45 min'], [60, '1 hour'], [90, '1.5 hours'], [120, '2 hours']];
 
   function load(cb) {
-    if (!App.token()) { if (tries++ < 8) setTimeout(function () { load(cb); }, 1500); return; }
+    if (!App.token()) { App.whenToken(function () { load(cb); }); return; }
     App.api('GET', '?sched=1', null, function (s, d) {
       if (s === 200 && d) { map = d.map || {}; canWrite = !!d.can_write; calName = d.cal || ''; needCal = !!d.write_error; loaded = true; if (cb) cb(); }
     }, '/api/gcal');
