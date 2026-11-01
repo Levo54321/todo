@@ -7,7 +7,9 @@ drag-and-drop order within a lane (mouse and synthetic touch), new projects firs
 v1046: Idea lane hidden when empty; background refreshes touch nothing (no flicker, cursor kept) and a real redraw
 keeps the cursor position in the field being typed in.
 v1047 (Deploy 3): subscriptions and costs per project (add/edit/delete, totals, roll-forward of due dates,
-"due soon" on cards, "also in Budget" hint, activity entries)."""
+"due soon" on cards, "also in Budget" hint, activity entries).
+v1048 (Deploy 4a): account labels (typed and filled by the picker), custom icon upload (resized to 128px), icon from
+website, remove -> letter, stored icon address; Edit details keeps the Reason."""
 import importlib.util, os
 D = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(D, 'out'); os.makedirs(OUT, exist_ok=True)  # screenshots (git-ignored)
@@ -100,6 +102,7 @@ def run(h):
     d2_checks(h, chk, wait, calls)
     idle_checks(h, chk, wait)
     cost_checks(h, chk, wait, calls)
+    d4a_checks(h, chk, wait, calls)
     return R
 
 def layout_checks(h, chk, wait):
@@ -428,4 +431,69 @@ def cost_checks(h, chk, wait, calls):
     chk('iPhone: cost form fits', p.evaluate('document.documentElement.scrollWidth') <= 392)
     p.screenshot(path=os.path.join(OUT, 'd3_iphone.png'), full_page=True)
     p.click('[data-pp=cx]'); wait(200); p.click('[data-pp=back]'); wait(300)
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)
+
+
+def d4a_checks(h, chk, wait, calls):
+    p = h.page
+    def pid(name): return [x for x in h.pprojects if x['name'] == name][0]['id']
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
+    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(700)
+    if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
+    p.fill('#ppNew', 'Icon Test'); p.press('#ppNew', 'Enter'); wait(500)
+    it = pid('Icon Test')
+    p.click('.ppcard[data-id="%s"] .ppnm' % it); wait(500)
+    # Reason survives an Edit details save (Deploy 2 bug)
+    p.click('[data-pp=stat][data-val=paused]'); wait(400)
+    p.fill('#ppReason', 'Waiting on a domain'); p.click('[data-pp=rsave]'); wait(500)
+    p.click('[data-pp=det]'); wait(500)
+    # picker fills account labels when empty
+    p.select_option('#ppVsel', 'teamevo/holmlodge-hub'); wait(600)
+    chk('picker fills Vercel team and GitHub account', p.input_value('[data-f=acct_vercel]') == 'teamevo' and p.input_value('[data-f=acct_github]') == 'Levo54321',
+        (p.input_value('[data-f=acct_vercel]'), p.input_value('[data-f=acct_github]')))
+    p.fill('[data-f=acct_supabase]', 'luc@example.com')
+    p.click('#ppDetForm button[type=submit]'); wait(700)
+    m = calls('PATCH', '/api/pprojects')[-1][3].get('meta', {})
+    chk('details save keeps the Reason', m.get('reason') == 'Waiting on a domain', m)
+    chk('account labels saved', m.get('acct_vercel') == 'teamevo' and m.get('acct_supabase') == 'luc@example.com' and m.get('acct_github') == 'Levo54321', m)
+    side = p.inner_text('.ppside')
+    chk('Accounts section on the project page', 'Supabase' in side and 'luc@example.com' in side and 'teamevo' in side, side[-300:])
+    chk('Reason still shown', 'Why: Waiting on a domain' in side)
+    # icon: upload a PNG (resized to 128px)
+    p.click('[data-pp=det]'); wait(500)
+    p.set_input_files('#ppIconFile', os.path.join(os.path.dirname(D), 'public', 'favicon-32.png')); wait(1200)
+    body = getattr(h, 'last_icon', None)
+    import base64, struct
+    dims = None
+    if body:
+        raw = base64.b64decode(body['data']); dims = struct.unpack('>II', raw[16:24]) if raw[:4] == b'\x89PNG' else None
+    chk('upload sends a 128px square PNG', body and body['mime'] == 'image/png' and dims == (128, 128), (body and body['mime'], dims))
+    src = p.get_attribute('.ppicon .pplogo img', 'src') or ''
+    chk('stored icon address used (with version and token)', '/api/pprojects?icon=%s&v=' % it in src and '&t=' in src, src)
+    chk('icon upload in activity', any(e['k'] == 'icon' and e['t'] == 'uploaded' for e in h.pevents if e['pid'] == it))
+    # remove -> letter
+    p.click('[data-pp=icx]'); wait(600)
+    chk('remove icon -> first letter only', not p.query_selector('.ppicon .pplogo img') and 'first letter' in p.inner_text('.ppicon + .pphint'))
+    # from website (holmlodge-hub sites in the mock)
+    p.click('[data-pp=icsite]'); wait(600)
+    src = p.get_attribute('.ppicon .pplogo img', 'src') or ''
+    chk('icon from website stored', '?icon=%s' % it in src and 'saved copy' in p.inner_text('.ppicon + .pphint'), src)
+    p.click('[data-pp=detx]'); wait(300)
+    p.click('[data-pp=back]'); wait(400)
+    csrc = p.get_attribute('.ppcard[data-id="%s"] .pplogo img' % it, 'src') or ''
+    chk('card shows the stored icon', '?icon=%s' % it in csrc, csrc)
+    # paused site: from website fails politely
+    old = pid('Old App')
+    pj = [x for x in h.pprojects if x['id'] == old][0]; pj['meta']['sites'] = ['https://paused.example.com']
+    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(600)
+    p.click('.ppcard[data-id="%s"] .ppnm' % old); wait(400); p.click('[data-pp=det]'); wait(400)
+    h.allow.append('status of 422')
+    p.click('[data-pp=icsite]'); wait(600)
+    chk('paused site: clear message, nothing changed', 'paused or down' in p.inner_text('#toast'), p.inner_text('#toast'))
+    p.click('[data-pp=detx]'); wait(200); p.click('[data-pp=back]'); wait(300)
+    p.set_viewport_size({'width': 390, 'height': 844}); wait(400)
+    p.click('.ppcard[data-id="%s"] .ppnm' % it); wait(400); p.click('[data-pp=det]'); wait(400)
+    chk('iPhone: details form with icon and accounts fits', p.evaluate('document.documentElement.scrollWidth') <= 392)
+    p.screenshot(path=os.path.join(OUT, 'd4a_iphone.png'), full_page=True)
+    p.click('[data-pp=detx]'); wait(200); p.click('[data-pp=back]'); wait(300)
     p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)

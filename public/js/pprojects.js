@@ -21,7 +21,7 @@
   var addTo = store.get('ppAddTo') === 'list' ? 'list' : 'backlog';
   var fold = { idea: false, paused: true, not_pursued: true, shut_down: true }; // Idea, In progress and Live open by default
   var reasonId = '', reasonDraft = '', drag = null;
-  var costEdit = '', costDraft = null, budgetNames = null, budgetAsked = false, SOON = 30; // costs: id being edited ('new' = adding)
+  var iconBusy = false, costEdit = '', costDraft = null, budgetNames = null, budgetAsked = false, SOON = 30; // costs: id being edited ('new' = adding)
   function statusOf(p) { return p.status === 'active' ? 'in_progress' : p.status; }
   try { var fs = JSON.parse(store.get('ppFold') || 'null'), fk; if (fs && typeof fs === 'object') for (fk in fs) if (fs.hasOwnProperty(fk) && fold.hasOwnProperty(fk)) fold[fk] = !!fs[fk]; } catch (e) {}
   var dep = { configured: null, status: {}, at: 0, loading: false };
@@ -109,6 +109,11 @@
     '.ppcform{margin:6px 0 10px;padding:10px;border:1px solid var(--rule);border-radius:10px;background:var(--bg)}' +
     '.ppcform .sg button{min-height:40px}.ppcform .btn.danger{color:var(--alert)}' +
     '.ppcrow{display:-webkit-flex;display:flex}.ppcrow .a{-webkit-flex:1;flex:1;min-width:0;margin-right:8px}.ppcrow .c{-webkit-flex:none;flex:none;width:96px}' +
+    '.ppicon{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-align-items:center;align-items:center}.ppicon .pplogo{margin-bottom:6px}' +
+    '.ppicon .btn{margin:0 6px 6px 0;min-height:44px}.ppform label.ppup{position:relative;overflow:hidden;display:inline-block;line-height:20px;margin:0 6px 6px 0;color:var(--ink);font-size:15px}' +
+    '.ppup input{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;font-size:100px;cursor:pointer}' +
+    '.pplrow .acl{-webkit-flex:none;flex:none;width:76px;font-size:13px;color:var(--muted);line-height:40px}' +
+    '.ppacct{display:-webkit-flex;display:flex;font-size:14px;padding:3px 0;word-wrap:break-word;overflow-wrap:break-word;min-width:0}.ppacct span{-webkit-flex:none;flex:none;width:76px;color:var(--muted);font-size:13px}' +
     '.ppgrip{-webkit-flex:none;flex:none;width:44px;height:44px;margin:-6px -8px -6px 4px;line-height:44px;text-align:center;color:var(--muted);font-size:19px;cursor:-webkit-grab;cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}' +
     '.ppcard.dragging{box-shadow:0 8px 22px rgba(0,0,0,.28);opacity:.97;background:var(--paper)}' +
     '.ppcard.dropb{box-shadow:0 -3px 0 var(--accent)}.ppcard.dropa{box-shadow:0 3px 0 var(--accent)}' +
@@ -344,10 +349,16 @@
       paint();
     }, '/api/pprojects');
   }
+  function iconSrc(p) { // stored copy (uploaded, or saved from the site) > the site's own icon link > none (first letter)
+    var k = p.icon_kind;
+    if (k === 'upload' || k === 'site') return '/api/pprojects?icon=' + encodeURIComponent(p.id) + '&v=' + (p.icon_at || 0) + '&t=' + encodeURIComponent(App.token() || '');
+    if (k === 'none') return '';
+    return (p.meta && p.meta.icon) || '';
+  }
   function logoHTML(p, big) {
-    var m = p.meta || {}, letter = esc((p.name || '?').charAt(0).toUpperCase());
+    var src = iconSrc(p), letter = esc((p.name || '?').charAt(0).toUpperCase());
     return '<span class="pplogo' + (big ? ' big' : '') + '">' + letter +
-      (m.icon ? '<img src="' + esc(m.icon) + '" alt="" onerror="this.parentNode.removeChild(this)">' : '') + '</span>';
+      (src ? '<img src="' + esc(src) + '" alt="" onerror="this.parentNode.removeChild(this)">' : '') + '</span>';
   }
   function depOf(p) {
     if (!p.meta || !p.meta.vercel) return null;
@@ -441,7 +452,8 @@
   }
   function startDraft(p) {
     var m = p.meta || {}, ls = linksOf(m), i;
-    draft = { desc: m.desc || '', sites: sitesOf(m).slice(0), links: [], vercel: m.vercel || '', supabase: m.supabase || '', github: m.github || '', started: m.started || '', target: m.target || '' };
+    draft = { desc: m.desc || '', sites: sitesOf(m).slice(0), links: [], vercel: m.vercel || '', supabase: m.supabase || '', github: m.github || '', started: m.started || '', target: m.target || '',
+      acct_vercel: m.acct_vercel || '', acct_supabase: m.acct_supabase || '', acct_github: m.acct_github || '' };
     for (i = 0; i < ls.length; i++) draft.links.push({ l: ls[i].l || '', u: ls[i].u || '' });
     if (!draft.sites.length) draft.sites.push('');
     if (!draft.links.length) draft.links.push({ l: '', u: '' });
@@ -473,7 +485,13 @@
     return '<input class="setinput' + (extra || '') + '" data-f="' + f + '" type="' + type + '" value="' + esc(val || '') + '" placeholder="' + esc(ph) + '" autocorrect="off" autocapitalize="off" spellcheck="false">';
   }
   function editForm(p) {
-    var d = draft, h = '<form class="ppform" id="ppDetForm" autocomplete="off">', i, cur = '';
+    var d = draft, h = '<form class="ppform" id="ppDetForm" autocomplete="off">', i, cur = '', hasIcon = !!iconSrc(p);
+    h += '<div class="frow2"><label>Icon</label><div class="ppicon">' + logoHTML(p, true) +
+      '<label class="btn sm ppup">' + (iconBusy ? 'Working…' : 'Upload icon') + '<input type="file" id="ppIconFile" accept="image/*"' + (iconBusy ? ' disabled' : '') + '></label>' +
+      (sitesOf(p.meta || {}).length ? '<button class="btn sm" type="button" data-pp="icsite"' + (iconBusy ? ' disabled' : '') + '>From website</button>' : '') +
+      (hasIcon ? '<button class="btn sm danger" type="button" data-pp="icx"' + (iconBusy ? ' disabled' : '') + '>Remove</button>' : '') +
+      '</div><div class="pphint">' + (p.icon_kind === 'upload' ? 'Your own icon.' : p.icon_kind === 'site' ? 'A saved copy of the website\'s icon (still shows if the site is paused).' :
+        p.icon_kind === 'none' ? 'No icon: the card shows the first letter.' : hasIcon ? 'Loaded from the website each time. Tap "From website" to keep a copy.' : 'No icon yet.') + '</div></div>';
     var pv = /^https:\/\/vercel\.com\/([^\/?#]+)\/([^\/?#]+)/i.exec(d.vercel || '');
     if (pv) cur = pv[1] + '/' + pv[2];
     h += '<div class="frow2"><label>One-line description</label>' + inp('desc', d.desc, 'text', 'What is it?') + '</div>';
@@ -503,6 +521,10 @@
     h += '<button class="addl" type="button" data-pp="addlink">+ Add link</button></div>';
     h += '<div class="frow2"><label>Started</label>' + inp('started', d.started, 'date', '') + '</div>';
     h += '<div class="frow2"><label>Target date</label>' + inp('target', d.target, 'date', '') + '</div>';
+    h += '<div class="frow2"><label>Accounts (email or username only, never passwords)</label>' +
+      '<div class="pplrow"><span class="acl">Vercel</span>' + inp('acct_vercel', d.acct_vercel, 'text', 'Account or team', '') + '</div>' +
+      '<div class="pplrow"><span class="acl">Supabase</span>' + inp('acct_supabase', d.acct_supabase, 'text', 'Account or organisation', '') + '</div>' +
+      '<div class="pplrow"><span class="acl">GitHub</span>' + inp('acct_github', d.acct_github, 'text', 'Account', '') + '</div></div>';
     h += '<div class="pphint">Leave anything blank to hide it. Links must start with https.</div>' +
       '<button class="btn primary" type="submit"' + (busy ? ' disabled' : '') + '>Save details</button><button class="btn" type="button" data-pp="detx">Cancel</button></form>';
     return h;
@@ -530,7 +552,10 @@
       if (draft !== dr) return;
       if (s === 200 && d) {
         if (d.vercel) dr.vercel = d.vercel;
-        App.toast(swap(d.sites || [], d.github || '') ? 'Filled in from Vercel' : 'Nothing new to fill in');
+        var nf = swap(d.sites || [], d.github || ''), gm = /^https:\/\/github\.com\/([^\/]+)/i.exec(dr.github || '');
+        if (!dr.acct_vercel && m[1]) { dr.acct_vercel = m[1]; nf++; } // the team the project lives in
+        if (!dr.acct_github && gm) { dr.acct_github = gm[1]; nf++; }
+        App.toast(nf ? 'Filled in from Vercel' : 'Nothing new to fill in');
       } else App.toast(d && d.error ? d.error : 'Could not reach Vercel');
       paint();
     }, '/api/pprojects');
@@ -569,6 +594,10 @@
     for (i = 0; i < al.length; i++) lk += '<a class="pplinkrow" href="' + esc(al[i][1]) + '" target="_blank" rel="noopener"><span>' + esc(al[i][0]) + ' ↗</span><small>' + esc(al[i][2]) + '</small></a>';
     if (lk) h += '<div class="ppsec"><div class="lbl">Links</div>' + lk + '</div>';
     h += costsHTML(p);
+    if (m.acct_vercel || m.acct_supabase || m.acct_github) h += '<div class="ppsec"><div class="lbl">Accounts</div>' +
+      (m.acct_vercel ? '<div class="ppacct"><span>Vercel</span>' + esc(m.acct_vercel) + '</div>' : '') +
+      (m.acct_supabase ? '<div class="ppacct"><span>Supabase</span>' + esc(m.acct_supabase) + '</div>' : '') +
+      (m.acct_github ? '<div class="ppacct"><span>GitHub</span>' + esc(m.acct_github) + '</div>' : '') + '</div>';
     if (m.started || m.target) h += '<div class="ppsec"><div class="lbl">Dates</div><div class="ppline">' +
       (m.started ? 'Started ' + fmtD(m.started) : '') + (m.started && m.target ? ' · ' : '') + (m.target ? 'Target ' + fmtD(m.target) : '') + '</div></div>';
     return h;
@@ -584,6 +613,7 @@
       case 'cost_added': return 'Cost added: ' + t;
       case 'cost_changed': return 'Cost changed: ' + t;
       case 'cost_removed': return 'Cost removed: ' + t;
+      case 'icon': return 'Icon ' + t;
       case 'task_added': return 'Added <b>' + t + '</b>';
       case 'task_done': return 'Done <b>' + t + '</b>';
       case 'task_reopened': return 'Reopened <b>' + t + '</b>';
@@ -760,7 +790,8 @@
   function saveDetails() {
     var p = byId(sel); if (!p || busy || !draft) return;
     var d = draft, m = {}, i, t = function (v) { return (v || '').replace(/^\s+|\s+$/g, ''); };
-    ['desc', 'vercel', 'supabase', 'github', 'started', 'target'].forEach(function (k) { if (t(d[k])) m[k] = t(d[k]); });
+    if (p.meta && p.meta.reason) m.reason = p.meta.reason; // not on this form: keep it (meta is replaced as a whole)
+    ['desc', 'vercel', 'supabase', 'github', 'started', 'target', 'acct_vercel', 'acct_supabase', 'acct_github'].forEach(function (k) { if (t(d[k])) m[k] = t(d[k]); });
     m.sites = []; m.links = [];
     for (i = 0; i < d.sites.length; i++) if (t(d.sites[i])) m.sites.push(t(d.sites[i]));
     for (i = 0; i < d.links.length; i++) if (t(d.links[i].u)) m.links.push({ l: t(d.links[i].l), u: t(d.links[i].u) });
@@ -771,6 +802,51 @@
       if (ok) { editing = false; draft = null; dep.at = 0; loadDeploy(true); App.toast('Details saved'); }
       paint();
     });
+  }
+  /* ---------- icons: resized to a 128px square in the browser (like the screensaver), stored in the database ---------- */
+  function squareIcon(file, cb) {
+    var fr = new FileReader();
+    fr.onerror = function () { cb(null); };
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = function () { cb(null); };
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, sz = Math.min(w, h), S = 128, c = document.createElement('canvas');
+          c.width = S; c.height = S;
+          c.getContext('2d').drawImage(img, (w - sz) / 2, (h - sz) / 2, sz, sz, 0, 0, S, S); // centre square crop
+          var url = c.toDataURL('image/png'), mime = 'image/png';
+          if (url.length > 260000) { var x = c.getContext('2d'); x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#fff'; x.fillRect(0, 0, S, S); url = c.toDataURL('image/jpeg', 0.85); mime = 'image/jpeg'; }
+          cb({ data: url.split(',')[1], mime: mime });
+        } catch (e) { cb(null); }
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+  function iconDone(p, s, r, okMsg) {
+    iconBusy = false;
+    if (s === 200 && r && r.stored !== false) { p.icon_kind = r.kind || p.icon_kind; p.icon_at = r.at || Date.now(); touch(p); App.toast(okMsg); loadEvents(p.id); }
+    else App.toast(r && r.error ? r.error.charAt(0).toUpperCase() + r.error.slice(1) : 'Could not change the icon, try again');
+    paint();
+  }
+  function uploadIcon(file) {
+    var p = byId(sel); if (!p || iconBusy) return;
+    iconBusy = true; paint();
+    squareIcon(file, function (img) {
+      if (!img) { iconBusy = false; App.toast('Could not read that image'); paint(); return; }
+      App.api('POST', '?icon=' + encodeURIComponent(p.id), img, function (s, r) { iconDone(p, s, r, 'Icon saved'); }, '/api/pprojects');
+    });
+  }
+  function iconFromSite() {
+    var p = byId(sel); if (!p || iconBusy) return;
+    iconBusy = true; paint();
+    App.api('POST', '?icon=' + encodeURIComponent(p.id), { from: 'site' }, function (s, r) { iconDone(p, s, r, 'Icon copied from the website'); }, '/api/pprojects');
+  }
+  function removeIcon() {
+    var p = byId(sel); if (!p || iconBusy) return;
+    iconBusy = true; paint();
+    App.api('DELETE', '?icon=' + encodeURIComponent(p.id), null, function (s, r) { iconDone(p, s, r, 'Icon removed'); }, '/api/pprojects');
   }
   function saveReason(id) {
     var p = byId(id); if (!p || busy) return;
@@ -851,6 +927,8 @@
     else if (a === 'cx') { costEdit = ''; costDraft = null; paint(); }
     else if (a === 'cfreq' && costDraft) { costDraft.freq = v; paint(); }
     else if (a === 'cdel') deleteCost(id);
+    else if (a === 'icsite') iconFromSite();
+    else if (a === 'icx') removeIcon();
   }, false);
   document.addEventListener('submit', function (e) {
     var f = e.target; if (!f) return;
@@ -873,6 +951,7 @@
   document.addEventListener('change', function (e) {
     onField(e);
     if (e.target && e.target.id === 'ppVsel') fillFromVercel(e.target.value);
+    if (e.target && e.target.id === 'ppIconFile' && e.target.files && e.target.files[0]) uploadIcon(e.target.files[0]);
   }, false);
   document.addEventListener('keydown', function (e) {
     if (e.target && e.target.id === 'ppEdit' && (e.keyCode === 13 || e.keyCode === 27)) { e.preventDefault(); if (e.keyCode === 13) rename(editId); else { editId = ''; paint(); } }

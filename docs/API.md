@@ -75,7 +75,9 @@ change the header in the endpoint file and regenerate._
 //                               in hand-made order (pos ascending; each lane shows its projects in this order)
 //                               open/done = all-time task counts; done_old = finished more than 7 days ago (not in GET /api/todos);
 //                               last_at = latest activity. meta = { sites:[url], links:[{l,u}], vercel, supabase, github, desc,
-//                               reason, started, target, icon }  (reason: plain text, max 300, why it is idea/paused/... )
+//                               reason, started, target, icon, acct_vercel, acct_supabase, acct_github }
+//                               (reason: plain text, max 300; acct_*: which account/team/org, plain text, max 80, never passwords)
+//                               icon_kind: 'upload' | 'site' | 'none' | null, icon_at: ms (stored icon, see ?icon=)
 //   GET ?events=<id>         -> { events: [{at, k, t}] }   that project's activity, newest first
 //   GET ?deploy=1            -> { configured, status: { <project id>: {state, color, url, at} } }   latest production deploy of
 //                               each project with a Vercel link; state PAUSED (color 'paused') when the project is paused in
@@ -91,6 +93,12 @@ change the header in the endpoint file and regenerate._
 //   POST ?cost=1 {project_id, name, amount, currency?, freq?, next_due?, link?, email?} -> add a cost -> { cost }
 //   PATCH ?cost=<id> {name, amount, currency?, freq?, next_due?, link?, email?}       -> replace a cost -> { cost }
 //   DELETE ?cost=<id>        -> remove a cost
+//   GET ?icon=<id>[&v=<icon_at>]&t=<token> -> the project's stored icon image (for <img src>; cached)
+//   POST ?icon=<id> {data (base64 PNG/JPEG, max 200 KB), mime} -> upload a custom icon (resized in the browser)
+//   POST ?icon=<id> {from:'site'} -> fetch the first website's icon now and store a copy (422 if the site can't be read)
+//   DELETE ?icon=<id>        -> remove the icon: the card shows the first letter and the site is not asked again
+//        Stored icons keep showing when a site is paused or down. When a website's icon is found while saving details,
+//        a copy is stored too (unless an upload or a removal is in place).
 //        currency: 3 letters, default GBP; freq: 'monthly' | 'yearly' | 'one_off' (default monthly); next_due YYYY-MM-DD;
 //        link https only; max 30 per project. Adding/changing/removing a cost is written to the activity log.
 //        Separate from Budget's bills (monthly GBP entries in the budget config with no ids), so nothing is shared.
@@ -98,7 +106,7 @@ change the header in the endpoint file and regenerate._
 // Tasks of idea / paused / not_pursued / shut_down projects are shelved (out of Overdue and the counts).
 // Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
 // a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
-// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup18.sql.
+// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup19.sql.
 ```
 
 ## api/projects.js

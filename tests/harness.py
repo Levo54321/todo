@@ -64,6 +64,19 @@ class H:
             if method == 'DELETE':
                 self.todos = [t for t in self.todos if t['id'] != q['id'][0]]; return 200, {'ok': True}
         if path == '/api/pprojects':
+            if 'icon' in q:  # stored / custom icons
+                pj = [x for x in self.pprojects if x['id'] == q['icon'][0]][0]
+                if method == 'DELETE':
+                    pj['icon_kind'] = 'none'; pj['icon_at'] = 1793500000000 + len(self.calls); self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'icon', 't': 'removed'})
+                    return 200, {'stored': True, 'kind': 'none', 'at': pj['icon_at']}
+                if body.get('from') == 'site':
+                    if not pj['meta'].get('sites'): return 422, {'error': 'add a website first'}
+                    if 'paused' in pj['meta']['sites'][0]: return 422, {'error': 'could not get an icon from the website (it may be paused or down)'}
+                    pj['icon_kind'] = 'site'; pj['icon_at'] = 1793500000000 + len(self.calls); return 200, {'stored': True, 'kind': 'site', 'at': pj['icon_at']}
+                if body.get('mime') not in ('image/png', 'image/jpeg') or not body.get('data'): return 400, {'error': 'send a PNG or JPEG'}
+                self.last_icon = body
+                pj['icon_kind'] = 'upload'; pj['icon_at'] = 1793500000000 + len(self.calls); self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'icon', 't': 'uploaded'})
+                return 200, {'stored': True, 'kind': 'upload', 'at': pj['icon_at']}
             if 'cost' in q:  # subscriptions / costs
                 if method == 'DELETE':
                     for pj in self.pprojects:
@@ -161,7 +174,7 @@ def main():
                 try: body = json.loads(r.request.post_data or 'null')
                 except Exception: pass
                 st, data = h.api(r.request.method, u.path, parse_qs(u.query), body or {})
-                if u.path == '/api/saver' and 'id' in parse_qs(u.query):
+                if (u.path == '/api/saver' and 'id' in parse_qs(u.query)) or (u.path == '/api/pprojects' and 'icon' in parse_qs(u.query) and r.request.method == 'GET'):
                     return r.fulfill(status=200, content_type='image/png', body=open(os.path.join(REPO, 'public/favicon-32.png'), 'rb').read())
                 return r.fulfill(status=st, content_type='application/json', body=json.dumps(data))
             fp = os.path.join(REPO, 'public', (u.path.lstrip('/') or 'index.html'))
@@ -170,7 +183,8 @@ def main():
         ctx.route('**/*', route)
         page = ctx.new_page()
         page.on('pageerror', lambda e: h.errors.append(str(e) + ' @ ' + (e.stack or '')[:300]))
-        page.on('console', lambda m: m.type == 'error' and h.errors.append('console: ' + m.text))
+        h.allow = []  # console errors a test causes on purpose (e.g. an expected 422), as substrings
+        page.on('console', lambda m: m.type == 'error' and not any(x in m.text for x in h.allow) and h.errors.append('console: ' + m.text))
         page.goto('http://todo.test/'); page.wait_for_timeout(800)
         h.page = page
         results = mod.run(h)

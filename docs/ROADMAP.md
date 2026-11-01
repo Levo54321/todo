@@ -14,7 +14,8 @@
 - ~~Deploy 2: Idea status (shelved, tasks default to Backlog), Reason field (Idea/Paused/Not pursued/Shut down, logged), "paused but live on Vercel" warning, manual order within a lane by **drag and drop** (reuse board.js touch drag, not arrows), stored in a new `pos` column (not meta), new projects at top.~~ Done v1045 (`db/setup17.sql`); v1046 fixes: empty Idea lane hidden, no flicker/cursor jump on background refresh.
 - ~~Deploy 3: subscriptions/costs per project in their own table (Budget bills have no ids and are monthly-only, so not reused; show "also in Budget" on a name match).~~ Done v1047 (`db/setup18.sql`).
 - Follow-up (offered, not built): cross-project cost totals (per month / per year across all projects), and optionally a cost reminder feed like the Budget bills calendar feed.
-- Deploy 4: account labels in meta; stored icon copies in a new icon table (custom upload + cached site icons, fixes paused-site icons); per-project vault (server-side AES-GCM, key from vault password + env `VAULT_PEPPER`); Supabase token research only.
+- Deploy 4a: ~~account labels in meta; stored icon copies (custom upload + cached site icons)~~ Done v1048 (`db/setup19.sql`).
+- Deploy 4b/4c (remaining): per-project vault (server-side AES-GCM, key from vault password + env `VAULT_PEPPER`); Supabase token research only.
 
 ## P1 — cleanup
 5. ~~Remove legacy `api/shopping.js` and the Shopping tab~~ Done 1 Nov 2026 (v1040).

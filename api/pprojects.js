@@ -4,7 +4,9 @@
 //                               in hand-made order (pos ascending; each lane shows its projects in this order)
 //                               open/done = all-time task counts; done_old = finished more than 7 days ago (not in GET /api/todos);
 //                               last_at = latest activity. meta = { sites:[url], links:[{l,u}], vercel, supabase, github, desc,
-//                               reason, started, target, icon }  (reason: plain text, max 300, why it is idea/paused/... )
+//                               reason, started, target, icon, acct_vercel, acct_supabase, acct_github }
+//                               (reason: plain text, max 300; acct_*: which account/team/org, plain text, max 80, never passwords)
+//                               icon_kind: 'upload' | 'site' | 'none' | null, icon_at: ms (stored icon, see ?icon=)
 //   GET ?events=<id>         -> { events: [{at, k, t}] }   that project's activity, newest first
 //   GET ?deploy=1            -> { configured, status: { <project id>: {state, color, url, at} } }   latest production deploy of
 //                               each project with a Vercel link; state PAUSED (color 'paused') when the project is paused in
@@ -20,6 +22,12 @@
 //   POST ?cost=1 {project_id, name, amount, currency?, freq?, next_due?, link?, email?} -> add a cost -> { cost }
 //   PATCH ?cost=<id> {name, amount, currency?, freq?, next_due?, link?, email?}       -> replace a cost -> { cost }
 //   DELETE ?cost=<id>        -> remove a cost
+//   GET ?icon=<id>[&v=<icon_at>]&t=<token> -> the project's stored icon image (for <img src>; cached)
+//   POST ?icon=<id> {data (base64 PNG/JPEG, max 200 KB), mime} -> upload a custom icon (resized in the browser)
+//   POST ?icon=<id> {from:'site'} -> fetch the first website's icon now and store a copy (422 if the site can't be read)
+//   DELETE ?icon=<id>        -> remove the icon: the card shows the first letter and the site is not asked again
+//        Stored icons keep showing when a site is paused or down. When a website's icon is found while saving details,
+//        a copy is stored too (unless an upload or a removal is in place).
 //        currency: 3 letters, default GBP; freq: 'monthly' | 'yearly' | 'one_off' (default monthly); next_due YYYY-MM-DD;
 //        link https only; max 30 per project. Adding/changing/removing a cost is written to the activity log.
 //        Separate from Budget's bills (monthly GBP entries in the budget config with no ids), so nothing is shared.
@@ -27,11 +35,11 @@
 // Tasks of idea / paused / not_pursued / shut_down projects are shelved (out of Overdue and the counts).
 // Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
 // a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
-// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup18.sql.
+// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup19.sql.
 var todos = require('./todos.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var STATUS = ['idea', 'in_progress', 'live', 'paused', 'not_pursued', 'shut_down', 'active'];
-var META_KEYS = ['vercel', 'supabase', 'github', 'desc', 'reason', 'started', 'target'];
+var META_KEYS = ['vercel', 'supabase', 'github', 'desc', 'reason', 'started', 'target', 'acct_vercel', 'acct_supabase', 'acct_github'];
 var DEPLOY_TTL = 5 * 60000, deployCache = { at: 0, key: '', data: null };
 
 function send(res, status, obj) {
@@ -82,6 +90,7 @@ function cleanMeta(m) { // trims, keeps known keys; links must be https (the dat
     if (k === 'started' || k === 'target') { if (/^\d{4}-\d{2}-\d{2}$/.test(v)) out[k] = v; continue; }
     if (k === 'desc') { out[k] = v.slice(0, 200); continue; }
     if (k === 'reason') { out[k] = v.slice(0, 300); continue; }
+    if (k.indexOf('acct_') === 0) { out[k] = v.replace(/[\u0000-\u001f]/g, '').slice(0, 80); continue; }
     v = httpsOf(v); if (v) out[k] = v;
   }
   return out;
@@ -128,6 +137,37 @@ async function findIcon(site) {
     var abs = new URL(best, r.url || base.href);
     return abs.protocol === 'https:' ? abs.href.slice(0, 300) : fallback;
   } catch (e) { return null; }
+}
+
+// Download an icon image (max 200 KB) and check it really is one: PNG, JPEG, GIF, ICO or WebP (never SVG, which can carry script).
+var ICON_MAX = 200000;
+function sniff(buf) {
+  if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length > 6 && buf.toString('ascii', 0, 4) === 'GIF8') return 'image/gif';
+  if (buf.length > 4 && buf[0] === 0 && buf[1] === 0 && buf[2] === 1 && buf[3] === 0) return 'image/x-icon';
+  if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return null;
+}
+async function fetchIcon(u) {
+  if (!safeHttps(u)) return null;
+  try {
+    var r = await timed(fetch(u, { redirect: 'follow', headers: { 'User-Agent': 'luc-todo icon lookup' } }), 4000);
+    if (!r.ok || (r.url && !safeHttps(r.url))) return null;
+    var len = +(r.headers.get('content-length') || 0); if (len > ICON_MAX) return null;
+    var buf = Buffer.from(await timed(r.arrayBuffer(), 4000));
+    var mime = buf.length <= ICON_MAX ? sniff(buf) : null;
+    return mime ? { mime: mime, data: buf.toString('base64') } : null;
+  } catch (e) { return null; }
+}
+async function storeSiteIcon(token, id, iconUrl, force) { // best effort: a stored copy keeps working when the site is paused
+  var img = await fetchIcon(iconUrl); if (!img) return null;
+  try { return await todos.rpc('picon_set', { p_token: token, p_project: id, p_kind: 'site', p_mime: img.mime, p_data: img.data, p_force: !!force }); } catch (e) { return null; }
+}
+async function projectById(token, id) {
+  var list = (await todos.rpc('pproj_list', { p_token: token })) || [], i;
+  for (i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
 }
 
 // "https://vercel.com/<team>/<project>[/...]" -> { team, project }
@@ -221,6 +261,16 @@ module.exports = async function handler(req, res) {
   if (!token) return send(res, 401, { error: 'missing token' });
   try {
     if (req.method === 'GET') {
+      if (q.icon !== undefined) {
+        if (!UUID.test(String(q.icon))) return send(res, 400, { error: 'bad id' });
+        var ic = await todos.rpc('picon_get', { p_token: token, p_project: String(q.icon) });
+        res.statusCode = 200;
+        res.setHeader('Content-Type', ic.mime || 'image/png');
+        res.setHeader('Cache-Control', 'private, max-age=31536000, immutable'); // the page adds &v=<icon_at>, so a new icon gets a new address
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+        return res.end(Buffer.from(ic.data, 'base64'));
+      }
       if (q.events !== undefined) {
         if (!UUID.test(String(q.events))) return send(res, 400, { error: 'bad id' });
         return send(res, 200, { events: (await todos.rpc('pproj_events', { p_token: token, p_id: q.events, p_limit: 40 })) || [] });
@@ -239,6 +289,25 @@ module.exports = async function handler(req, res) {
       return send(res, 200, { projects: all });
     }
     var b = readBody(req), meta = null;
+    if (q.icon !== undefined) { // stored / custom icons
+      var iid = String(q.icon);
+      if (!UUID.test(iid)) return send(res, 400, { error: 'bad id' });
+      if (req.method === 'DELETE') return send(res, 200, await todos.rpc('picon_set', { p_token: token, p_project: iid, p_kind: 'none', p_mime: null, p_data: null, p_force: true }));
+      if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      if (b.from === 'site') {
+        var pr = await projectById(token, iid); if (!pr) return send(res, 404, { error: 'not found' });
+        var site = pr.meta && pr.meta.sites && pr.meta.sites[0];
+        if (!site) return send(res, 422, { error: 'add a website first' });
+        var iu = await findIcon(site), st = iu ? await storeSiteIcon(token, iid, iu, true) : null;
+        if (!st || !st.stored) return send(res, 422, { error: 'could not get an icon from the website (it may be paused or down)' });
+        return send(res, 200, st);
+      }
+      if (typeof b.data !== 'string' || ['image/png', 'image/jpeg'].indexOf(b.mime) < 0) return send(res, 400, { error: 'send a PNG or JPEG' });
+      var ub = Buffer.from(b.data, 'base64');
+      if (!ub.length || ub.length > ICON_MAX) return send(res, 400, { error: 'that image is too big' });
+      if (sniff(ub) !== b.mime) return send(res, 400, { error: 'that is not a PNG or JPEG' });
+      return send(res, 200, await todos.rpc('picon_set', { p_token: token, p_project: iid, p_kind: 'upload', p_mime: b.mime, p_data: ub.toString('base64'), p_force: true }));
+    }
     if (q.cost !== undefined) { // subscriptions / costs
       var cid = String(q.cost);
       if (req.method === 'DELETE') {
@@ -267,8 +336,9 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST') {
       var name = cleanName(b.name);
       if (!name) return send(res, 400, { error: 'name required' });
-      if (meta && meta.sites) { var ic = await findIcon(meta.sites[0]); if (ic) meta.icon = ic; }
+      if (meta && meta.sites) { var ic0 = await findIcon(meta.sites[0]); if (ic0) meta.icon = ic0; }
       var made = await todos.rpc('pproj_save', { p_token: token, p_id: null, p_name: name, p_status: b.status || 'in_progress', p_meta: meta });
+      if (made && made.id && meta && meta.icon) await storeSiteIcon(token, made.id, meta.icon, false);
       return send(res, 201, { project: made });
     }
     var id = q.id;
@@ -283,6 +353,8 @@ module.exports = async function handler(req, res) {
         var first = meta.sites && meta.sites[0], ofirst = (om.sites && om.sites[0]) || om.site, found = null;
         if (first && (first !== ofirst || !om.icon)) found = await findIcon(first);
         if (found) meta.icon = found; else if (om.icon) meta.icon = om.icon; // never lose the icon because a lookup failed
+        // keep a stored copy so the icon survives the site being paused: when a new icon was found, or none is stored yet
+        if (meta.icon && (found || !(cur && cur.icon_kind))) await storeSiteIcon(token, id, meta.icon, false);
       }
       var row = await todos.rpc('pproj_save', { p_token: token, p_id: id, p_name: nn, p_status: b.status || null, p_meta: meta });
       return send(res, 200, { project: row });
@@ -306,4 +378,6 @@ module.exports = async function handler(req, res) {
 module.exports.parseVercel = parseVercel; // for local tests
 module.exports.cleanMeta = cleanMeta;
 module.exports.cleanCost = cleanCost;
+module.exports.sniff = sniff;
+module.exports.fetchIcon = fetchIcon;
 module.exports.findIcon = findIcon;
