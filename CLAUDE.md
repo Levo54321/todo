@@ -108,6 +108,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Audit `docs/AUDIT-2026-11.md` (findings + prioritised list; Luc picks what gets fixed). Its measuring scripts live in `docs/audit-2026-11/scripts/` (they import `tests/harness.py` minus its last `main()` line); re-run them before/after performance work.
 - 2026-11-01 — Vault (`api/_vault.js`, via `POST /api/pprojects?vault=1`): never log, return, or put in URLs/activity any vault value, name, password or pass; POST only; Luc sets the vault password in the app and `VAULT_PEPPER` in Vercel himself (never ask for or handle either). Run `node tests/vault_node.js` after touching the vault.
 - 2026-11-01 — My projects `meta` is replaced whole on save: any form that saves meta must carry over keys it does not edit (e.g. `reason`). Never serve or store SVG icons (script risk); stored images are checked by magic bytes. Tests can whitelist deliberate console errors with `h.allow`.
 - 2026-11-01 — Project costs have their own table (`personal_project_costs`); never write Budget's config from My projects (read-only name match only). Playwright `inner_text` applies CSS text-transform: compare uppercase labels case-insensitively in tests.
