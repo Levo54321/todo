@@ -856,7 +856,7 @@
     iconBusy = true; paint();
     App.api('DELETE', '?icon=' + encodeURIComponent(p.id), null, function (s, r) { iconDone(p, s, r, 'Icon removed'); }, '/api/pprojects');
   }
-  /* ---------- vault: sensitive values per project, encrypted on the server (api/vault.js). The unlock pass lives
+  /* ---------- vault: sensitive values per project, encrypted on the server (api/_vault.js via POST /api/pprojects?vault=1). The unlock pass lives
      only in this variable: never stored, never logged. Locks after 5 idle minutes and when you leave the page. ---------- */
   var V = { pid: '', st: null, pass: '', vals: {}, shown: {}, edit: '', draft: null, pw: '', pw2: '', busy: false, err: '', used: 0, reset: false, resetTxt: '' };
   var VIDLE = 5 * 60000;
@@ -865,7 +865,7 @@
       if (d && d.pass) V.pass = d.pass;
       if (s === 401 && d && d.locked) { vaultLock(true); App.toast('The vault locked, unlock it again'); return; }
       cb(s, d || {});
-    }, '/api/vault');
+    }, '/api/pprojects?vault=1');
   }
   function vaultLock(quiet) { // forget everything that was unlocked
     var had = !!V.pass;

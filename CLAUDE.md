@@ -31,7 +31,7 @@ Keep it short: facts and rules, not history.
   classes, CSS `grid`, `position:sticky`, `fetch` or Promises; no `Array.prototype.includes`, `Object.assign`,
   `startsWith`. Targets: **iPad 2 on iOS 9.3.5** (Safari 9) and iPhone 13. Use `var`, XHR via `App.api`, flexbox
   (with `-webkit-` prefixes) or floats. Tap targets ≥ 44px; 12px minimum font.
-- Backend: Vercel Node serverless functions in `api/` (one file per endpoint, CommonJS, Node 22) calling
+- Backend: Vercel Node serverless functions in `api/` (one file per endpoint, max 12 files: see Pitfalls; CommonJS, Node 22) calling
   **Supabase RPCs only** (security-definer SQL functions). The browser never talks to Supabase.
 - Secrets only as Vercel env vars (`SUPABASE_URL`, `SUPABASE_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `VERCEL_TOKEN`, `VAULT_PEPPER`, …).
   Never put keys, the access token or its hash in code, docs, commits or chat.
@@ -99,13 +99,16 @@ Keep it short: facts and rules, not history.
   `scrollTop`, style heights). iOS 9 moves the cursor to the start when `.value` is set (even to the same text) and
   repaints touch-scroll areas on scrollTop/height writes (flicker). Desktop Chrome hides both, so tests spy on the
   writes (`idle_checks` in `tests/t_projects.py`). On a real redraw, restore focus and `setSelectionRange`.
+- **Vercel Hobby plan: max 12 serverless functions per deployment** (every `api/*.js` is one; there are 12). A 13th file
+  makes the deploy fail with `exceeded_serverless_functions_per_deployment` while the old version stays live. Add new
+  endpoints as a route inside an existing file, with shared code in `api/_name.js` (a leading `_` is not a function).
 - My projects has an agreed 4-deploy plan in `docs/ROADMAP.md`; follow it and stop after each deploy for Luc to test.
 - Fetching a protected Vercel URL with `web_fetch_vercel_url` creates a temporary shareable bypass link on the
   alias; avoid it unless needed and tell Luc if it happens.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
-- 2026-11-01 — Vault (`api/vault.js`): never log, return, or put in URLs/activity any vault value, name, password or pass; POST only; Luc sets the vault password in the app and `VAULT_PEPPER` in Vercel himself (never ask for or handle either). Run `node tests/vault_node.js` after touching the vault.
+- 2026-11-01 — Vault (`api/_vault.js`, via `POST /api/pprojects?vault=1`): never log, return, or put in URLs/activity any vault value, name, password or pass; POST only; Luc sets the vault password in the app and `VAULT_PEPPER` in Vercel himself (never ask for or handle either). Run `node tests/vault_node.js` after touching the vault.
 - 2026-11-01 — My projects `meta` is replaced whole on save: any form that saves meta must carry over keys it does not edit (e.g. `reason`). Never serve or store SVG icons (script risk); stored images are checked by magic bytes. Tests can whitelist deliberate console errors with `h.allow`.
 - 2026-11-01 — Project costs have their own table (`personal_project_costs`); never write Budget's config from My projects (read-only name match only). Playwright `inner_text` applies CSS text-transform: compare uppercase labels case-insensitively in tests.
 - 2026-11-01 — My projects: the Idea lane shows only when it holds a project (In progress is first otherwise). Background redraws must write nothing (see Pitfalls).

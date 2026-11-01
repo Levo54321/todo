@@ -521,9 +521,9 @@ def vault_checks(h, chk, wait, calls):
     h.vault['configured'] = True
     p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(600)
     chk('vault: asks for a password first, with the cannot-recover warning', p.query_selector('#ppVsetForm') and 'cannot be recovered' in main())
-    n0 = len([c for c in h.calls if c[1] == '/api/vault'])
+    n0 = len([c for c in h.calls if 'vault' in c[2]])
     p.fill('#ppVpw', 'short'); p.fill('#ppVpw2', 'short'); p.click('#ppVsetForm button[type=submit]'); wait(300)
-    chk('vault: short password refused before sending', 'at least 10' in vtoast() and len([c for c in h.calls if c[1] == '/api/vault' and c[3].get('action') == 'setup']) == 0)
+    chk('vault: short password refused before sending', 'at least 10' in vtoast() and len([c for c in h.calls if 'vault' in c[2] and c[3].get('action') == 'setup']) == 0)
     p.fill('#ppVpw', 'correct horse battery'); p.fill('#ppVpw2', 'correct horse batteri'); p.click('#ppVsetForm button[type=submit]'); wait(300)
     chk('vault: mismatched passwords refused', 'do not match' in vtoast())
     p.fill('#ppVpw2', 'correct horse battery'); p.click('#ppVsetForm button[type=submit]'); wait(700)
@@ -574,8 +574,8 @@ def vault_checks(h, chk, wait, calls):
     p.click('[data-pp=vshow][data-id="%s"]' % eid); wait(500)
     chk('vault: expired pass on the server locks the page', p.query_selector('#ppVunForm') is not None and 'locked' in vtoast().lower(), vtoast())
     # nothing sensitive in URLs or the activity log; POST only
-    vc = [c for c in h.calls if c[1] == '/api/vault']
-    chk('vault: POST only, nothing in the address', all(c[0] == 'POST' and not c[2] for c in vc), set((c[0], str(c[2])) for c in vc))
+    vc = [c for c in h.calls if c[1] == '/api/pprojects' and 'vault' in c[2]]
+    chk('vault: POST only, nothing in the address', vc and all(c[0] == 'POST' and c[2] == {'vault': ['1']} for c in vc), set((c[0], str(c[2])) for c in vc))
     chk('vault: nothing in the activity log', not any('STRIPE' in str(e.get('t')) or 'vault' in str(e.get('k')) for e in h.pevents))
     # forgotten password: wipe
     p.click('[data-pp=vforgot]'); wait(300)

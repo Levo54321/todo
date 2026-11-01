@@ -19,6 +19,7 @@
 //   PATCH ?order=1 {ids:[...]}  -> reorder (drag and drop): these projects swap among the places they already hold,
 //                               in the order given -> { pos: {<id>: n} }. New projects go to the top.
 //   DELETE ?id               -> remove (its tasks stay, they just lose the link; its costs go with it)
+//   POST ?vault=1 {action, ...} -> the vault (sensitive values per project), handled by api/_vault.js; see its header
 //   POST ?cost=1 {project_id, name, amount, currency?, freq?, next_due?, link?, email?} -> add a cost -> { cost }
 //   PATCH ?cost=<id> {name, amount, currency?, freq?, next_due?, link?, email?}       -> replace a cost -> { cost }
 //   DELETE ?cost=<id>        -> remove a cost
@@ -258,6 +259,7 @@ async function deployStatus(list) {
 
 module.exports = async function handler(req, res) {
   var q = req.query || {}, token = req.headers['x-todo-token'] || q.t;
+  if (q.vault !== undefined) return require('./_vault.js')(req, res); // the vault (its own contract: see api/_vault.js)
   if (!token) return send(res, 401, { error: 'missing token' });
   try {
     if (req.method === 'GET') {

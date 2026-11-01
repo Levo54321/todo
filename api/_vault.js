@@ -1,4 +1,6 @@
-// /api/vault — the per-project vault for sensitive values (environment variables, codes). POST only, so nothing
+// Vault handler, reached as POST /api/pprojects?vault=1 (api/pprojects.js hands the request over). The file name starts
+// with "_" so Vercel does not count it as a function (the Hobby plan allows 12 per deployment).
+// The per-project vault for sensitive values (environment variables, codes). POST only, so nothing
 // sensitive ever travels in a URL (URLs can end up in logs). Body: { action, pass?, ... }. Auth: x-todo-token.
 //   {action:'state', project_id, pass?}  -> { configured, set, locked, count, [entries:[{id,name}], pass] }
 //        locked = no valid pass: only the number of entries comes back. With a valid pass: names (never values).

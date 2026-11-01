@@ -1,4 +1,4 @@
-// Node unit test for api/vault.js with an in-memory database stand-in. Run: node tests/vault_node.js
+// Node unit test for api/_vault.js with an in-memory database stand-in. Run: node tests/vault_node.js
 var assert = require('assert'), path = require('path');
 var tp = require.resolve(path.join(__dirname, '../api/todos.js'));
 var db = { lock: null, entries: {}, proj: { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': 1, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': 1 } };
@@ -16,7 +16,7 @@ require.cache[tp] = { id: tp, filename: tp, loaded: true, exports: { rpc: async 
   throw new Error('unexpected ' + n);
 } } };
 var logs = []; console.error = function () { logs.push([].slice.call(arguments).join(' ')); };
-var h = require('../api/vault.js');
+var h = require('../api/_vault.js');
 function call(body, tok) { return new Promise(function (r) { var res = { statusCode: 0, setHeader: function () {}, end: function (s) { r({ s: res.statusCode, d: JSON.parse(s) }); } };
   h({ method: 'POST', headers: { 'x-todo-token': tok || 'tok' }, body: body }, res); }); }
 var P = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', Q = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', SECRET = 'sk_live_SUPER-secret-value-123';
@@ -43,7 +43,7 @@ var P = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', Q = 'bbbbbbbb-bbbb-4bbb-8bbb-bbb
   // blob swapped to another project fails (bound to project + id)
   db.entries[id].project = Q; assert.strictEqual((await call({ action: 'get', id: id, pass: pass })).s, 502, 'moved blob does not decrypt'); db.entries[id].project = P;
   // expired pass
-  var t = require('../api/vault.js')._t, key = t.readPass(pass); assert.ok(key);
+  var t = require('../api/_vault.js')._t, key = t.readPass(pass); assert.ok(key);
   var realNow = Date.now; Date.now = function () { return realNow() + 6 * 60000; };
   assert.strictEqual((await call({ action: 'get', id: id, pass: pass })).s, 401, 'pass expires after 5 minutes'); Date.now = realNow;
   // wrong passwords: 4x 403, 5th -> 429, then locked even with the right one
