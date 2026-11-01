@@ -1,9 +1,10 @@
 // /api/todos — thin, token-gated API in front of Supabase.
 // The iPad (iOS 9) and phone only ever talk to this endpoint, never to Supabase directly.
 // GET    /api/todos                 -> { today, todos: [...] }
-// POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id? }
-// PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id? }
+// POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id?, pp_backlog? }
+// PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
+// pp_backlog: true keeps a project task on its project page only (Backlog), out of the Personal list.
 // DELETE /api/todos?id=<uuid>
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
 
@@ -303,7 +304,7 @@ module.exports = async function handler(req, res) {
         }
       } else row = await rpc('todo_add', addArgs);
       if (listName === 'personal' && typeof b.pproject_id === 'string' && UUID.test(b.pproject_id) && row && row.id) {
-        row = await rpc('todo_update', { p_token: token, p_id: row.id, p_patch: { pproject_id: b.pproject_id } }); // added from a Personal Project page
+        row = await rpc('todo_update', { p_token: token, p_id: row.id, p_patch: { pproject_id: b.pproject_id, pp_backlog: b.pp_backlog === true } }); // added from a Personal Project page
       }
       var addCal = remind ? await calHook(token) : null;
       var out = { todo: row, cal: addCal };
@@ -371,6 +372,7 @@ module.exports = async function handler(req, res) {
         if (pb.pproject_id !== null && !(typeof pb.pproject_id === 'string' && UUID.test(pb.pproject_id))) return send(res, 400, { error: 'bad project' });
         patch.pproject_id = pb.pproject_id;
       }
+      if (typeof pb.pp_backlog === 'boolean') patch.pp_backlog = pb.pp_backlog;
       var updated = await rpc('todo_update', { p_token: token, p_id: id, p_patch: patch });
       var calKeys = ['done', 'title', 'due_date', 'remind_time', 'recur', 'recur_until', 'category'], calRel = false;
       for (var ck = 0; ck < calKeys.length; ck++) if (calKeys[ck] in patch) calRel = true;

@@ -26,7 +26,8 @@
 
   function $(id) { return document.getElementById(id); }
   function setHTML(el, h) { if (el._h === h) return false; el._h = h; el.innerHTML = h; return true; } // only touch the DOM when something changed (stops flicker)
-  function inMode(t) { return (t.list || 'personal') === mode; }
+  function inBacklog(t) { return (t.list || 'personal') === 'personal' && !!t.pproject_id && !!t.pp_backlog; } // project Backlog: only on its project page
+  function inMode(t) { return (t.list || 'personal') === mode && !inBacklog(t); }
   function setMode(m) {
     if (m === mode) return;
     mode = m; store.set('listMode', m);
@@ -164,7 +165,7 @@
      like a paused Work task it stays out of Overdue, the badges, the counts, Today's order and the review nudges. */
   var pprojs = [], ppStat = {}, ppName = {}, ppSig = '', showShelved = false;
   function isShelved(t) { return !t.done && (t.list || 'personal') === 'personal' && !!t.pproject_id && !!ppStat[t.pproject_id] && ppStat[t.pproject_id] !== 'active'; }
-  function isOut(t) { return isPaused(t) || isShelved(t); }
+  function isOut(t) { return isPaused(t) || isShelved(t) || inBacklog(t); }
   function pausedAge(t) { var d = Math.floor((nowMs() - parseTS(t.paused_at)) / 86400000); return d < 1 ? 'today' : d + 'd'; }
   /* Work list auto-order: timed first, then "must do today", then priority (!!! first, unmarked, ! last), then quick wins, then oldest. */
   function isMust(t) { return !!t.must && !t.done && !t.paused && !!t.due_date && t.due_date <= curToday(); }
@@ -272,7 +273,7 @@
 
   /* ---------- rendering ---------- */
   function itemHTML(t, big) {
-    var meta = '', t0 = curToday(), id = esc(t.id), quick = '', overdue = false;
+    var meta = '', t0 = curToday(), id = esc(t.id), quick = '', overdue = false, onPP = view === 'pprojects';
     if (!t.done && t.due_date) {
       var d = diffDays(t.due_date, t0);
       if (isPaused(t)) meta += '<span class="due">' + fmtDate(t.due_date) + '</span>';
@@ -289,16 +290,17 @@
       meta += '<span class="stale">⏳ ' + (ad >= 14 ? Math.floor(ad / 7) + 'w' : ad + 'd') + '</span>';
     }
     if (t.category) meta += '<span class="cat">' + esc(t.category) + '</span>';
-    if (t.pproject_id && ppName[t.pproject_id] && (t.list || 'personal') === 'personal') meta += '<span class="cat pjc">▣ ' + esc(ppName[t.pproject_id]) + (isShelved(t) ? ' · on hold' : '') + '</span>';
+    if (!onPP && t.pproject_id && ppName[t.pproject_id] && (t.list || 'personal') === 'personal') meta += '<span class="cat pjc">▣ ' + esc(ppName[t.pproject_id]) + (isShelved(t) ? ' · on hold' : '') + '</span>';
     if (t.notes) meta += '<span class="cat" title="Has notes">📝 notes</span>';
     meta += subChip(t, !t.done);
     var unb = '';
     if (t.blocked && !t.done) unb = '<div class="unb"><b>Unblock:</b> ' + (t.unblock_action ? esc(t.unblock_action) : '<i>no action set</i>') + ' <button class="chip" data-act="unblock" data-id="' + id + '">Unblocked</button></div>';
     if (isPaused(t)) unb = '<div class="unb"><b>Waiting on:</b> ' + (t.paused_on ? esc(t.paused_on) : '<i>not noted</i>') + ' <button class="chip" data-act="resume" data-id="' + id + '">Resume</button></div>';
-    if (!t.done && !big && !t.due_date && !t.is_session) {
+    if (onPP && !t.done && t.pproject_id) meta += t.pp_backlog ? '<button class="chip" data-act="ppbl" data-val="0" data-id="' + id + '">→ Add to my list</button>' : '<button class="chip" data-act="ppbl" data-val="1" data-id="' + id + '">→ Back to backlog</button>';
+    if (!onPP && !t.done && !big && !t.due_date && !t.is_session) {
       meta += t.low ? '<button class="chip" data-act="low" data-val="0" data-id="' + id + '">Make urgent</button>' : '<button class="chip" data-act="low" data-val="1" data-id="' + id + '">Non-urgent</button>';
     }
-    if (!t.done && !big && ((!t.due_date && nowMs() - parseTS(t.created_at) < 30 * 60000) || overdue)) {
+    if (!onPP && !t.done && !big && ((!t.due_date && nowMs() - parseTS(t.created_at) < 30 * 60000) || overdue)) {
       var wo = overdue ? moveOpts() : whenOpts(), qb = '';
       for (var q = 0; q < wo.length; q++) {
         qb += '<button class="chip" data-act="quick" data-when="' + wo[q][0] + '" data-id="' + id + '">' + wo[q][1] + '</button>';
@@ -317,7 +319,7 @@
       '<div class="body" data-act="' + (t.is_session && !t.done ? 'sess' : 'edit') + '" data-id="' + id + '">' +
       '<div class="title">' + (planNo(t) ? '<span class="pn">' + planNo(t) + '</span>' : '') + sbadge + esc(t.title) + '</div>' + sprog +
       (meta ? '<div class="meta">' + meta + '</div>' : '') + unb + quick + '</div>' +
-      (t.done ? '' : '<button class="star' + (focus ? ' on' : '') + '" data-act="star" data-id="' + id + '" aria-label="Today\'s focus">' + (focus ? '★' : '☆') + '</button>') +
+      (t.done || inBacklog(t) ? '' : '<button class="star' + (focus ? ' on' : '') + '" data-act="star" data-id="' + id + '" aria-label="Today\'s focus">' + (focus ? '★' : '☆') + '</button>') +
       '</li>';
   }
   function listHTML(arr) {
@@ -765,6 +767,7 @@
         pc += '<button class="chip' + (editing.pp === pprojs[i].id ? ' on' : '') + '" data-act="sproj" data-val="' + esc(pprojs[i].id) + '">' + esc(pprojs[i].name) + (pprojs[i].status !== 'active' ? ' (on hold)' : '') + '</button>';
       }
     }
+    if (showPP && editing.pp) pc += '<div class="sg sm ppwhere"><button class="' + (!editing.bl ? 'on' : '') + '" data-act="sppbl" data-val="0">In my list</button><button class="' + (editing.bl ? 'on' : '') + '" data-act="sppbl" data-val="1">Backlog only</button></div>';
     $('eProj').innerHTML = pc;
     $('ePRow').style.display = showPP ? '' : 'none';
     var rc = '<button class="chip' + (!editing.recur ? ' on' : '') + '" data-act="srecur" data-val="">None</button>';
@@ -818,7 +821,7 @@
   function icsUrl(id) { return '/api/ics?id=' + encodeURIComponent(id) + '&t=' + encodeURIComponent(token); }
   function openSheet(id) {
     var t = find(id); if (!t) return;
-    editing = { id: id, list: t.list || 'personal', due: t.due_date || null, cat: t.category || null, pp: t.pproject_id || null, recur: t.recur || null, low: !!t.low, until: t.recur_until || null, untilOn: !!t.recur_until, time: timeOf(t) || null, focus: isFocus(t), prio: t.prio || 0, quick: !!t.quick, must: isMust(t), blocked: !!t.blocked, unblock: t.unblock_action || '', paused: isPaused(t), pausedOn: t.paused_on || '', more: !!(t.recur || t.low || (t.items && t.items.length && !t.is_session)) };
+    editing = { id: id, list: t.list || 'personal', due: t.due_date || null, cat: t.category || null, pp: t.pproject_id || null, bl: !!(t.pproject_id && t.pp_backlog), recur: t.recur || null, low: !!t.low, until: t.recur_until || null, untilOn: !!t.recur_until, time: timeOf(t) || null, focus: isFocus(t), prio: t.prio || 0, quick: !!t.quick, must: isMust(t), blocked: !!t.blocked, unblock: t.unblock_action || '', paused: isPaused(t), pausedOn: t.paused_on || '', more: !!(t.recur || t.low || (t.items && t.items.length && !t.is_session)) };
     $('eTitle').value = t.title;
     $('eNotes').value = t.notes || '';
     $('eUnblock').value = editing.paused ? editing.pausedOn : editing.unblock;
@@ -841,6 +844,8 @@
     if (editing.list !== (t.list || 'personal')) { patch.list = editing.list; before.list = t.list || 'personal'; n++; }
     if (editing.list === 'work') editing.pp = null; // Personal Projects are for Personal tasks only
     if (editing.pp !== (t.pproject_id || null)) { patch.pproject_id = editing.pp; before.pproject_id = t.pproject_id || null; n++; }
+    if (!editing.pp) editing.bl = false;
+    if (editing.bl !== !!(t.pproject_id && t.pp_backlog)) { patch.pp_backlog = editing.bl; before.pp_backlog = !!t.pp_backlog; n++; }
     if (editing.recur !== (t.recur || null)) { patch.recur = editing.recur; before.recur = t.recur || null; n++; }
     if (editing.time && (!editing.due || editing.due < curToday())) editing.due = curToday(); // a reminder needs today or later
     var wantUntil = editing.recur && editing.untilOn ? editing.until : null;
@@ -1611,7 +1616,9 @@
     else if (act === 'toggledone') { showDone = !showDone; render(); }
     else if (act === 'togglelow') { showLow = !showLow; render(); }
     else if (act === 'toggleshelved') { showShelved = !showShelved; render(); }
-    else if (act === 'sproj') { var pv2 = el.getAttribute('data-val') || null; editing.pp = (!pv2 || editing.pp === pv2) ? null : pv2; renderSheet(); }
+    else if (act === 'sproj') { var pv2 = el.getAttribute('data-val') || null; editing.pp = (!pv2 || editing.pp === pv2) ? null : pv2; if (!editing.pp) editing.bl = false; renderSheet(); }
+    else if (act === 'sppbl') { editing.bl = el.getAttribute('data-val') === '1'; renderSheet(); }
+    else if (act === 'ppbl') { var pbt = find(id); if (pbt) { var pbv = el.getAttribute('data-val') === '1', pbb = { pp_backlog: !!pbt.pp_backlog }; pbt.pp_backlog = pbv; render(); patchTodo(id, { pp_backlog: pbv }, pbb); toast(pbv ? 'Moved to the backlog' : 'Added to your Personal list'); } }
     else if (act === 'low') doLow(id, el.getAttribute('data-val') === '1');
     else if (act === 'slow') { editing.low = !editing.low; renderSheet(); }
     else if (act === 'swhen') { editing.due = whenToDate(el.getAttribute('data-val')); if (editing.due) editing.low = false; renderSheet(); }
@@ -1682,6 +1689,7 @@
   // Projects board <-> Work list
   App.isPaused = isPaused;
   App.isShelved = isShelved;
+  App.inBacklog = inBacklog;
   App.listHTML = function (arr) { return listHTML(arr); };
   App.find = function (id) { return find(id); };
   App.pprojects = function () { return pprojs; };

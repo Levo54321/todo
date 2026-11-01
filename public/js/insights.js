@@ -70,7 +70,7 @@
     var todos = App.todos(), open = 0, behind = 0, parked = 0, oldest = 0, nowm = App.nowMs();
     for (i = 0; i < todos.length; i++) {
       var t = todos[i];
-      if (t.done || t.is_session || t.low || t.paused || (App.isShelved && App.isShelved(t)) || !inScope(t.list)) continue;
+      if (t.done || t.is_session || t.low || t.paused || (App.isShelved && App.isShelved(t)) || (App.inBacklog && App.inBacklog(t)) || !inScope(t.list)) continue;
       open++;
       if (t.due_date && t.due_date <= t0 && !t.blocked) behind++;
       if (!t.due_date) { parked++; var age = Math.floor((nowm - App.parseTS(t.created_at)) / 86400000); if (age > oldest) oldest = age; }
