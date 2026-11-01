@@ -44,7 +44,7 @@ Env vars (Vercel only): `SUPABASE_URL`, `SUPABASE_KEY`, `GOOGLE_CLIENT_ID`, `GOO
 - **Shopping tab**: iframe to holmlodge-shop; key in localStorage `shopKey`.
 
 ## 6. Deployment
-Push to `main` -> Vercel production build (no build step beyond static + functions). Region dub1. HTML is `no-cache`. **Confirmed 31 Oct 2026: the `luc-todo.vercel.app` alias does NOT follow git pushes** (it was pinned by earlier manual alias assignments; holmlodge-shop does follow). After every push, check the latest production deployment is READY and run `assign_alias` for `luc-todo.vercel.app` onto it. Manual path: Vercel MCP `create_deployment` then `assign_alias`.
+Push to `main` -> Vercel production build (no build step beyond static + functions). Region dub1. HTML is `no-cache`. **1 Nov 2026: the `luc-todo.vercel.app` alias now follows git pushes** (confirmed on a test push after the domain was re-added and the project's auto-assign-domains setting was set to true). Earlier manual alias assignments had left it pinned. After any push, still confirm the newest production deployment is READY and that the alias points at it; if not, run `assign_alias` for `luc-todo.vercel.app`.
 
 ## 7. Known nuances
 - **Config keys are whitelisted** in `cfg_get`/`cfg_set` (`db/setup13.sql`): budget, caldav, caldav_state, saver, shop, gcal, projects. A new key needs a migration that edits both lists.

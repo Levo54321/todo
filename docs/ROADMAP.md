@@ -1,7 +1,7 @@
 # luc-todo — roadmap
 
 ## P0 — confirm and protect
-1. **Alias does not follow pushes** (confirmed). Until fixed, assign it by hand after each deploy. Fix: in the Vercel dashboard (luc-todo > Settings > Domains) check how `luc-todo.vercel.app` is assigned and remove any manual pin, then confirm with a trivial commit.
+1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
 2. **Real-device pass** on iPad 2 and iPhone 13 for Pause, Blocked, board drag/number reorder, Insights and the Google work-calendar prompt.
 3. **Restore tests into the repo**: add a `tests/` folder with the Playwright mock harness (shot5/shot7 style) and a `npm test` script.
 4. **Delete the Vercel token "pull-shop"** (created for the shop export).
