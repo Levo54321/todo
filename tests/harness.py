@@ -77,13 +77,21 @@ class H:
                         if pj['meta'].get('vercel'): st[pj['id']] = {'state': 'PAUSED', 'color': 'paused'} if 'old-app' in pj['meta']['vercel'] else {'state': 'READY', 'color': 'green', 'at': 1793490000000}
                     return 200, {'configured': True, 'status': st}
                 out = []
-                for pj in self.pprojects:
+                for pj in sorted(self.pprojects, key=lambda x: x.get('pos', 0)):
                     o = dict(pj); o['open'] = len([t for t in self.todos if t.get('pproject_id') == pj['id'] and not t['done']]); out.append(o)
                 return 200, {'projects': out}
             if method == 'POST':
                 if any(p['name'].lower() == body['name'].lower() for p in self.pprojects): return 409, {'error': 'a project with that name already exists'}
-                pj = {'id': str(uuid.uuid4()), 'name': body['name'], 'status': body.get('status', 'in_progress'), 'created_at': NOW, 'last_at': NOW, 'done_old': 0, 'meta': {}}
+                pj = {'id': str(uuid.uuid4()), 'name': body['name'], 'status': body.get('status', 'in_progress'), 'created_at': NOW, 'last_at': NOW, 'done_old': 0, 'meta': {},
+                      'pos': min([x.get('pos', 0) for x in self.pprojects] + [1]) - 1}
                 self.pprojects.append(pj); self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'created', 't': pj['name']}); return 201, {'project': pj}
+            if method == 'PATCH' and 'order' in q:
+                ids = body.get('ids') or []
+                ps = [x for x in self.pprojects if x['id'] in ids]
+                if len(ps) != len(ids) or not ids: return 400, {'error': 'bad order'}
+                poss = sorted(x.get('pos', 0) for x in ps)
+                for i, pid in enumerate(ids): [x for x in ps if x['id'] == pid][0]['pos'] = poss[i]
+                return 200, {'pos': {x['id']: x['pos'] for x in ps}}
             pj = [x for x in self.pprojects if x['id'] == q['id'][0]][0]
             if method == 'PATCH':
                 if 'name' in body and any(p['name'].lower() == body['name'].lower() and p is not pj for p in self.pprojects): return 409, {'error': 'a project with that name already exists'}
@@ -91,7 +99,11 @@ class H:
                 for k in ('name', 'status'):
                     if k in body: pj[k] = body[k]
                 if 'meta' in body:
+                    if (body['meta'].get('reason') or None) != (pj['meta'].get('reason') or None):
+                        self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'reason', 't': body['meta'].get('reason')})
+                    oldicon = pj['meta'].get('icon')
                     pj['meta'] = dict(body['meta'])
+                    if oldicon: pj['meta']['icon'] = oldicon
                     if pj['meta'].get('sites'): pj['meta']['icon'] = 'http://todo.test/icon-180.png'
                     self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'details', 't': None})
                 return 200, {'project': pj}

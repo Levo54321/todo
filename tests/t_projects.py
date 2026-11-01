@@ -1,7 +1,9 @@
 """My projects v3: In progress / Live statuses, folded headers on one line, multiple links, Vercel picker, paused deploys,
 collapsible activity (plus core regression flows first).
 v1044 (Deploy 1): fixed-height layout (lanes scroll on their own, frozen side panel, back bar always visible) at iPad
-landscape, iPad portrait and iPhone sizes, and the Vercel picker replacing only the websites/GitHub it filled in."""
+landscape, iPad portrait and iPhone sizes, and the Vercel picker replacing only the websites/GitHub it filled in.
+v1045 (Deploy 2): Idea status (shelved, Backlog default), Reason (edit, log, card), "still live on Vercel" warning,
+drag-and-drop order within a lane (mouse and synthetic touch), new projects first, order kept across lanes."""
 import importlib.util, os
 D = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(D, 'out'); os.makedirs(OUT, exist_ok=True)  # screenshots (git-ignored)
@@ -22,7 +24,7 @@ def run(h):
     old = [x for x in h.pprojects if x['name'] == 'Old App'][0]['id']
     chk('new projects default to In progress', all(x['status'] == 'in_progress' for x in h.pprojects))
     heads = [e.inner_text() for e in p.query_selector_all('#ppPane .bdhead .bdname')]
-    chk('5 status columns', heads == ['In progress', 'Live', 'Paused', 'Not pursued', 'Shut down'], heads)
+    chk('6 status columns, Idea first', heads == ['Idea', 'In progress', 'Live', 'Paused', 'Not pursued', 'Shut down'], heads)
     for v in ('not_pursued', 'shut_down'):
         nm = p.query_selector('[data-pp=fold][data-val=%s] .bdname' % v)
         box = nm.bounding_box(); lh = p.evaluate('e => parseFloat(getComputedStyle(e).lineHeight)', nm)
@@ -32,7 +34,7 @@ def run(h):
     p.click('.ppcard[data-id="%s"] [data-pp=stat][data-val=live]' % hub); wait(500)
     chk('move to Live', calls('PATCH', '/api/pprojects')[-1][3] == {'status': 'live'})
     cols = p.query_selector_all('#ppPane .bdcol')
-    chk('card in Live column, not dimmed', 'Holmlodge Hub' in cols[1].inner_text() and 'off' not in p.get_attribute('.ppcard[data-id="%s"]' % hub, 'class'))
+    chk('card in Live column, not dimmed', 'Holmlodge Hub' in cols[2].inner_text() and 'off' not in p.get_attribute('.ppcard[data-id="%s"]' % hub, 'class'))
     # details with Vercel picker + multiple links
     p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait()
     p.fill('#ppTask', 'Fix the login bug'); p.press('#ppTask', 'Enter'); wait(500)
@@ -91,13 +93,14 @@ def run(h):
     p.set_viewport_size({'width': 1024, 'height': 768}); wait()
     layout_checks(h, chk, wait)
     picker_checks(h, chk, wait, calls)
+    d2_checks(h, chk, wait, calls)
     return R
 
 def layout_checks(h, chk, wait):
     p = h.page
     import uuid as _u
     for i in range(9):  # enough projects to overflow the lanes
-        h.pprojects.append({'id': str(_u.uuid4()), 'name': 'Filler %d' % i, 'status': 'in_progress' if i < 6 else 'live', 'created_at': '2026-10-01T09:00:00Z',
+        h.pprojects.append({'id': str(_u.uuid4()), 'name': 'Filler %d' % i, 'status': 'in_progress' if i < 6 else 'live', 'created_at': '2026-10-01T09:00:00Z', 'pos': 100 + i,
                             'last_at': '2026-10-01T09:00:00Z', 'done_old': 0, 'meta': {'desc': 'A project with a description that wraps onto a second line'}})
     big = h.pprojects[-1]['id']
     for i in range(30):
@@ -196,3 +199,107 @@ def picker_checks(h, chk, wait, calls):
     chk('saved project: switching drops the previous project domains', sites() == ['https://mine.example.com', 'https://old-app.vercel.app'], sites())
     p.click('[data-pp=detx]'); wait(300)
     p.click('[data-pp=back]'); wait(300)
+
+
+def d2_checks(h, chk, wait, calls):
+    p = h.page
+    def pid(name): return [x for x in h.pprojects if x['name'] == name][0]['id']
+    def lane_ids(k): return p.evaluate("k => [].map.call(document.querySelectorAll('.pplane[data-lane=' + k + '] .ppcard'), function(c){return c.getAttribute('data-id');})", k)
+    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(600)
+    if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
+    # new project goes to the top of its lane
+    p.fill('#ppNew', 'Dream App'); p.press('#ppNew', 'Enter'); wait(500)
+    dream = pid('Dream App')
+    chk('new project goes to the top of In progress', lane_ids('in_progress')[0] == dream, lane_ids('in_progress'))
+    # move to Idea
+    p.click('.ppcard[data-id="%s"] [data-pp=mv]' % dream); wait(200)
+    p.click('.ppcard[data-id="%s"] [data-pp=stat][data-val=idea]' % dream); wait(500)
+    chk('move to Idea patches status idea', calls('PATCH', '/api/pprojects')[-1][3] == {'status': 'idea'})
+    chk('card sits in the Idea lane', lane_ids('idea') == [dream], lane_ids('idea'))
+    # project page: idea hint, Backlog default, reason
+    p.click('.ppcard[data-id="%s"] .ppnm' % dream); wait(500)
+    side = p.inner_text('.ppside')
+    chk('Idea hint on project page', 'Idea: not started yet' in side, side)
+    chk('Idea project defaults new tasks to Backlog', 'on' in (p.get_attribute('[data-pp=to][data-val=backlog]', 'class') or ''))
+    p.click('[data-pp=to][data-val=list]'); wait(200)
+    p.fill('#ppTask', 'Sketch the idea'); p.press('#ppTask', 'Enter'); wait(500)
+    t = [x for x in h.todos if x['title'] == 'Sketch the idea'][0]
+    chk('Idea project task is shelved', p.evaluate('id => App.isShelved(App.find(id))', t['id']) is True)
+    p.click('[data-pp=redit]'); wait(200)
+    p.fill('#ppReason', 'Waiting until the Hub is finished'); p.click('[data-pp=rsave]'); wait(600)
+    m = calls('PATCH', '/api/pprojects')[-1][3].get('meta', {})
+    chk('reason saved in details', m.get('reason') == 'Waiting until the Hub is finished', m)
+    chk('reason shown on the page', 'Why: Waiting until the Hub is finished' in p.inner_text('.ppside'))
+    if p.get_attribute('[data-pp=act]', 'aria-expanded') != 'true': p.click('[data-pp=act]'); wait(200)
+    p.evaluate("App.render()"); wait(2000)
+    chk('reason change appears in activity', 'Reason: Waiting until the Hub is finished' in p.inner_text('.ppmain'), p.inner_text('.ppmain')[-400:])
+    # clearing the reason
+    p.click('[data-pp=redit]'); wait(200); p.fill('#ppReason', ''); p.click('[data-pp=rsave]'); wait(600)
+    chk('reason can be cleared', 'reason' not in calls('PATCH', '/api/pprojects')[-1][3].get('meta', {}) and '+ Add a reason' in p.inner_text('.ppside'))
+    p.click('[data-pp=redit]'); wait(200); p.fill('#ppReason', 'Parked'); p.click('[data-pp=rsave]'); wait(600)
+    # changing to Paused on the page asks for the reason only if none
+    p.click('[data-pp=stat][data-val=in_progress]'); wait(400)
+    chk('reason hidden for In progress', 'Why:' not in p.inner_text('.ppside') and not p.query_selector('[data-pp=redit]'))
+    p.click('[data-pp=back]'); wait(300)
+    chk('reason hidden on card for In progress', 'Why:' not in p.inner_text('.ppcard[data-id="%s"]' % dream))
+    hub = pid('Holmlodge Hub')
+    p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(500)
+    p.click('[data-pp=stat][data-val=paused]'); wait(500)
+    chk('moving to Paused opens the reason box', p.query_selector('#ppReason') is not None)
+    chk('mismatch warning on project page', 'Marked paused but still live on Vercel' in p.inner_text('.ppside'), p.inner_text('.ppside')[:300])
+    p.fill('#ppReason', 'Hosting costs too much'); p.click('[data-pp=rsave]'); wait(600)
+    p.click('[data-pp=back]'); wait(300)
+    card = p.inner_text('.ppcard[data-id="%s"]' % hub)
+    chk('mismatch warning and reason on the card', 'Marked paused but still live on Vercel' in card and 'Why: Hosting costs too much' in card, card)
+    chk('board summary counts the mismatch', '1 still live on Vercel' in p.inner_text('.ppsum'), p.inner_text('.ppsum'))
+    old = pid('Old App')
+    chk('paused-in-Vercel project has no warning', 'still live' not in p.inner_text('.ppcard[data-id="%s"]' % old))
+    p.click('.ppcard[data-id="%s"] [data-pp=mv]' % hub); wait(200)
+    p.click('.ppcard[data-id="%s"] [data-pp=stat][data-val=live]' % hub); wait(500)
+    chk('warning goes when back to Live', 'still live' not in p.inner_text('.ppcard[data-id="%s"]' % hub))
+    # drag and drop with the mouse: first card of In progress to third place
+    before = lane_ids('in_progress')
+    g = p.query_selector('.ppcard[data-id="%s"] [data-pp=grip]' % before[0]).bounding_box()
+    tgt = p.query_selector('.ppcard[data-id="%s"]' % before[2]).bounding_box()
+    n0 = len(calls('PATCH', '/api/pprojects'))
+    p.mouse.move(g['x'] + g['width'] / 2, g['y'] + g['height'] / 2); p.mouse.down()
+    for k in range(1, 11): p.mouse.move(g['x'] + g['width'] / 2, g['y'] + (tgt['y'] + tgt['height'] * 0.7 - g['y']) * k / 10); wait(30)
+    p.mouse.up(); wait(600)
+    after = lane_ids('in_progress')
+    want = before[1:3] + [before[0]] + before[3:]
+    oc = [c for c in calls('PATCH', '/api/pprojects')[n0:] if 'order' in c[2]]
+    chk('mouse drag reorders the lane', after == want, (before, after))
+    chk('drag saves the order', oc and oc[-1][3].get('ids') == want, oc[-1:] if oc else None)
+    chk('drag does not open the project', not p.query_selector('[data-pp=back]'))
+    # synthetic touch drag (iOS path): third card back to the top
+    before = lane_ids('in_progress')
+    res = p.evaluate("""ids => {
+      var g = document.querySelector('.ppcard[data-id="' + ids[2] + '"] [data-pp=grip]'), t0 = document.querySelector('.ppcard[data-id="' + ids[0] + '"]');
+      var gb = g.getBoundingClientRect(), tb = t0.getBoundingClientRect(), x = gb.left + 5;
+      function fire(type, y) { var tc = new Touch({identifier: 1, target: g, clientX: x, clientY: y});
+        var ev = new TouchEvent(type, {touches: type === 'touchend' ? [] : [tc], targetTouches: type === 'touchend' ? [] : [tc], changedTouches: [tc], bubbles: true, cancelable: true});
+        return g.dispatchEvent(ev); }
+      var started = !fire('touchstart', gb.top + 5);
+      for (var k = 1; k <= 8; k++) fire('touchmove', gb.top + 5 + (tb.top + 4 - gb.top - 5) * k / 8);
+      fire('touchend', tb.top + 4);
+      return started; }""", before)
+    wait(600)
+    after = lane_ids('in_progress')
+    chk('touch drag reorders the lane (handler prevents scrolling)', res and after == [before[2]] + before[0:2] + before[3:], (res, before, after))
+    # order kept across lanes: move the 2nd card to Live; Live stays sorted by position
+    mover = after[1]
+    p.click('.ppcard[data-id="%s"] [data-pp=mv]' % mover); wait(200)
+    p.click('.ppcard[data-id="%s"] [data-pp=stat][data-val=live]' % mover); wait(500)
+    live = lane_ids('live'); pos = dict((x['id'], x.get('pos', 0)) for x in h.pprojects)
+    chk('project keeps its place by position in the new lane', mover in live and [pos[i] for i in live] == sorted(pos[i] for i in live), [(i[:4], pos[i]) for i in live])
+    p.reload(); wait(1200); p.click('#nPprojects'); wait(600)
+    if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
+    chk('order survives a reload', lane_ids('in_progress')[0] == before[2], lane_ids('in_progress'))
+    p.screenshot(path=os.path.join(OUT, 'd2_board.png'))
+    # iPhone: drag handle there, no overflow
+    p.set_viewport_size({'width': 390, 'height': 844}); wait(400)
+    chk('iPhone: board with Idea lane fits', p.evaluate('document.documentElement.scrollWidth') <= 392)
+    gb = p.query_selector('.pplane[data-lane=in_progress] [data-pp=grip]').bounding_box()
+    chk('drag handle is a 44px target', gb['width'] >= 44 and gb['height'] >= 44, gb)
+    p.screenshot(path=os.path.join(OUT, 'd2_iphone.png'), full_page=True)
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)

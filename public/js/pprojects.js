@@ -1,5 +1,6 @@
 /* My projects: Personal Projects (apps, home projects ...). Separate from Work projects (projects.js / board.js).
-   Board: one column per status (Active, Paused, Not pursued, Shut down), project cards with logo, live/deploy dot,
+   Board: one column per status (Idea, In progress, Live, Paused, Not pursued, Shut down), cards in a hand-made order
+   (drag the ☰ handle; personal_projects.pos), with logo, live/deploy dot, reason, "still live on Vercel" warning,
    labelled progress, last activity and links. Project page: details (links, description, dates), tasks split into
    "In my list" and "Backlog" (ideas kept out of the Personal list, todos.pp_backlog), done tasks and an activity log.
    Tasks in a project that is not Active are "shelved" by core.js (out of Overdue and the counts). ES5 only (iPad 2, iOS 9). */
@@ -7,16 +8,19 @@
   'use strict';
   var App = window.App; if (!App) return;
   var $ = App.$, esc = App.esc, store = App.store;
-  var STAT = ['in_progress', 'live', 'paused', 'not_pursued', 'shut_down'];
-  var LABEL = { in_progress: 'In progress', live: 'Live', paused: 'Paused', not_pursued: 'Not pursued', shut_down: 'Shut down' };
-  var SHELF = { paused: 1, not_pursued: 1, shut_down: 1 }; // tasks of these projects are out of Overdue and the counts
+  var STAT = ['idea', 'in_progress', 'live', 'paused', 'not_pursued', 'shut_down'];
+  var LABEL = { idea: 'Idea', in_progress: 'In progress', live: 'Live', paused: 'Paused', not_pursued: 'Not pursued', shut_down: 'Shut down' };
+  var SHELF = { idea: 1, paused: 1, not_pursued: 1, shut_down: 1 }; // tasks of these projects are out of Overdue and the counts
+  var REASON = { idea: 1, paused: 1, not_pursued: 1, shut_down: 1 }; // statuses that show the optional Reason
+  var NOTLIVE = { paused: 1, not_pursued: 1, shut_down: 1 }; // warn when one of these still has a live Vercel deploy
   var LINKS = [['vercel', 'Vercel'], ['supabase', 'Supabase'], ['github', 'GitHub']];
   var DOT = { green: 'Live', orange: 'Deploying', red: 'Deploy failed', paused: 'Paused in Vercel', grey: 'Status unknown' };
   var draft = null, vseq = 0, vlist = { configured: null, projects: [], loading: false, at: 0 }, vfill = false, showAct = store.get('ppAct') === '1';
   var list = [], known = false, failed = false, tries = 0, busy = false, onView = false;
   var sel = store.get('ppSel') || '', editId = '', moveId = '', editing = false, showDone = false;
   var addTo = store.get('ppAddTo') === 'list' ? 'list' : 'backlog';
-  var fold = { paused: true, not_pursued: true, shut_down: true }; // In progress and Live open by default
+  var fold = { idea: false, paused: true, not_pursued: true, shut_down: true }; // Idea, In progress and Live open by default
+  var reasonId = '', reasonDraft = '', drag = null;
   function statusOf(p) { return p.status === 'active' ? 'in_progress' : p.status; }
   try { var fs = JSON.parse(store.get('ppFold') || 'null'), fk; if (fs && typeof fs === 'object') for (fk in fs) if (fs.hasOwnProperty(fk) && fold.hasOwnProperty(fk)) fold[fk] = !!fs[fk]; } catch (e) {}
   var dep = { configured: null, status: {}, at: 0, loading: false };
@@ -89,6 +93,15 @@
     '.ppev li span{-webkit-flex:1;flex:1;min-width:0;word-wrap:break-word}.ppev li small{-webkit-flex:none;flex:none;margin-left:10px;color:var(--muted);font-size:12px}' +
     '.ppwhere{margin-top:6px}' +
     '.pjc{border-style:dashed}' +
+    '.ppreason{margin-top:8px;padding:6px 9px;border-left:3px solid var(--rule);font-size:13px;line-height:1.35;color:var(--ink);word-wrap:break-word;overflow-wrap:break-word}.ppreason b{color:var(--muted);font-weight:600}' +
+    '.ppwarn{margin-top:8px;padding:7px 10px;border-radius:10px;background:var(--alert);color:#fff;font-size:13px;font-weight:600;line-height:1.3}' +
+    '.ppsec .ppwarn{margin:0 0 10px}' +
+    '.ppsec textarea{display:block;width:100%;min-height:76px;padding:9px 11px;border:1px solid var(--rule);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px;-webkit-appearance:none;outline:none;resize:vertical}' +
+    '.ppsec .rbtns .btn{margin:8px 8px 0 0;min-height:44px}' +
+    '.pplk.rs{border-style:dashed;color:var(--accent);min-height:36px;margin-top:8px}' +
+    '.ppgrip{-webkit-flex:none;flex:none;width:44px;height:44px;margin:-6px -8px -6px 4px;line-height:44px;text-align:center;color:var(--muted);font-size:19px;cursor:-webkit-grab;cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}' +
+    '.ppcard.dragging{box-shadow:0 8px 22px rgba(0,0,0,.28);opacity:.97;background:var(--paper)}' +
+    '.ppcard.dropb{box-shadow:0 -3px 0 var(--accent)}.ppcard.dropa{box-shadow:0 3px 0 var(--accent)}' +
     /* tablet / desktop (wider than 760px): the page itself never scrolls. Heights are set in px from window.innerHeight by
        layout() (iPad Safari's vh is unreliable). Board: only the lanes strip scrolls sideways and each lane body scrolls on
        its own. Project page: the "All projects" bar stays put, the side panel is frozen, only the right side scrolls. */
@@ -210,10 +223,15 @@
     return '<div class="ppprog"><div class="pprow"><span>' + (bare ? '' : 'Progress · ') + pg.pct + '%</span><b>' + pg.done + ' of ' + pg.all + ' done</b></div>' +
       '<div class="ppbar" role="img" aria-label="' + pg.pct + ' percent done"><i style="width:' + pg.pct + '%"></i></div></div>';
   }
-  function cardHTML(p) {
-    var pg = progress(p), m = p.meta || {}, h;
-    h = '<div class="ppcard' + (SHELF[statusOf(p)] ? ' off' : '') + '" data-pp="open" data-id="' + esc(p.id) + '">' +
-      '<div class="pphd">' + logoHTML(p) + '<div class="ppnm"><b>' + esc(p.name) + '</b>' + (m.desc ? '<div class="ppdesc">' + esc(m.desc) + '</div>' : '') + '</div>' + dotHTML(p) + '</div>' +
+  function stillLive(p) { var d = depOf(p); return !!(NOTLIVE[statusOf(p)] && d && d.color === 'green'); } // shelved but Vercel serves a live production deploy
+  function warnHTML(p) { return stillLive(p) ? '<div class="ppwarn" role="alert">⚠ Marked ' + LABEL[statusOf(p)].toLowerCase() + ' but still live on Vercel</div>' : ''; }
+  function reasonOf(p) { return REASON[statusOf(p)] && p.meta && p.meta.reason ? p.meta.reason : ''; }
+  function cardHTML(p, grip) {
+    var pg = progress(p), m = p.meta || {}, h, rs = reasonOf(p);
+    h = '<div class="ppcard' + (NOTLIVE[statusOf(p)] ? ' off' : '') + '" data-pp="open" data-id="' + esc(p.id) + '">' +
+      '<div class="pphd">' + logoHTML(p) + '<div class="ppnm"><b>' + esc(p.name) + '</b>' + (m.desc ? '<div class="ppdesc">' + esc(m.desc) + '</div>' : '') + '</div>' + dotHTML(p) +
+      (grip ? '<div class="ppgrip" data-pp="grip" data-id="' + esc(p.id) + '" aria-label="Drag to reorder">☰</div>' : '') + '</div>' +
+      warnHTML(p) + (rs ? '<div class="ppreason"><b>Why:</b> ' + esc(rs) + '</div>' : '') +
       (pg.all ? progHTML(pg) : '<div class="ppempty">No tasks yet</div>') +
       '<div class="ppfoot"><span>' + (pg.back ? pg.back + ' in backlog · ' : '') + 'Active ' + ago(p.last_at || p.created_at) + '</span><span class="sp"></span></div>' +
       (linkChips(p) ? '<div>' + linkChips(p) + '</div>' : '');
@@ -224,29 +242,41 @@
     } else h += '<button class="ppmv" data-pp="mv" data-id="' + esc(p.id) + '">Move to…</button>';
     return h + '</div>';
   }
+  function byPos(a, b) { // hand-made order (pos); new projects without one yet go first
+    var x = typeof a.pos === 'number' ? a.pos : -1e9, y = typeof b.pos === 'number' ? b.pos : -1e9;
+    if (x !== y) return x - y;
+    return App.parseTS(b.created_at) - App.parseTS(a.created_at);
+  }
+  function lanes() {
+    var by = {}, i;
+    for (i = 0; i < STAT.length; i++) by[STAT[i]] = [];
+    for (i = 0; i < list.length; i++) (by[statusOf(list[i])] || by.in_progress).push(list[i]);
+    for (i = 0; i < STAT.length; i++) by[STAT[i]].sort(byPos);
+    return by;
+  }
   function boardPage() {
     var h = '<div class="pptools"><form class="ppadd" id="ppNewForm" autocomplete="off"><input id="ppNew" type="text" maxlength="60" placeholder="New project, e.g. Holmlodge Hub" autocorrect="off" autocapitalize="words">' +
       '<button type="submit"' + (busy ? ' disabled' : '') + '>Add</button></form></div>';
     if (!known) return h + '<div class="ppsum">' + (failed ? 'Could not load your projects. Check your connection.' : 'Loading…') + '</div>';
     var i, s, anyV = false;
-    var by = { in_progress: [], live: [], paused: [], not_pursued: [], shut_down: [] };
-    for (i = 0; i < list.length; i++) { (by[statusOf(list[i])] || by.in_progress).push(list[i]); if (list[i].meta && list[i].meta.vercel) anyV = true; }
-    for (s in by) if (by.hasOwnProperty(s)) by[s].sort(function (a, b) { return App.parseTS(b.last_at || b.created_at) - App.parseTS(a.last_at || a.created_at); });
-    var sum = by.in_progress.length + ' in progress · ' + by.live.length + ' live · ' + by.paused.length + ' paused';
+    var by = lanes(), warn = 0;
+    for (i = 0; i < list.length; i++) { if (list[i].meta && list[i].meta.vercel) anyV = true; if (stillLive(list[i])) warn++; }
+    var sum = (by.idea.length ? by.idea.length + (by.idea.length === 1 ? ' idea · ' : ' ideas · ') : '') + by.in_progress.length + ' in progress · ' + by.live.length + ' live · ' + by.paused.length + ' paused';
+    if (warn) sum += ' · ' + warn + ' still live on Vercel';
     if (anyV && dep.configured === false) sum += ' · add a VERCEL_TOKEN to show live deploy status';
     else if (anyV && dep.at) sum += ' · deploy status checked ' + ago(new Date(dep.at).toISOString());
-    h += '<div class="ppsum">' + sum + '. Tap a card to open it; most recently active first.</div>';
+    h += '<div class="ppsum">' + sum + '. Tap a card to open it; drag ☰ to change the order.</div>';
     if (!list.length) return h + '<p class="empty">No projects yet. Add your first one above.</p>';
     h += '<div class="bdcols">';
     for (i = 0; i < STAT.length; i++) {
       s = STAT[i];
       var f = !!fold[s];
-      h += '<section class="bdcol' + (f ? ' ppcolf' : '') + (SHELF[s] ? ' hold' : '') + '">' +
+      h += '<section class="bdcol' + (f ? ' ppcolf' : '') + (NOTLIVE[s] ? ' hold' : '') + '">' +
         '<button class="bdhead" data-pp="fold" data-val="' + s + '" aria-expanded="' + (f ? 'false' : 'true') + '"><span class="bdname">' + LABEL[s] + '</span><span class="bdn">' + by[s].length + '</span><span class="bdcaret">' + (f ? '▸' : '▾') + '</span></button>';
       if (!f) {
         h += '<div class="pplane" data-lane="' + s + '">';
-        if (!by[s].length) h += '<div class="bdempty">' + (s === 'in_progress' ? 'Nothing in progress.' : s === 'live' ? 'Nothing live yet.' : 'None.') + '</div>';
-        for (var j = 0; j < by[s].length; j++) h += cardHTML(by[s][j]);
+        if (!by[s].length) h += '<div class="bdempty">' + (s === 'in_progress' ? 'Nothing in progress.' : s === 'live' ? 'Nothing live yet.' : s === 'idea' ? 'No ideas parked yet.' : 'None.') + '</div>';
+        for (var j = 0; j < by[s].length; j++) h += cardHTML(by[s][j], by[s].length > 1);
         h += '</div>';
       }
       h += '</section>';
@@ -356,10 +386,18 @@
     else h += '<div class="pphd">' + logoHTML(p, true) + '<div class="ppnm"><b>' + esc(p.name) + '</b>' + (m.desc ? '<div class="ppdesc" style="-webkit-line-clamp:4">' + esc(m.desc) + '</div>' : '') + '</div>' +
       '<button class="pbtn" data-pp="edit" data-id="' + esc(p.id) + '" aria-label="Rename project">✎</button></div>';
     if (editing) return h + editForm(p);
-    h += '<div class="ppsec"><div class="lbl">Status</div>';
-    for (i = 0; i < STAT.length; i++) h += '<button class="chip' + (statusOf(p) === STAT[i] ? ' on' : '') + '" data-pp="stat" data-id="' + esc(p.id) + '" data-val="' + STAT[i] + '">' + LABEL[STAT[i]] + '</button>';
-    if (SHELF[statusOf(p)]) h += '<div class="pphint">Its tasks are out of Overdue and your counts while it is ' + LABEL[statusOf(p)].toLowerCase() + '.</div>';
-    else if (statusOf(p) === 'live') h += '<div class="pphint">Live: tasks you add still show up as normal.</div>';
+    var so = statusOf(p);
+    h += '<div class="ppsec"><div class="lbl">Status</div>' + warnHTML(p);
+    for (i = 0; i < STAT.length; i++) h += '<button class="chip' + (so === STAT[i] ? ' on' : '') + '" data-pp="stat" data-id="' + esc(p.id) + '" data-val="' + STAT[i] + '">' + LABEL[STAT[i]] + '</button>';
+    if (so === 'idea') h += '<div class="pphint">Idea: not started yet. Its tasks stay out of Overdue and your counts, and new ones go to the Backlog.</div>';
+    else if (SHELF[so]) h += '<div class="pphint">Its tasks are out of Overdue and your counts while it is ' + LABEL[so].toLowerCase() + '.</div>';
+    else if (so === 'live') h += '<div class="pphint">Live: tasks you add still show up as normal.</div>';
+    if (REASON[so]) {
+      if (reasonId === p.id) h += '<div class="lbl" style="margin-top:12px">Reason</div><textarea id="ppReason" maxlength="300" placeholder="Why is it ' + LABEL[so].toLowerCase() + '? What is needed or planned to move it on?">' + esc(reasonDraft) + '</textarea>' +
+        '<div class="rbtns"><button class="btn primary" data-pp="rsave" data-id="' + esc(p.id) + '"' + (busy ? ' disabled' : '') + '>Save reason</button><button class="btn" data-pp="rx">Cancel</button></div>';
+      else if (m.reason) h += '<div class="ppreason"><b>Why:</b> ' + esc(m.reason) + '</div><button class="pplk rs" data-pp="redit" data-id="' + esc(p.id) + '">Edit reason</button>';
+      else h += '<button class="pplk rs" data-pp="redit" data-id="' + esc(p.id) + '">+ Add a reason</button>';
+    }
     h += '</div>';
     h += '<div class="ppsec"><div class="lbl">Progress</div>' + (pg.all ? progHTML(pg, true) : '<div class="pphint">No tasks yet.</div>') +
       '<div class="pphint">' + pg.open + ' open (' + pg.back + ' in backlog) · last activity ' + ago(p.last_at || p.created_at) + '</div></div>';
@@ -385,6 +423,7 @@
       case 'status': return 'Status: ' + t;
       case 'renamed': return 'Renamed: ' + t;
       case 'details': return 'Details updated';
+      case 'reason': return t ? 'Reason: ' + t : 'Reason cleared';
       case 'task_added': return 'Added <b>' + t + '</b>';
       case 'task_done': return 'Done <b>' + t + '</b>';
       case 'task_reopened': return 'Reopened <b>' + t + '</b>';
@@ -488,7 +527,7 @@
   window.addEventListener('load', relayout, false);
 
   function paint() {
-    if (!onView) return;
+    if (!onView || drag) return; // never redraw under a finger that is dragging a card
     var p = sel ? byId(sel) : null;
     if (sel && known && !p) { sel = ''; setStore('ppSel', ''); }
     App.setHTML($('viewTitle'), p ? 'My projects<small>' + esc(p.name) + '</small>' : 'My projects');
@@ -515,6 +554,7 @@
       busy = false;
       if ((s === 201 || s === 200) && d && d.project) {
         d.project.open = 0; d.project.done = 0; d.project.done_old = 0; d.project.meta = d.project.meta || {}; d.project.last_at = d.project.created_at;
+        if (typeof d.project.pos !== 'number') { var mn = 1; for (var k = 0; k < list.length; k++) if (typeof list[k].pos === 'number' && list[k].pos < mn) mn = list[k].pos; d.project.pos = mn - 1; } // new projects go first
         list.push(d.project); App.setPProjects(list);
         if ($('ppNew')) $('ppNew').value = '';
       } else App.toast(errText(s, d));
@@ -532,7 +572,10 @@
   }
   function setStatus(id, v) {
     var p = byId(id); if (!p || p.status === v || STAT.indexOf(v) < 0) return;
-    var was = p.status; p.status = v; moveId = ''; App.setPProjects(list); paint();
+    var was = p.status; p.status = v; moveId = '';
+    if (sel === id && REASON[v] && !(p.meta && p.meta.reason)) { reasonId = id; reasonDraft = ''; } // prompt for the why on the project page
+    else if (!REASON[v]) reasonId = '';
+    App.setPProjects(list); paint();
     patch(id, { status: v }, function (q) { q.status = was; });
   }
   function rename(id) {
@@ -559,6 +602,32 @@
       paint();
     });
   }
+  function saveReason(id) {
+    var p = byId(id); if (!p || busy) return;
+    var v = reasonDraft.replace(/^\s+|\s+$/g, '').slice(0, 300), m = {}, k, om = p.meta || {};
+    if ((om.reason || '') === v) { reasonId = ''; paint(); return; }
+    for (k in om) if (om.hasOwnProperty(k) && k !== 'reason') m[k] = om[k];
+    if (v) m.reason = v;
+    busy = true; paint();
+    patch(id, { meta: m }, null, function (ok) {
+      busy = false;
+      if (ok) { reasonId = ''; App.toast(v ? 'Reason saved' : 'Reason cleared'); }
+      paint();
+    });
+  }
+  function reorder(ids) { // optimistic: the lane's projects swap among the positions they hold, then the server agrees
+    var ps = [], poss = [], was = {}, i, p;
+    for (i = 0; i < ids.length; i++) { p = byId(ids[i]); if (!p) return; ps.push(p); poss.push(typeof p.pos === 'number' ? p.pos : 0); was[p.id] = p.pos; }
+    poss.sort(function (a, b) { return a - b; });
+    for (i = 0; i < ps.length; i++) ps[i].pos = poss[i];
+    paint();
+    App.api('PATCH', '?order=1', { ids: ids }, function (s, d) {
+      var k, q;
+      if (s === 200 && d && d.pos) { for (k in d.pos) if (d.pos.hasOwnProperty(k) && (q = byId(k))) q.pos = d.pos[k]; }
+      else { for (k in was) if (was.hasOwnProperty(k) && (q = byId(k))) q.pos = was[k]; App.toast('Could not save the new order'); }
+      paint();
+    }, '/api/pprojects');
+  }
   function addTask(title) {
     var p = byId(sel); title = (title || '').replace(/^\s+|\s+$/g, '');
     if (!p || !title) return;
@@ -572,7 +641,8 @@
     }, '/api/todos');
   }
   function openProject(id) {
-    sel = id; editId = ''; editing = false; draft = null; showDone = false; moveId = ''; setStore('ppSel', id);
+    sel = id; editId = ''; editing = false; draft = null; showDone = false; moveId = ''; reasonId = ''; setStore('ppSel', id);
+    var op = byId(id); if (op && statusOf(op) === 'idea') addTo = 'backlog'; // ideas: new tasks default to the Backlog
     pageScroll = null; paint(); window.scrollTo(0, 0); loadEvents(id);
   }
 
@@ -603,6 +673,9 @@
     else if (a === 'act') { showAct = !showAct; store.set('ppAct', showAct ? '1' : '0'); paint(); }
     else if (a === 'to') { addTo = v === 'list' ? 'list' : 'backlog'; store.set('ppAddTo', addTo); paint(); }
     else if (a === 'done') { showDone = !showDone; paint(); }
+    else if (a === 'redit') { var rp = byId(id); reasonId = id; reasonDraft = (rp && rp.meta && rp.meta.reason) || ''; paint(); if ($('ppReason')) $('ppReason').focus(); }
+    else if (a === 'rx') { reasonId = ''; paint(); }
+    else if (a === 'rsave') saveReason(id);
   }, false);
   document.addEventListener('submit', function (e) {
     var f = e.target; if (!f) return;
@@ -612,6 +685,7 @@
   }, false);
   function onField(e) { // keep the details draft in step with what is typed (the form is redrawn from it)
     var el = e.target, f = el && el.getAttribute ? el.getAttribute('data-f') : null, m;
+    if (el && el.id === 'ppReason') { reasonDraft = el.value; return; }
     if (!f || !draft) return;
     if ((m = /^site:(\d+)$/.exec(f))) draft.sites[+m[1]] = el.value;
     else if ((m = /^ll:(\d+)$/.exec(f))) draft.links[+m[1]].l = el.value;
@@ -626,6 +700,74 @@
   document.addEventListener('keydown', function (e) {
     if (e.target && e.target.id === 'ppEdit' && (e.keyCode === 13 || e.keyCode === 27)) { e.preventDefault(); if (e.keyCode === 13) rename(editId); else { editId = ''; paint(); } }
   }, false);
+
+  /* ---------- drag a card by its ☰ handle to reorder its lane (touch and mouse; no HTML5 drag-and-drop on iOS 9).
+     Adapted from board.js. Wide screens scroll the lane itself; phones scroll the page. ---------- */
+  function scrollerOf(lane) {
+    if (fixedMode()) return lane;
+    var sv = $('vPprojects') && $('vPprojects').querySelector('.scrollview');
+    return sv && sv.scrollHeight > sv.clientHeight + 1 ? sv : null; // null = the window
+  }
+  function scTop(sc) { return sc ? sc.scrollTop : (window.pageYOffset || document.documentElement.scrollTop || 0); }
+  function scBy(sc, dy) { if (sc) sc.scrollTop += dy; else window.scrollBy(0, dy); }
+  function cardOf(el) { while (el && el.className !== undefined && !/(^| )ppcard( |$)/.test(el.className)) el = el.parentNode; return el && el.className !== undefined ? el : null; }
+  function startDrag(grip, y) {
+    var card = cardOf(grip), lane = card && card.parentNode, cs, from = -1, i;
+    if (!lane || !lane.getAttribute('data-lane')) return false;
+    cs = lane.querySelectorAll('.ppcard');
+    for (i = 0; i < cs.length; i++) if (cs[i] === card) from = i;
+    if (from < 0 || cs.length < 2) return false;
+    var sc = scrollerOf(lane);
+    drag = { lane: lane, card: card, from: from, to: from, y0: y, sc: sc, s0: scTop(sc) };
+    card.className += ' dragging'; card.style.position = 'relative'; card.style.zIndex = 5;
+    return true;
+  }
+  function moveDrag(y) {
+    var d = drag, cs = d.lane.querySelectorAll('.ppcard'), r = d.sc ? d.sc.getBoundingClientRect() : { top: 0, bottom: window.innerHeight }, s = 0, i, b, tr;
+    if (y < r.top + 50) scBy(d.sc, -12); else if (y > r.bottom - 50) scBy(d.sc, 12);
+    tr = 'translateY(' + (y - d.y0 + (scTop(d.sc) - d.s0)) + 'px)';
+    d.card.style.webkitTransform = tr; d.card.style.transform = tr;
+    for (i = 0; i < cs.length; i++) {
+      if (i === d.from) continue;
+      b = cs[i].getBoundingClientRect();
+      if (b.top + (b.bottom - b.top) / 2 < y) s++;
+      cs[i].className = cs[i].className.replace(/ drop[ab]/g, '');
+    }
+    d.to = s;
+    if (s !== d.from && cs[s]) cs[s].className += s < d.from ? ' dropb' : ' dropa';
+  }
+  function endDrag() {
+    var d = drag; if (!d) return;
+    var cs = d.lane.querySelectorAll('.ppcard'), ids = [], i;
+    for (i = 0; i < cs.length; i++) { ids.push(cs[i].getAttribute('data-id')); cs[i].className = cs[i].className.replace(/ drop[ab]| dragging/g, ''); }
+    d.card.style.webkitTransform = ''; d.card.style.transform = ''; d.card.style.position = ''; d.card.style.zIndex = '';
+    drag = null;
+    if (d.to !== d.from) { var mv = ids.splice(d.from, 1)[0]; ids.splice(d.to, 0, mv); reorder(ids); }
+    else paint();
+  }
+  function gripOf(el, root) {
+    while (el && el !== root) { if (el.getAttribute && el.getAttribute('data-pp') === 'grip') return el; el = el.parentNode; }
+    return null;
+  }
+  (function wireDrag() {
+    var pane = $('ppPane'); if (!pane) return;
+    pane.addEventListener('touchstart', function (e) {
+      var g = gripOf(e.target, pane);
+      if (!g || drag || !e.touches || e.touches.length !== 1 || !startDrag(g, e.touches[0].clientY)) return;
+      e.preventDefault();
+      var mv = function (ev) { ev.preventDefault(); if (drag) moveDrag(ev.touches[0].clientY); };
+      var up = function () { g.removeEventListener('touchmove', mv, false); g.removeEventListener('touchend', up, false); g.removeEventListener('touchcancel', up, false); endDrag(); };
+      g.addEventListener('touchmove', mv, false); g.addEventListener('touchend', up, false); g.addEventListener('touchcancel', up, false);
+    }, false);
+    pane.addEventListener('mousedown', function (e) {
+      var g = gripOf(e.target, pane);
+      if (!g || drag || !startDrag(g, e.clientY)) return;
+      e.preventDefault();
+      var mv = function (ev) { if (drag) moveDrag(ev.clientY); };
+      var up = function () { document.removeEventListener('mousemove', mv, false); document.removeEventListener('mouseup', up, false); endDrag(); };
+      document.addEventListener('mousemove', mv, false); document.addEventListener('mouseup', up, false);
+    }, false);
+  })();
 
   App.register('pprojects', {
     title: 'My projects',

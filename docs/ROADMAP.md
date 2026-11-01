@@ -11,7 +11,7 @@
 
 ## My projects plan (agreed 1 Nov 2026, one deploy each, Luc tests between)
 - ~~Deploy 1: layout/scroll fixes, icon kept on failed lookup, Vercel picker replaces its own domains~~ Done v1044.
-- Deploy 2: Idea status (shelved, tasks default to Backlog), Reason field (Idea/Paused/Not pursued/Shut down, logged), "paused but live on Vercel" warning, manual order within a lane by **drag and drop** (reuse board.js touch drag, not arrows), stored in a new `pos` column (not meta), new projects at top.
+- ~~Deploy 2: Idea status (shelved, tasks default to Backlog), Reason field (Idea/Paused/Not pursued/Shut down, logged), "paused but live on Vercel" warning, manual order within a lane by **drag and drop** (reuse board.js touch drag, not arrows), stored in a new `pos` column (not meta), new projects at top.~~ Done v1045 (`db/setup17.sql`).
 - Deploy 3: subscriptions/costs per project in their own table (Budget bills have no ids and are monthly-only, so not reused; show "also in Budget" on a name match). Cross-project totals = follow-up only.
 - Deploy 4: account labels in meta; stored icon copies in a new icon table (custom upload + cached site icons, fixes paused-site icons); per-project vault (server-side AES-GCM, key from vault password + env `VAULT_PEPPER`); Supabase token research only.
 

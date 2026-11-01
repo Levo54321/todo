@@ -70,10 +70,11 @@ change the header in the endpoint file and regenerate._
 ## api/pprojects.js
 ```
 // /api/pprojects — Personal Projects (your apps, home projects ...). Separate from Work projects (/api/projects).
-//   GET                      -> { projects: [{id, name, status, created_at, meta, open, done, done_old, last_at}] }
+//   GET                      -> { projects: [{id, name, status, created_at, meta, pos, open, done, done_old, last_at}] }
+//                               in hand-made order (pos ascending; each lane shows its projects in this order)
 //                               open/done = all-time task counts; done_old = finished more than 7 days ago (not in GET /api/todos);
 //                               last_at = latest activity. meta = { sites:[url], links:[{l,u}], vercel, supabase, github, desc,
-//                               started, target, icon }
+//                               reason, started, target, icon }  (reason: plain text, max 300, why it is idea/paused/... )
 //   GET ?events=<id>         -> { events: [{at, k, t}] }   that project's activity, newest first
 //   GET ?deploy=1            -> { configured, status: { <project id>: {state, color, url, at} } }   latest production deploy of
 //                               each project with a Vercel link; state PAUSED (color 'paused') when the project is paused in
@@ -82,11 +83,15 @@ change the header in the endpoint file and regenerate._
 //   GET ?vercel=<team>/<name> -> { vercel, sites:[url], github }   links to fill in from one Vercel project
 //   POST {name, status?, meta?}      -> create                         -> { project }
 //   PATCH ?id {name?, status?, meta?} -> update; meta replaces the details (empty fields are dropped) -> { project }
+//                               a changed reason is logged as its own activity entry
+//   PATCH ?order=1 {ids:[...]}  -> reorder (drag and drop): these projects swap among the places they already hold,
+//                               in the order given -> { pos: {<id>: n} }. New projects go to the top.
 //   DELETE ?id               -> remove (its tasks stay, they just lose the link)
-// status: 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
+// status: 'idea' | 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
+// Tasks of idea / paused / not_pursued / shut_down projects are shelved (out of Overdue and the counts).
 // Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
 // a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
-// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql, setup15.sql and setup16.sql.
+// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup17.sql.
 ```
 
 ## api/projects.js

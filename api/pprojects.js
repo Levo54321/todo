@@ -1,8 +1,9 @@
 // /api/pprojects — Personal Projects (your apps, home projects ...). Separate from Work projects (/api/projects).
-//   GET                      -> { projects: [{id, name, status, created_at, meta, open, done, done_old, last_at}] }
+//   GET                      -> { projects: [{id, name, status, created_at, meta, pos, open, done, done_old, last_at}] }
+//                               in hand-made order (pos ascending; each lane shows its projects in this order)
 //                               open/done = all-time task counts; done_old = finished more than 7 days ago (not in GET /api/todos);
 //                               last_at = latest activity. meta = { sites:[url], links:[{l,u}], vercel, supabase, github, desc,
-//                               started, target, icon }
+//                               reason, started, target, icon }  (reason: plain text, max 300, why it is idea/paused/... )
 //   GET ?events=<id>         -> { events: [{at, k, t}] }   that project's activity, newest first
 //   GET ?deploy=1            -> { configured, status: { <project id>: {state, color, url, at} } }   latest production deploy of
 //                               each project with a Vercel link; state PAUSED (color 'paused') when the project is paused in
@@ -11,15 +12,19 @@
 //   GET ?vercel=<team>/<name> -> { vercel, sites:[url], github }   links to fill in from one Vercel project
 //   POST {name, status?, meta?}      -> create                         -> { project }
 //   PATCH ?id {name?, status?, meta?} -> update; meta replaces the details (empty fields are dropped) -> { project }
+//                               a changed reason is logged as its own activity entry
+//   PATCH ?order=1 {ids:[...]}  -> reorder (drag and drop): these projects swap among the places they already hold,
+//                               in the order given -> { pos: {<id>: n} }. New projects go to the top.
 //   DELETE ?id               -> remove (its tasks stay, they just lose the link)
-// status: 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
+// status: 'idea' | 'in_progress' | 'live' | 'paused' | 'not_pursued' | 'shut_down' ('active' is accepted as 'in_progress').
+// Tasks of idea / paused / not_pursued / shut_down projects are shelved (out of Overdue and the counts).
 // Links must be https. When the first website changes the server looks up its icon once and stores it as meta.icon;
 // a failed lookup (site down or paused) keeps the stored icon. Link a task with PATCH /api/todos?id {pproject_id, pp_backlog}.
-// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql, setup15.sql and setup16.sql.
+// Names are unique ignoring capitalisation (max 60 characters). Needs db/setup14.sql to setup17.sql.
 var todos = require('./todos.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-var STATUS = ['in_progress', 'live', 'paused', 'not_pursued', 'shut_down', 'active'];
-var META_KEYS = ['vercel', 'supabase', 'github', 'desc', 'started', 'target'];
+var STATUS = ['idea', 'in_progress', 'live', 'paused', 'not_pursued', 'shut_down', 'active'];
+var META_KEYS = ['vercel', 'supabase', 'github', 'desc', 'reason', 'started', 'target'];
 var DEPLOY_TTL = 5 * 60000, deployCache = { at: 0, key: '', data: null };
 
 function send(res, status, obj) {
@@ -69,6 +74,7 @@ function cleanMeta(m) { // trims, keeps known keys; links must be https (the dat
     if (!v) continue;
     if (k === 'started' || k === 'target') { if (/^\d{4}-\d{2}-\d{2}$/.test(v)) out[k] = v; continue; }
     if (k === 'desc') { out[k] = v.slice(0, 200); continue; }
+    if (k === 'reason') { out[k] = v.slice(0, 300); continue; }
     v = httpsOf(v); if (v) out[k] = v;
   }
   return out;
@@ -207,6 +213,11 @@ module.exports = async function handler(req, res) {
       return send(res, 200, { projects: all });
     }
     var b = readBody(req), meta = null;
+    if (req.method === 'PATCH' && q.order !== undefined) {
+      var ids = Array.isArray(b.ids) ? b.ids : null;
+      if (!ids || !ids.length || ids.length > 200 || ids.some(function (x) { return typeof x !== 'string' || !UUID.test(x); })) return send(res, 400, { error: 'bad order' });
+      return send(res, 200, { pos: (await todos.rpc('pproj_order', { p_token: token, p_ids: ids })) || {} });
+    }
     if (b.status !== undefined && STATUS.indexOf(b.status) < 0) return send(res, 400, { error: 'bad status' });
     if (b.meta !== undefined) {
       if (!b.meta || typeof b.meta !== 'object' || Array.isArray(b.meta)) return send(res, 400, { error: 'bad details' });
@@ -246,7 +257,7 @@ module.exports = async function handler(req, res) {
     if (e.code === 'P0002') return send(res, 404, { error: 'not found' });
     if (e.code === '23505') return send(res, 409, { error: 'a project with that name already exists' });
     if (e.code === '23514') return send(res, 400, { error: 'invalid input' });
-    if (e.code === 'PGRST202') return send(res, 409, { error: 'run setup16.sql first' });
+    if (e.code === 'PGRST202') return send(res, 409, { error: 'run setup17.sql first' });
     console.error('pprojects api error', e.code, e.message);
     return send(res, 502, { error: 'upstream error' });
   }

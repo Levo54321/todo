@@ -100,6 +100,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Personal project statuses live in four places: DB check + `pproj_save` (latest `db/setupNN.sql`), `api/pprojects.js` STATUS, `core.js` PP_SHELF, `pprojects.js` STAT/LABEL/SHELF/REASON/NOTLIVE/fold. Change all together.
 - 2026-11-01 — My projects reordering must be drag and drop (Luc dislikes up/down arrows); reuse board.js touch drag.
 - 2026-11-01 — Fixed-height panes use JS heights from innerHeight, not vh (see Pitfalls).
 - 2026-11-01 — Moved all detailed instructions and context into this repo (CLAUDE.md, docs/, docs/API.md,

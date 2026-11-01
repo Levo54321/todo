@@ -4,7 +4,8 @@
   Personal Projects, Vercel picker, deploy status). It fails if the page throws or tries to reach another site.
 - `t_core.py`: the flows that must never break (no Shopping tab, quick add / Shortcut POST, recurring tick, Work
   list with paused and blocked, board, Insights, Budget, Tomorrow, Settings, screensaver).
-- `t_projects.py`: My projects (runs `t_core` first).
+- `t_projects.py`: My projects (runs `t_core` first): statuses incl. Idea, reason, still-live warning, drag order
+  (mouse and synthetic touch), Vercel picker, fixed-height layout at 1024×768, 768×1024 and 390×844.
 - `es5.js`: parses every `public/js/*.js` as ES5 and warns about iOS 9 gaps.
 
 ```
