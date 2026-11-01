@@ -152,3 +152,22 @@ change the header in the endpoint file and regenerate._
 // DELETE /api/todos?id=<uuid>
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
 ```
+
+## api/vault.js
+```
+// /api/vault — the per-project vault for sensitive values (environment variables, codes). POST only, so nothing
+// sensitive ever travels in a URL (URLs can end up in logs). Body: { action, pass?, ... }. Auth: x-todo-token.
+//   {action:'state', project_id, pass?}  -> { configured, set, locked, count, [entries:[{id,name}], pass] }
+//        locked = no valid pass: only the number of entries comes back. With a valid pass: names (never values).
+//   {action:'setup', password}           -> { pass }   first time only; password 10+ characters
+//   {action:'unlock', password}          -> { pass }   403 wrong password; 429 {until} after 5 wrong tries (5 min)
+//   {action:'get', id, pass}             -> { value, pass }   one value
+//   {action:'save', id?, project_id, name, value, pass} -> { entry:{id,name}, pass }   add or replace
+//   {action:'delete', id, pass}          -> { ok, pass }
+//   {action:'reset', confirm:'DELETE ALL'} -> { ok, deleted }   forgotten password: wipes every entry and the password
+// pass = a short-lived unlock pass (5 minutes, renewed by every call), sealed with a key only the server knows; the page
+// keeps it in memory only and drops it after 5 idle minutes or when you leave the page. 401 {locked:true} = expired.
+// Crypto: key = HKDF-SHA256(scrypt(password, salt, N=2^15, r=8, p=1), VAULT_PEPPER); entries are AES-256-GCM with a
+// random 12-byte IV, bound (AAD) to their project and entry id. Needs env VAULT_PEPPER (32+ characters) and
+// db/setup20.sql. Values, names, passwords and passes are never logged and never written to the activity log.
+```

@@ -114,6 +114,12 @@
     '.ppup input{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;font-size:100px;cursor:pointer}' +
     '.pplrow .acl{-webkit-flex:none;flex:none;width:76px;font-size:13px;color:var(--muted);line-height:40px}' +
     '.ppacct{display:-webkit-flex;display:flex;font-size:14px;padding:3px 0;word-wrap:break-word;overflow-wrap:break-word;min-width:0}.ppacct span{-webkit-flex:none;flex:none;width:76px;color:var(--muted);font-size:13px}' +
+    '.ppvault{margin:4px 0 8px}.ppvault .setinput{margin-bottom:8px}.ppvrow{display:-webkit-flex;display:flex;-webkit-align-items:flex-start;align-items:flex-start}.ppvrow .setinput{-webkit-flex:1;flex:1;min-width:0;margin-right:8px}.ppvrow .btn{margin:0;min-height:44px}' +
+    '.ppwarnt{margin:4px 0 10px;padding:8px 10px;border-radius:10px;border:1px solid var(--alert);color:var(--alert);font-size:13px;line-height:1.35}' +
+    '.ppvtop{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;margin-bottom:6px}.ppvtop .pphint{-webkit-flex:1;flex:1;margin:0 8px 0 0}.ppvtop .btn{min-height:44px;margin:0}' +
+    '.ppvent{padding:10px 0;border-top:1px solid var(--rule)}.ppvent .vn{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center}.ppvent .vn b{-webkit-flex:1;flex:1;min-width:0;font:600 14px/1.3 Menlo,Courier,monospace;word-wrap:break-word;overflow-wrap:break-word}.ppvent .vn .pplk{margin:0;min-height:36px}' +
+    '.ppvmask{margin:6px 0;color:var(--muted);letter-spacing:2px}.ppvval{display:block;width:100%;margin:6px 0;padding:8px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--ink);font:14px/1.35 Menlo,Courier,monospace;-webkit-appearance:none;-webkit-user-select:text;user-select:text}' +
+    '.ppvent .vb .btn{margin:0 8px 0 0;min-height:44px}.ppvta{font-family:Menlo,Courier,monospace}' +
     '.ppgrip{-webkit-flex:none;flex:none;width:44px;height:44px;margin:-6px -8px -6px 4px;line-height:44px;text-align:center;color:var(--muted);font-size:19px;cursor:-webkit-grab;cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}' +
     '.ppcard.dragging{box-shadow:0 8px 22px rgba(0,0,0,.28);opacity:.97;background:var(--paper)}' +
     '.ppcard.dropb{box-shadow:0 -3px 0 var(--accent)}.ppcard.dropa{box-shadow:0 3px 0 var(--accent)}' +
@@ -167,6 +173,7 @@
     }, '/api/pprojects');
   }
   setTimeout(function () { load(function () { if (onView) { paint(); loadDeploy(); } }); }, 700);
+  document.addEventListener('visibilitychange', function () { if (App.hidden()) vaultLock(true); }, false); // app in the background: lock
   document.addEventListener('visibilitychange', function () { if (!App.hidden()) load(function () { if (onView) { paint(); loadDeploy(); } }); }, false);
 
   function byId(id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]; return null; }
@@ -640,6 +647,7 @@
       if (showDone) h += App.listHTML(t.done);
     }
     if (p.done_old) h += '<div class="pphint">Plus ' + p.done_old + ' finished earlier.</div>';
+    h += vaultHTML(p);
     h += '<button class="ppacth" data-pp="act" aria-expanded="' + (showAct ? 'true' : 'false') + '">' + (showAct ? '▾' : '▸') + ' Activity' + (ev ? '<small>' + ev.length + (ev.length >= 40 ? '+' : '') + ' entries' + (ev.length ? ' · latest ' + ago(ev[0].at) : '') + '</small>' : '') + '</button>';
     if (!showAct) {}
     else if (!ev) h += '<div class="pphint">Loading…</div>';
@@ -848,6 +856,150 @@
     iconBusy = true; paint();
     App.api('DELETE', '?icon=' + encodeURIComponent(p.id), null, function (s, r) { iconDone(p, s, r, 'Icon removed'); }, '/api/pprojects');
   }
+  /* ---------- vault: sensitive values per project, encrypted on the server (api/vault.js). The unlock pass lives
+     only in this variable: never stored, never logged. Locks after 5 idle minutes and when you leave the page. ---------- */
+  var V = { pid: '', st: null, pass: '', vals: {}, shown: {}, edit: '', draft: null, pw: '', pw2: '', busy: false, err: '', used: 0, reset: false, resetTxt: '' };
+  var VIDLE = 5 * 60000;
+  function vApi(body, cb) {
+    App.api('POST', '', body, function (s, d) {
+      if (d && d.pass) V.pass = d.pass;
+      if (s === 401 && d && d.locked) { vaultLock(true); App.toast('The vault locked, unlock it again'); return; }
+      cb(s, d || {});
+    }, '/api/vault');
+  }
+  function vaultLock(quiet) { // forget everything that was unlocked
+    var had = !!V.pass;
+    V.pass = ''; V.vals = {}; V.shown = {}; V.edit = ''; V.draft = null; V.pw = ''; V.pw2 = '';
+    if (V.st) { delete V.st.entries; V.st.locked = true; }
+    if (had && !quiet) App.toast('Vault locked');
+    if (onView) paint();
+  }
+  function vaultLoad(pid) {
+    if (V.pid !== pid) { vaultLock(true); V.pid = pid; V.st = null; V.err = ''; V.reset = false; }
+    vApi({ action: 'state', project_id: pid, pass: V.pass || undefined }, function (s, d) {
+      if (V.pid !== pid) return;
+      if (s === 200) { V.st = d; if (d.locked && V.pass) vaultLock(true); }
+      else V.err = d.error || 'Could not reach the vault';
+      paint();
+    });
+  }
+  function vTouch() { V.used = Date.now(); }
+  function vIdleCheck() { if (V.pass && Date.now() - V.used > VIDLE) vaultLock(); }
+  setInterval(vIdleCheck, 15000);
+  App.ppVaultAge = function (ms) { V.used -= ms; vIdleCheck(); }; // tests: pretend time passed (can only lock sooner)
+  window.addEventListener('pagehide', function () { vaultLock(true); }, false);
+  function vaultSetup() {
+    if (V.busy) return;
+    if (V.pw.length < 10) { App.toast('Use at least 10 characters'); return; }
+    if (V.pw !== V.pw2) { App.toast('The two passwords do not match'); return; }
+    V.busy = true; paint();
+    vApi({ action: 'setup', password: V.pw }, function (s, d) {
+      V.busy = false; V.pw = ''; V.pw2 = '';
+      if (s === 200) { vTouch(); App.toast('Vault created'); vaultLoad(V.pid); } else { App.toast(d.error ? cap(d.error) : 'Could not create the vault'); paint(); }
+    });
+  }
+  function vaultUnlock() {
+    if (V.busy || !V.pw) return;
+    V.busy = true; paint();
+    vApi({ action: 'unlock', password: V.pw }, function (s, d) {
+      V.busy = false; V.pw = '';
+      if (s === 200) { vTouch(); vaultLoad(V.pid); } else { App.toast(d.error ? cap(d.error) : 'Could not unlock'); paint(); }
+    });
+  }
+  function vaultReveal(id, then) {
+    vTouch();
+    if (V.vals.hasOwnProperty(id)) { if (then) then(); else { V.shown[id] = !V.shown[id]; paint(); } return; }
+    vApi({ action: 'get', id: id, pass: V.pass }, function (s, d) {
+      if (s === 200 && typeof d.value === 'string') { V.vals[id] = d.value; if (then) then(); else { V.shown[id] = true; paint(); } }
+      else if (s !== 401) App.toast(d.error ? cap(d.error) : 'Could not read that value');
+    });
+  }
+  function vaultCopy(id) {
+    vaultReveal(id, function () {
+      var ok = false, ta = document.createElement('textarea');
+      ta.value = V.vals[id]; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.style.top = '0';
+      document.body.appendChild(ta);
+      try { ta.select(); ta.setSelectionRange(0, ta.value.length); ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) { App.toast('Copied'); return; }
+      // iOS 9 cannot copy from a script: show the value selected so a tap on "Copy" does it
+      V.shown[id] = true; paint();
+      var f = $('ppVv' + id); if (f) { try { f.focus(); f.setSelectionRange(0, f.value.length); } catch (e2) {} }
+      App.toast('Tap Copy on the selected text');
+    });
+  }
+  function vaultSave() {
+    var d = V.draft; if (!d || V.busy) return;
+    var n = d.name.replace(/^\s+|\s+$/g, '');
+    if (!n) { App.toast('Give it a name, e.g. STRIPE_KEY'); return; }
+    if (!d.value) { App.toast('Enter the value'); return; }
+    V.busy = true; vTouch(); paint();
+    vApi({ action: 'save', id: V.edit === 'new' ? undefined : V.edit, project_id: V.pid, name: n, value: d.value, pass: V.pass }, function (s, r) {
+      V.busy = false;
+      if (s === 200) { delete V.vals[r.entry.id]; V.shown[r.entry.id] = false; V.edit = ''; V.draft = null; App.toast('Saved in the vault'); vaultLoad(V.pid); }
+      else { if (s !== 401) App.toast(r.error ? cap(r.error) : 'Could not save'); paint(); }
+    });
+  }
+  function vaultDelete(id) {
+    if (V.busy || !window.confirm('Delete this value from the vault? It cannot be undone.')) return;
+    V.busy = true; vTouch(); paint();
+    vApi({ action: 'delete', id: id, pass: V.pass }, function (s, r) {
+      V.busy = false;
+      if (s === 200) { delete V.vals[id]; V.edit = ''; V.draft = null; App.toast('Deleted'); vaultLoad(V.pid); }
+      else { if (s !== 401) App.toast(r.error ? cap(r.error) : 'Could not delete'); paint(); }
+    });
+  }
+  function vaultReset() {
+    if (V.busy || V.resetTxt !== 'DELETE ALL') { App.toast('Type DELETE ALL to confirm'); return; }
+    V.busy = true; paint();
+    vApi({ action: 'reset', confirm: 'DELETE ALL' }, function (s, d) {
+      V.busy = false; V.reset = false; V.resetTxt = '';
+      if (s === 200) { vaultLock(true); App.toast('Vault wiped. Set a new password.'); vaultLoad(V.pid); } else { App.toast(d.error ? cap(d.error) : 'Could not reset'); paint(); }
+    });
+  }
+  function cap(t) { return t.charAt(0).toUpperCase() + t.slice(1); }
+  function vaultHTML(p) {
+    var st = V.pid === p.id ? V.st : null, h = '<h2>Vault<span class="count">' + (st && st.count ? st.count : 0) + '</span></h2><div class="ppvault">', i, e, b = V.busy ? ' disabled' : '';
+    if (!st) return h + '<div class="pphint">' + (V.err ? esc(V.err) : 'Checking…') + '</div></div>';
+    if (st.configured === false) return h + '<div class="pphint">The vault is not switched on yet: add the <b>VAULT_PEPPER</b> environment variable to luc-todo in Vercel, then reload.</div></div>';
+    if (!st.set) {
+      return h + '<div class="pphint">Keep sensitive values here (environment variables, codes). Set a vault password first: it is separate from the app\'s access token and is used for every project\'s vault.</div>' +
+        '<form id="ppVsetForm" autocomplete="off"><input class="setinput" id="ppVpw" type="password" autocomplete="new-password" placeholder="Vault password (10+ characters)" value="' + esc(V.pw) + '">' +
+        '<input class="setinput" id="ppVpw2" type="password" autocomplete="new-password" placeholder="Same password again" value="' + esc(V.pw2) + '">' +
+        '<div class="ppwarnt">If you forget this password, the saved values cannot be recovered by anyone.</div>' +
+        '<button class="btn primary" type="submit"' + b + '>Create vault</button></form></div>';
+    }
+    if (st.locked) {
+      h += '<div class="pphint">🔒 ' + (st.count ? st.count + (st.count === 1 ? ' value' : ' values') + ' saved. ' : 'Nothing saved for this project yet. ') + 'Unlock to see or add them.</div>' +
+        '<form id="ppVunForm" autocomplete="off" class="ppvrow"><input class="setinput" id="ppVpw" type="password" autocomplete="current-password" placeholder="Vault password" value="' + esc(V.pw) + '">' +
+        '<button class="btn primary" type="submit"' + b + '>Unlock</button></form>';
+      if (!V.reset) h += '<button class="pplk rs" data-pp="vforgot">Forgot the password?</button>';
+      else h += '<div class="ppwarnt">Without the password the saved values cannot be recovered. The only way on is to wipe the vault: this deletes every saved value in every project and the password. Type DELETE ALL to confirm.</div>' +
+        '<div class="ppvrow"><input class="setinput" id="ppVreset" type="text" autocomplete="off" autocapitalize="characters" placeholder="DELETE ALL" value="' + esc(V.resetTxt) + '">' +
+        '<button class="btn danger" data-pp="vreset"' + b + '>Wipe vault</button></div><button class="pplk rs" data-pp="vforgotx">Cancel</button>';
+      return h + '</div>';
+    }
+    h += '<div class="ppvtop"><span class="pphint">Unlocked · locks after 5 minutes without use or when you leave this page.</span><button class="btn sm" data-pp="vlock">Lock now</button></div>';
+    for (i = 0; i < (st.entries || []).length; i++) {
+      e = st.entries[i];
+      if (V.edit === e.id) { h += vaultForm(e); continue; }
+      var shown = V.shown[e.id] && V.vals.hasOwnProperty(e.id), val = shown ? V.vals[e.id] : '';
+      h += '<div class="ppvent"><div class="vn"><b>' + esc(e.name) + '</b><button class="pplk" data-pp="vedit" data-id="' + esc(e.id) + '">Edit</button></div>' +
+        (shown ? (val.indexOf('\n') >= 0 ? '<textarea class="ppvval" id="ppVv' + esc(e.id) + '" readonly rows="3">' + esc(val) + '</textarea>' : '<input class="ppvval" id="ppVv' + esc(e.id) + '" readonly value="' + esc(val) + '">')
+          : '<div class="ppvmask">••••••••••••</div>') +
+        '<div class="vb"><button class="btn sm" data-pp="vshow" data-id="' + esc(e.id) + '">' + (shown ? 'Hide' : 'Reveal') + '</button><button class="btn sm" data-pp="vcopy" data-id="' + esc(e.id) + '">Copy</button></div></div>';
+    }
+    if (!(st.entries || []).length && V.edit !== 'new') h += '<div class="pphint">Nothing saved for this project yet.</div>';
+    if (V.edit === 'new') h += vaultForm(null); else h += '<button class="pplk rs" data-pp="vadd">+ Add a value</button>';
+    return h + '</div>';
+  }
+  function vaultForm(e) {
+    var d = V.draft || { name: '', value: '' }, b = V.busy ? ' disabled' : '';
+    return '<form class="ppform ppcform" id="ppVentForm" autocomplete="off"><div class="frow2"><label>Name</label><input class="setinput" id="ppVname" type="text" maxlength="100" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="e.g. STRIPE_SECRET_KEY" value="' + esc(d.name) + '"></div>' +
+      '<div class="frow2"><label>Value</label><textarea class="setinput ppvta" id="ppVvalue" rows="3" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="' + (e ? 'Type the new value' : 'The secret value') + '">' + esc(d.value) + '</textarea></div>' +
+      '<button class="btn primary" type="submit"' + b + '>' + (e ? 'Save' : 'Add to vault') + '</button><button class="btn" type="button" data-pp="vx">Cancel</button>' +
+      (e ? '<button class="btn danger" type="button" data-pp="vdel" data-id="' + esc(e.id) + '"' + b + '>Delete</button>' : '') + '</form>';
+  }
   function saveReason(id) {
     var p = byId(id); if (!p || busy) return;
     var v = reasonDraft.replace(/^\s+|\s+$/g, '').slice(0, 300), m = {}, k, om = p.meta || {};
@@ -889,7 +1041,7 @@
   function openProject(id) {
     sel = id; editId = ''; editing = false; draft = null; showDone = false; moveId = ''; reasonId = ''; costEdit = ''; costDraft = null; setStore('ppSel', id);
     var op = byId(id); if (op && statusOf(op) === 'idea') addTo = 'backlog'; // ideas: new tasks default to the Backlog
-    pageScroll = null; paint(); window.scrollTo(0, 0); loadEvents(id);
+    pageScroll = null; paint(); window.scrollTo(0, 0); loadEvents(id); vaultLoad(id);
   }
 
   document.addEventListener('click', function (e) {
@@ -902,7 +1054,7 @@
     var a = el.getAttribute('data-pp'), id = el.getAttribute('data-id'), v = el.getAttribute('data-val');
     e.preventDefault();
     if (a === 'open') openProject(id);
-    else if (a === 'back') { sel = ''; editId = ''; editing = false; draft = null; setStore('ppSel', ''); paint(); window.scrollTo(0, 0); }
+    else if (a === 'back') { vaultLock(true); sel = ''; editId = ''; editing = false; draft = null; setStore('ppSel', ''); paint(); window.scrollTo(0, 0); }
     else if (a === 'stat') setStatus(id, v);
     else if (a === 'mv') { moveId = id; paint(); }
     else if (a === 'mvx') { moveId = ''; paint(); }
@@ -929,6 +1081,16 @@
     else if (a === 'cdel') deleteCost(id);
     else if (a === 'icsite') iconFromSite();
     else if (a === 'icx') removeIcon();
+    else if (a === 'vlock') vaultLock();
+    else if (a === 'vshow') vaultReveal(id);
+    else if (a === 'vcopy') vaultCopy(id);
+    else if (a === 'vadd') { vTouch(); V.edit = 'new'; V.draft = { name: '', value: '' }; paint(); if ($('ppVname')) $('ppVname').focus(); }
+    else if (a === 'vedit') { vTouch(); var ve = null, vi; for (vi = 0; V.st && vi < (V.st.entries || []).length; vi++) if (V.st.entries[vi].id === id) ve = V.st.entries[vi]; if (ve) vaultReveal(id, function () { V.edit = id; V.draft = { name: ve.name, value: V.vals[id] || '' }; paint(); }); }
+    else if (a === 'vx') { V.edit = ''; V.draft = null; paint(); }
+    else if (a === 'vdel') vaultDelete(id);
+    else if (a === 'vforgot') { V.reset = true; V.resetTxt = ''; paint(); }
+    else if (a === 'vforgotx') { V.reset = false; V.resetTxt = ''; paint(); }
+    else if (a === 'vreset') vaultReset();
   }, false);
   document.addEventListener('submit', function (e) {
     var f = e.target; if (!f) return;
@@ -936,11 +1098,18 @@
     else if (f.id === 'ppTaskForm') { e.preventDefault(); addTask($('ppTask').value); }
     else if (f.id === 'ppDetForm') { e.preventDefault(); saveDetails(); }
     else if (f.id === 'ppCostForm') { e.preventDefault(); saveCost(); }
+    else if (f.id === 'ppVsetForm') { e.preventDefault(); vaultSetup(); }
+    else if (f.id === 'ppVunForm') { e.preventDefault(); vaultUnlock(); }
+    else if (f.id === 'ppVentForm') { e.preventDefault(); vaultSave(); }
   }, false);
   function onField(e) { // keep the details draft in step with what is typed (the form is redrawn from it)
     var el = e.target, f = el && el.getAttribute ? el.getAttribute('data-f') : null, m;
     if (el && el.id === 'ppReason') { reasonDraft = el.value; return; }
     if (el && costDraft && CF[el.id]) { costDraft[CF[el.id]] = el.value; return; }
+    if (el && el.id === 'ppVpw') { V.pw = el.value; return; }
+    if (el && el.id === 'ppVpw2') { V.pw2 = el.value; return; }
+    if (el && el.id === 'ppVreset') { V.resetTxt = el.value; return; }
+    if (el && V.draft && (el.id === 'ppVname' || el.id === 'ppVvalue')) { V.draft[el.id === 'ppVname' ? 'name' : 'value'] = el.value; vTouch(); return; }
     if (!f || !draft) return;
     if ((m = /^site:(\d+)$/.exec(f))) draft.sites[+m[1]] = el.value;
     else if ((m = /^ll:(\d+)$/.exec(f))) draft.links[+m[1]].l = el.value;
@@ -1028,12 +1197,12 @@
   App.register('pprojects', {
     title: 'My projects',
     render: function () { onView = true; paint(); },
-    show: function () { onView = true; paint(); load(function () { paint(); loadDeploy(); }); if (sel) loadEvents(sel); }
+    show: function () { onView = true; paint(); load(function () { paint(); loadDeploy(); }); if (sel) { loadEvents(sel); vaultLoad(sel); } }
   });
   // core only calls render() for the visible view; note when we leave it so background loads don't repaint
   document.addEventListener('click', function (e) {
     var el = e.target;
     while (el && el !== document && !(el.getAttribute && el.getAttribute('data-act'))) el = el.parentNode;
-    if (el && el !== document && el.getAttribute('data-act') === 'nav' && el.getAttribute('data-view') !== 'pprojects') onView = false;
+    if (el && el !== document && el.getAttribute('data-act') === 'nav' && el.getAttribute('data-view') !== 'pprojects') { onView = false; vaultLock(true); } // leaving My projects locks the vault
   }, true);
 })();

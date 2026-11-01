@@ -36,6 +36,7 @@ class H:
         self.calls = []
         self.errors = []
         self.extra = {}
+        self.vault = {'configured': True, 'pw': None, 'pass': None, 'n': 0, 'fails': 0, 'entries': {}, 'gets': 0}
     def find(self, i):
         for t in self.todos:
             if t['id'] == i: return t
@@ -140,6 +141,34 @@ class H:
                     if pj['meta'].get('sites'): pj['meta']['icon'] = 'http://todo.test/icon-180.png'
                     self.pevents.append({'pid': pj['id'], 'at': NOW, 'k': 'details', 't': None})
                 return 200, {'project': pj}
+        if path == '/api/vault':  # mirrors api/vault.js (crypto itself is tested in tests/vault_node.js)
+            V = self.vault; a = body.get('action')
+            if not V['configured']: return 200, {'configured': False}
+            if a == 'reset':
+                if body.get('confirm') != 'DELETE ALL': return 400, {'error': 'type DELETE ALL to confirm'}
+                n = len(V['entries']); V['entries'] = {}; V['pw'] = None; return 200, {'ok': True, 'deleted': n}
+            if a == 'setup':
+                if V['pw']: return 409, {'error': 'the vault already has a password'}
+                if len(body.get('password') or '') < 10: return 400, {'error': 'use at least 10 characters'}
+                V['pw'] = body['password']; V['n'] += 1; V['pass'] = 'pass-%d' % V['n']; return 200, {'pass': V['pass']}
+            if a == 'unlock':
+                if V['fails'] >= 5: return 429, {'error': 'too many wrong tries, wait a few minutes'}
+                if body.get('password') != V['pw']: V['fails'] += 1; return 403, {'error': 'wrong password'}
+                V['fails'] = 0; V['n'] += 1; V['pass'] = 'pass-%d' % V['n']; return 200, {'pass': V['pass']}
+            ok = V['pw'] and body.get('pass') and body.get('pass') == V['pass']
+            if ok: V['n'] += 1; V['pass'] = 'pass-%d' % V['n']
+            if a == 'state':
+                rows = [(k, e) for k, e in V['entries'].items() if e['project'] == body.get('project_id')]
+                out = {'configured': True, 'set': bool(V['pw']), 'locked': not ok, 'count': len(rows)}
+                if ok: out['entries'] = [{'id': k, 'name': e['name']} for k, e in rows]; out['pass'] = V['pass']
+                return 200, out
+            if not ok: return 401, {'locked': True, 'error': 'the vault is locked'}
+            if a == 'get': V['gets'] += 1; return 200, {'value': V['entries'][body['id']]['value'], 'pass': V['pass']}
+            if a == 'save':
+                i = body.get('id') or str(uuid.uuid4()); V['entries'][i] = {'project': body['project_id'], 'name': body['name'], 'value': body['value']}
+                return 200, {'entry': {'id': i, 'name': body['name']}, 'pass': V['pass']}
+            if a == 'delete': V['entries'].pop(body['id'], None); return 200, {'ok': True, 'pass': V['pass']}
+            return 400, {'error': 'unknown action'}
         if path == '/api/pause':
             t = self.find(q['id'][0]); t['paused'] = bool(body.get('paused'));
             t['paused_at'] = NOW if t['paused'] else None; return 200, {'todo': t}

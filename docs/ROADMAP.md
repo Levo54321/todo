@@ -15,7 +15,9 @@
 - ~~Deploy 3: subscriptions/costs per project in their own table (Budget bills have no ids and are monthly-only, so not reused; show "also in Budget" on a name match).~~ Done v1047 (`db/setup18.sql`).
 - Follow-up (offered, not built): cross-project cost totals (per month / per year across all projects), and optionally a cost reminder feed like the Budget bills calendar feed.
 - Deploy 4a: ~~account labels in meta; stored icon copies (custom upload + cached site icons)~~ Done v1048 (`db/setup19.sql`).
-- Deploy 4b/4c (remaining): per-project vault (server-side AES-GCM, key from vault password + env `VAULT_PEPPER`); Supabase token research only.
+- ~~Deploy 4b: per-project vault (server-side AES-GCM, key from vault password + env `VAULT_PEPPER`)~~ Done v1049 (`db/setup20.sql`).
+- Deploy 4c research (1 Nov 2026, Supabase docs): personal access tokens belong to an **account**, not a project. A *classic* token has full access to every organisation and project that account belongs to (now and future); *scoped* tokens (public alpha) can be limited to chosen orgs/projects/permissions (e.g. read-only). One token covers all organisations of one account, so two accounts = two tokens. The Management API's "List all projects" (account-wide read) would let a Supabase picker fill the project link and org like the Vercel picker, and a health dot is possible. If built: scoped, read-only tokens only, stored as Vercel env vars (e.g. `SUPABASE_PAT_1`, `SUPABASE_PAT_2`), never a classic token (it could change this shared database). Not built.
+- Vault follow-ups (not built): change the vault password (re-encrypt everything), export.
 
 ## P1 — cleanup
 5. ~~Remove legacy `api/shopping.js` and the Shopping tab~~ Done 1 Nov 2026 (v1040).

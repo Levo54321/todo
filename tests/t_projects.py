@@ -9,7 +9,10 @@ keeps the cursor position in the field being typed in.
 v1047 (Deploy 3): subscriptions and costs per project (add/edit/delete, totals, roll-forward of due dates,
 "due soon" on cards, "also in Budget" hint, activity entries).
 v1048 (Deploy 4a): account labels (typed and filled by the picker), custom icon upload (resized to 128px), icon from
-website, remove -> letter, stored icon address; Edit details keeps the Reason."""
+website, remove -> letter, stored icon address; Edit details keeps the Reason.
+v1049 (Deploy 4b): vault UI (not configured, setup, add/reveal/hide/copy/edit/delete, lock now, idle lock, lock on
+leaving, wrong password, expired pass, forgotten-password wipe; POST only, nothing sensitive in URLs or activity).
+Server-side crypto is tested separately: node tests/vault_node.js."""
 import importlib.util, os
 D = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(D, 'out'); os.makedirs(OUT, exist_ok=True)  # screenshots (git-ignored)
@@ -103,6 +106,7 @@ def run(h):
     idle_checks(h, chk, wait)
     cost_checks(h, chk, wait, calls)
     d4a_checks(h, chk, wait, calls)
+    vault_checks(h, chk, wait, calls)
     return R
 
 def layout_checks(h, chk, wait):
@@ -496,4 +500,92 @@ def d4a_checks(h, chk, wait, calls):
     chk('iPhone: details form with icon and accounts fits', p.evaluate('document.documentElement.scrollWidth') <= 392)
     p.screenshot(path=os.path.join(OUT, 'd4a_iphone.png'), full_page=True)
     p.click('[data-pp=detx]'); wait(200); p.click('[data-pp=back]'); wait(300)
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)
+
+
+def vault_checks(h, chk, wait, calls):
+    p = h.page
+    SECRET = 'sk_test_51Hvault-secret'
+    h.allow += ['status of 403', 'status of 401']  # deliberate wrong password and expired pass below
+    def pid(name): return [x for x in h.pprojects if x['name'] == name][0]['id']
+    def main(): return p.inner_text('.ppmain')
+    def vtoast(): return p.inner_text('#toast')
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
+    p.click('#nPersonal'); wait(200); p.click('#nPprojects'); wait(700)
+    if p.query_selector('[data-pp=back]'): p.click('[data-pp=back]'); wait(300)
+    hub = pid('Holmlodge Hub')
+    h.vault['configured'] = False
+    p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(600)
+    chk('vault: not switched on without VAULT_PEPPER', 'VAULT_PEPPER' in main(), main()[-300:])
+    p.click('[data-pp=back]'); wait(300)
+    h.vault['configured'] = True
+    p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(600)
+    chk('vault: asks for a password first, with the cannot-recover warning', p.query_selector('#ppVsetForm') and 'cannot be recovered' in main())
+    n0 = len([c for c in h.calls if c[1] == '/api/vault'])
+    p.fill('#ppVpw', 'short'); p.fill('#ppVpw2', 'short'); p.click('#ppVsetForm button[type=submit]'); wait(300)
+    chk('vault: short password refused before sending', 'at least 10' in vtoast() and len([c for c in h.calls if c[1] == '/api/vault' and c[3].get('action') == 'setup']) == 0)
+    p.fill('#ppVpw', 'correct horse battery'); p.fill('#ppVpw2', 'correct horse batteri'); p.click('#ppVsetForm button[type=submit]'); wait(300)
+    chk('vault: mismatched passwords refused', 'do not match' in vtoast())
+    p.fill('#ppVpw2', 'correct horse battery'); p.click('#ppVsetForm button[type=submit]'); wait(700)
+    chk('vault: created and unlocked', 'Unlocked' in main() and p.query_selector('[data-pp=vlock]'), main()[-300:])
+    # add a value
+    p.click('[data-pp=vadd]'); wait(200)
+    p.fill('#ppVname', 'STRIPE_KEY'); p.fill('#ppVvalue', SECRET); p.click('#ppVentForm button[type=submit]'); wait(700)
+    html = p.inner_html('#ppPane')
+    chk('vault: value saved, listed by name, masked', 'STRIPE_KEY' in main() and SECRET not in html and '••••' in main(), main()[-300:])
+    p.evaluate("App.render()"); wait(200)
+    chk('vault: background refresh does not reveal or lock', SECRET not in p.inner_html('#ppPane') and 'Unlocked' in main())
+    eid = list(h.vault['entries'].keys())[0]
+    p.click('[data-pp=vshow][data-id="%s"]' % eid); wait(500)
+    chk('vault: Reveal shows the value', p.input_value('#ppVv' + eid) == SECRET)
+    p.click('[data-pp=vshow][data-id="%s"]' % eid); wait(300)
+    chk('vault: Hide masks it again', SECRET not in p.inner_html('#ppPane'))
+    gets = h.vault['gets']
+    p.click('[data-pp=vcopy][data-id="%s"]' % eid); wait(500)
+    chk('vault: Copy works (or selects the value for iOS 9)', vtoast() in ('Copied', 'Tap Copy on the selected text') and h.vault['gets'] == gets, (vtoast(), h.vault['gets'], gets))
+    # edit keeps the value pre-filled
+    p.click('[data-pp=vedit][data-id="%s"]' % eid); wait(400)
+    chk('vault: Edit pre-fills the value', p.input_value('#ppVvalue') == SECRET)
+    p.fill('#ppVvalue', SECRET + '-v2'); p.click('#ppVentForm button[type=submit]'); wait(600)
+    chk('vault: edit saved', h.vault['entries'][eid]['value'] == SECRET + '-v2')
+    # Lock now
+    p.click('[data-pp=vlock]'); wait(400)
+    chk('vault: Lock now hides names and values, keeps the count', 'STRIPE_KEY' not in p.inner_html('#ppPane') and SECRET not in p.inner_html('#ppPane') and '1 value saved' in main(), main()[-300:])
+    # wrong password, then right
+    p.fill('#ppVpw', 'not the password'); p.click('#ppVunForm button[type=submit]'); wait(500)
+    chk('vault: wrong password message', 'Wrong password' in vtoast(), vtoast())
+    p.fill('#ppVpw', 'correct horse battery'); p.click('#ppVunForm button[type=submit]'); wait(700)
+    chk('vault: unlock lists names again', 'STRIPE_KEY' in main())
+    # leaving the page locks it
+    p.click('[data-pp=back]'); wait(300); p.click('.ppcard[data-id="%s"] .ppnm' % hub); wait(700)
+    chk('vault: leaving the project page locks it', p.query_selector('#ppVunForm') and 'STRIPE_KEY' not in p.inner_html('#ppPane'))
+    p.fill('#ppVpw', 'correct horse battery'); p.click('#ppVunForm button[type=submit]'); wait(700)
+    p.click('#nPersonal'); wait(300); p.click('#nPprojects'); wait(800)
+    chk('vault: switching tabs locks it', p.query_selector('#ppVunForm') is not None)
+    # idle lock after 5 minutes
+    p.fill('#ppVpw', 'correct horse battery'); p.click('#ppVunForm button[type=submit]'); wait(700)
+    p.evaluate("App.ppVaultAge(4 * 60000)"); wait(200)
+    chk('vault: still open after 4 idle minutes', p.query_selector('[data-pp=vlock]') is not None)
+    p.evaluate("App.ppVaultAge(2 * 60000)"); wait(300)
+    chk('vault: locks itself after 5 idle minutes', p.query_selector('#ppVunForm') is not None and 'STRIPE_KEY' not in p.inner_html('#ppPane'))
+    # server says the pass expired mid-use
+    p.fill('#ppVpw', 'correct horse battery'); p.click('#ppVunForm button[type=submit]'); wait(700)
+    h.vault['pass'] = 'something-else'
+    p.click('[data-pp=vshow][data-id="%s"]' % eid); wait(500)
+    chk('vault: expired pass on the server locks the page', p.query_selector('#ppVunForm') is not None and 'locked' in vtoast().lower(), vtoast())
+    # nothing sensitive in URLs or the activity log; POST only
+    vc = [c for c in h.calls if c[1] == '/api/vault']
+    chk('vault: POST only, nothing in the address', all(c[0] == 'POST' and not c[2] for c in vc), set((c[0], str(c[2])) for c in vc))
+    chk('vault: nothing in the activity log', not any('STRIPE' in str(e.get('t')) or 'vault' in str(e.get('k')) for e in h.pevents))
+    # forgotten password: wipe
+    p.click('[data-pp=vforgot]'); wait(300)
+    chk('vault: forgot explains values are lost', 'cannot be recovered' in main())
+    p.fill('#ppVreset', 'delete'); p.click('[data-pp=vreset]'); wait(300)
+    chk('vault: wipe needs DELETE ALL', h.vault['pw'] is not None)
+    p.fill('#ppVreset', 'DELETE ALL'); p.click('[data-pp=vreset]'); wait(800)
+    chk('vault: wipe deletes everything and asks for a new password', h.vault['pw'] is None and not h.vault['entries'] and p.query_selector('#ppVsetForm') is not None)
+    p.set_viewport_size({'width': 390, 'height': 844}); wait(400)
+    chk('iPhone: vault fits', p.evaluate('document.documentElement.scrollWidth') <= 392)
+    p.screenshot(path=os.path.join(OUT, 'd4b_iphone.png'), full_page=True)
+    p.click('[data-pp=back]'); wait(300)
     p.set_viewport_size({'width': 1024, 'height': 768}); wait(400)
