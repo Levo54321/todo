@@ -11,6 +11,8 @@ Tabled (needs work from Luc, only when he asks): C1 token rotation, the `?t=` re
 
 **Deploy F (v1054) UI round 2** done: CSS moved to files (W8), 44px targets (W5), night-safe board colours, Move to… collapse. Not restyled one by one: Budget, Insights, editor, screensaver, gate.
 
+**Deploy G (v1055) UI round 3** done: one sans-serif look everywhere, readable Insights chart labels, full-screen button hidden on phones. Budget line-chart labels not changed.
+
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
 2. **Real-device pass** on iPad 2 and iPhone 13 for Pause, Blocked, board drag/number reorder, Insights and the Google work-calendar prompt.

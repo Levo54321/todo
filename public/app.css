@@ -3,7 +3,7 @@
 :root{
   --bg:#f5f2eb;--paper:#fffdf9;--ink:#1f1d1a;--muted:#6b6458;--rule:#e6e0d3;--accent:#2f4a6d;--onaccent:#fff;
   --alert:#b8432b;--ok:#4f7a5a;--chip:#ece6d8;--warnink:#8a5f00;--warnbg:rgba(217,162,27,.16);--alertbg:rgba(184,67,43,.08);--pz:#9aa0b4;--pzbg:#ecedf1;--pzink:#4a5068;--sh:0 1px 2px rgba(46,36,14,.06),0 6px 18px rgba(46,36,14,.06);
-  --serif:Georgia,"Times New Roman",serif;--sans:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
+  --serif:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;--sans:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
   --r1:8px;--r2:12px;--r3:18px;
   --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
   --fs-xs:12px;--fs-sm:14px;--fs-md:17px;--fs-lg:20px;--fs-xl:26px;
@@ -212,7 +212,7 @@ h2 .count{font:600 var(--fs-xs) var(--sans);font-style:normal;background:var(--c
 .pill.ok{background:var(--ok)}
 .pill.bad{background:var(--alert)}
 .chart{width:100%;height:auto;display:block}
-.chart text{font-family:var(--sans);font-size:12px;fill:var(--muted)}
+.chart text{font-family:var(--sans);font-size:14px;fill:var(--muted)}
 .chart .ln{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
 .chart .grid{stroke:var(--rule);stroke-width:1}
 .lgd{font-size:var(--fs-xs);color:var(--muted);margin-top:6px}
@@ -446,3 +446,7 @@ body .bdmv button{width:44px;height:44px}
 .bdrow.st-td{box-shadow:inset 3px 0 0 var(--warn,#d9a21b)}
 .moveopen{margin:0 0 2px}
 body .bdhead{min-height:44px;padding:6px 0}
+@media (max-width:699px){.fsbtn{display:none !important}}
+#gate h1{font-style:normal;font-weight:700;letter-spacing:-.5px}
+#sheet .etitle{font-weight:700;letter-spacing:-.3px}
+#saverClock,#saverClock small,#saverEvents .evmore{font-style:normal}

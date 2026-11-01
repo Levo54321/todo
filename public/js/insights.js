@@ -93,7 +93,7 @@
       var h = Math.round((vals[i] / max) * (H - pad)), x = 4 + i * bw;
       s += '<rect x="' + (x + 4) + '" y="' + (H - h) + '" width="' + Math.max(4, bw - 8) + '" height="' + h + '" rx="3" fill="' + (i === hl ? 'var(--accent)' : 'var(--chip)') + '" stroke="var(--accent)" stroke-width="1"/>';
       if (vals[i]) s += '<text x="' + (x + bw / 2) + '" y="' + (H - h - 4) + '" text-anchor="middle">' + vals[i] + '</text>';
-      s += '<text x="' + (x + bw / 2) + '" y="' + (H + 13) + '" text-anchor="middle">' + esc(labels[i]) + '</text>';
+      if (n <= 6 || i % 2 === 0) s += '<text x="' + (x + bw / 2) + '" y="' + (H + 13) + '" text-anchor="middle">' + esc(labels[i]) + '</text>';
     }
     return s + '</svg>';
   }
