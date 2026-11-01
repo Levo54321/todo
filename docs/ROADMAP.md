@@ -3,7 +3,7 @@
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
 2. **Real-device pass** on iPad 2 and iPhone 13 for Pause, Blocked, board drag/number reorder, Insights and the Google work-calendar prompt.
-3. **Restore tests into the repo**: add a `tests/` folder with the Playwright mock harness (shot5/shot7 style) and a `npm test` script.
+3. ~~Restore tests into the repo~~ Done 1 Nov 2026: `tests/` has the Playwright mock harness, core and My projects suites and an ES5 check. Still to do: an `npm test` script / CI.
 4. **Delete the Vercel token "pull-shop"** (created for the shop export).
 
 5a. Decide whether to make the repo private and rotate the access token (the old token hash was committed in `db/setup01.sql` while the repo was public).
@@ -12,7 +12,7 @@
 ## P1 — cleanup
 5. ~~Remove legacy `api/shopping.js` and the Shopping tab~~ Done 1 Nov 2026 (v1040).
 6. Add a build/minify step (terser `--ecma 5`) in a `tools/` script so deployed JS is small again, and a lint check that rejects ES6 syntax in `public/js`.
-7. Single `docs/` source of truth; keep PROJECT_INSTRUCTIONS in sync with each feature.
+7. ~~Single `docs/` source of truth~~ Done 1 Nov 2026: `CLAUDE.md` + `docs/` in the repo are the source of truth; the Claude Project only points here.
 8. Add a GitHub Action: ES5 lint + `build.py` smoke test on PRs.
 
 ## P2 — features
