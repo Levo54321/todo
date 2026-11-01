@@ -42,6 +42,11 @@ def run(h):
     chk('switch to Personal projects', 'on' in (p.get_attribute('#vPprojects', 'class') or '') and 'on' in (p.get_attribute('#psP', 'class') or ''))
     p.click('#psW'); p.wait_for_timeout(500)
     chk('switch back to Work board', 'Alpha' in p.inner_text('#boardPane'))
+    # round 2: overdue "Move to" collapsed behind one button
+    p.click('#nPersonal'); p.wait_for_timeout(400)
+    chk('overdue shows one Move to… button', p.query_selector('button.moveopen') is not None and not p.is_visible('button[data-act=quick]'))
+    p.click('button.moveopen'); p.wait_for_timeout(300)
+    chk('Move to… reveals the options', p.is_visible('button[data-act=quick]'))
     # settings + screensaver try
     p.click('#nSettings'); p.wait_for_timeout(300)
     tabs = p.inner_text('#settings')

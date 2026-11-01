@@ -18,7 +18,7 @@
   var settings = { city: '', place: '', units: 'c', calendar_set: false, caldav: false, stale_days: 14, night_start: 22, night_end: 6 };
   try { var sc = JSON.parse(store.get('settingsCache') || 'null'); if (sc) for (var sk in sc) if (sc.hasOwnProperty(sk)) settings[sk] = sc[sk]; } catch (e) {}
   var pv = null, autoPrev = false, sess = null, setDraft = null, pendingOpen = null, itemsSaving = false, itemsDirty = false;
-  var filterCat = store.get('filterCat') || null, glance = null, rv = null, autoChecked = false;
+  var moveOpen = null, filterCat = store.get('filterCat') || null, glance = null, rv = null, autoChecked = false;
   var editing = null, showDone = false, showLow = false, themeMode = store.get('themeMode') || 'auto';
   var mode = store.get('listMode') === 'work' ? 'work' : 'personal';
   var appliedNight = null, idle = false, idleTicks = 0, clockSkip = 0, askCb = null, lastCalSync = 0, calBusy = false;
@@ -320,7 +320,8 @@
       for (var q = 0; q < wo.length; q++) {
         qb += '<button class="chip" data-act="quick" data-when="' + wo[q][0] + '" data-id="' + id + '">' + wo[q][1] + '</button>';
       }
-      quick = '<div class="quick"><span class="qlabel">' + (overdue ? 'Move to' : 'When?') + '</span>' + qb + '</div>';
+      quick = (overdue && moveOpen !== t.id) ? '<div class="quick"><button class="chip moveopen" data-act="moveopen" data-id="' + id + '">Move to…</button></div>' :
+        '<div class="quick"><span class="qlabel">' + (overdue ? 'Move to' : 'When?') + '</span>' + qb + '</div>';
     }
     var focus = isFocus(t), sbadge = '', sprog = '';
     if (t.is_session) {
@@ -1583,7 +1584,8 @@
     else if (act === 'unblock') { var ub = find(id); if (ub) { var ubb = { blocked: true, blocked_at: ub.blocked_at || null, unblock_action: ub.unblock_action || null }; ub.blocked = false; ub.blocked_at = null; ub.unblock_action = null; render(); patchTodo(id, { blocked: false }, ubb); toast('Unblocked'); } }
     else if (act === 'squick') { editing.quick = !editing.quick; renderSheet(); }
     else if (act === 'smust') { editing.must = !editing.must; if (editing.must) { editing.blocked = false; editing.paused = false; } if (editing.must && !editing.due) editing.due = curToday(); if (editing.must && editing.due > curToday()) editing.due = curToday(); renderSheet(); }
-    else if (act === 'quick') doQuick(id, el.getAttribute('data-when'));
+    else if (act === 'quick') { moveOpen = null; doQuick(id, el.getAttribute('data-when')); }
+    else if (act === 'moveopen') { moveOpen = id; render(); }
     else if (act === 'star') toggleStar(id);
     else if (act === 'sess') openSession(id);
     else if (act === 'esubs') { if (editing) openSession(editing.id); }

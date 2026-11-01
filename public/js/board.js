@@ -7,7 +7,6 @@
   var tab = store.get('bdTab') === 'ins' ? 'ins' : 'board';
   var rows = null, hErr = '', hLoading = false, hAt = 0;
   try { fold = JSON.parse(store.get('bdFold') || '{}') || {}; } catch (e) { fold = {}; }
-  try { var st = document.createElement('style'); st.appendChild(document.createTextNode('.pau{display:inline-block;margin:2px 4px 0 0;padding:1px 7px;border-radius:9px;background:#e8eaf0;color:#4a5068;font-size:12px}.bdrow.st-pz{opacity:.62;background:#f1f2f5;box-shadow:inset 4px 0 0 #9aa0b4;margin:0 -8px;padding:0 8px 0 12px;border-radius:8px;border-top-color:transparent}.bdlegend .lg.pz:before{background:#9aa0b4}.bdh.pzc{background:#e8eaf0;color:#4a5068}')); document.head.appendChild(st); } catch (e) {}
 
   function syncCore() { if (App.setProjects) App.setProjects(projects); }
   function use(list) { projects = list; known = true; syncCore(); }

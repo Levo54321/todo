@@ -2,14 +2,14 @@
    Written for iOS 9 Safari (iPad 2): no grid, no flex gap, transform/opacity-only animation. */
 :root{
   --bg:#f5f2eb;--paper:#fffdf9;--ink:#1f1d1a;--muted:#6b6458;--rule:#e6e0d3;--accent:#2f4a6d;--onaccent:#fff;
-  --alert:#b8432b;--ok:#4f7a5a;--chip:#ece6d8;--sh:0 1px 2px rgba(46,36,14,.06),0 6px 18px rgba(46,36,14,.06);
+  --alert:#b8432b;--ok:#4f7a5a;--chip:#ece6d8;--warnink:#8a5f00;--warnbg:rgba(217,162,27,.16);--alertbg:rgba(184,67,43,.08);--pz:#9aa0b4;--pzbg:#ecedf1;--pzink:#4a5068;--sh:0 1px 2px rgba(46,36,14,.06),0 6px 18px rgba(46,36,14,.06);
   --serif:Georgia,"Times New Roman",serif;--sans:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
   --r1:8px;--r2:12px;--r3:18px;
   --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
   --fs-xs:12px;--fs-sm:14px;--fs-md:17px;--fs-lg:20px;--fs-xl:26px;
   --rail:76px;
 }
-html.night{--bg:#121110;--paper:#1c1b18;--ink:#e4ddcd;--muted:#a1998a;--rule:#2b2925;--sh:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);--accent:#7f9bc2;--onaccent:#14130f;--alert:#d4735b;--ok:#7aa584;--chip:#26241e}
+html.night{--warnink:#e6b94a;--warnbg:rgba(217,162,27,.18);--alertbg:rgba(212,115,91,.14);--pz:#6d7388;--pzbg:#26272d;--pzink:#b4b8c8;--bg:#121110;--paper:#1c1b18;--ink:#e4ddcd;--muted:#a1998a;--rule:#2b2925;--sh:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);--accent:#7f9bc2;--onaccent:#14130f;--alert:#d4735b;--ok:#7aa584;--chip:#26241e}
 html.work{--accent:#2f6d5f}
 html.night.work{--accent:#7fc2b0}
 html.idle *{transition:none !important;-webkit-animation:none !important;animation:none !important}
@@ -411,7 +411,8 @@ body[data-view=board] .projsw,body[data-view=pprojects] .projsw{display:inline-b
   .clock{font-size:22px;letter-spacing:0;margin-right:10px}
   .date{margin:0;font-size:15px}
   .hint{display:none}
-  .hd-mid{-webkit-flex:1 0 100%;flex:1 0 100%;margin-top:var(--s2)}
+  .hd-mid{-webkit-flex:1 0 100%;flex:1 0 100%;min-width:0;margin-top:var(--s2)}
+  .addform input{width:100%}
   .addform{margin-top:0}
   .hd-right{-webkit-flex:1 0 100%;flex:1 0 100%;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin-top:var(--s2)}
   .hd-right .stats{margin:0 var(--s3) 0 0;font-size:var(--fs-sm)}
@@ -428,3 +429,20 @@ body[data-view=board] .projsw,body[data-view=pprojects] .projsw{display:inline-b
 }
 body .bdname,body .ppname,body .pname{font:700 18px/1.25 var(--sans);letter-spacing:-.2px}
 body .bdcol{border:0;box-shadow:var(--sh);border-radius:16px}
+
+/* ---------- round 2: 44px touch targets, calmer board ---------- */
+.chip,.weekbtn,.btn.sm,.seg button,.sg button,.sg.sm button{min-height:44px}
+.chip{padding:0 16px;line-height:42px}
+#filters .chip{min-height:44px;padding:0 16px;margin-bottom:6px}
+.bdtools .chip,.bdpick .chip,.fctl .chip,.worktools .chip,.unb .chip{min-height:44px;line-height:42px;padding:0 14px}
+.starbtn{width:44px;height:44px}
+.pvbtns button{width:44px;height:44px}
+body .bdhand{-webkit-flex-direction:row;flex-direction:row;-webkit-align-items:center;align-items:center;margin-left:0;padding:0}
+body .bdnum{width:44px;height:44px;margin:0;border:9px solid transparent;-webkit-background-clip:padding-box;background-clip:padding-box;border-radius:22px;box-shadow:inset 0 0 0 1px var(--rule);font-size:var(--fs-xs)}
+body .bdnum.on{box-shadow:none}
+body .bdgrip{width:44px;height:44px;line-height:44px}
+body .bdmv button{width:44px;height:44px}
+.bdrow.st-blk{box-shadow:inset 3px 0 0 var(--alert)}
+.bdrow.st-td{box-shadow:inset 3px 0 0 var(--warn,#d9a21b)}
+.moveopen{margin:0 0 2px}
+body .bdhead{min-height:44px;padding:6px 0}

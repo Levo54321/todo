@@ -36,7 +36,7 @@ Keep it short: facts and rules, not history.
 - **Frontend is ES5 only** (`public/js/*.js`, `shell.html`): no arrow functions, let/const, template literals,
   classes, CSS `grid`, `position:sticky`, `fetch` or Promises; no `Array.prototype.includes`, `Object.assign`,
   `startsWith`. Targets: **iPad 2 on iOS 9.3.5** (Safari 9) and iPhone 13. Use `var`, XHR via `App.api`, flexbox
-  (with `-webkit-` prefixes) or floats. Tap targets ≥ 44px; 12px minimum font.
+  (with `-webkit-` prefixes) or floats. Tap targets ≥ 44px (chips and buttons are now 44px); 12px minimum font.
 - Backend: Vercel Node serverless functions in `api/` (one file per endpoint, max 12 files: see Pitfalls; CommonJS, Node 22) calling
   **Supabase RPCs only** (security-definer SQL functions). The browser never talks to Supabase.
 - Secrets only as Vercel env vars (`SUPABASE_URL`, `SUPABASE_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `VERCEL_TOKEN`, `VAULT_PEPPER`, …).
@@ -59,7 +59,7 @@ Keep it short: facts and rules, not history.
   `data-pj` (projects), `data-wc` (work calendar), `data-pp` (My projects), `data-sv` (screensaver settings).
 - Design: warm paper `--bg:#f4eee1`, alert `--alert:#b8432b`, Georgia serif headings, 8px radius, 4px spacing unit,
   76px left rail (bottom bar on phones), night theme via `html.night`. CSS in `public/app.css`, `public/work.css`;
-  board.js and pprojects.js inject their own `<style>`.
+  board and My projects styles live in `public/work.css` and `public/pprojects.css`.
 
 ## How to work
 1. Read the files involved before editing; keep changes surgical. Feature order: SQL migration (if needed) → RPC →
@@ -128,6 +128,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-01 — Deploy F (v1054) UI round 2: board.js/pprojects.js no longer inject CSS — styles are in `public/work.css` and `public/pprojects.css` (linked in `shell.html`); board/pprojects colours use tokens (`--warnink --warnbg --alertbg --pz --pzbg --pzink`, night variants in `app.css`). 44px targets via the "round 2" block at the end of `app.css` (uses `body .bdnum` etc. to beat later-loaded work.css: later files override app.css at equal specificity). Overdue "Move to" is one button (`data-act=moveopen`, `moveOpen` in core.js) that reveals the chips. Board priority numbers stay beside rows (side by side with the grip). Flex items with an input need `min-width:0` or they overflow narrow phones. Budget/Insights/editor/saver/gate not individually restyled.
 - 2026-11-01 — Deploy E (v1053) design batch: one **Projects** rail tab (`#nProjects`, data-view `projects`) with a Work | Personal switch (`#projSwitch`, `#psW`/`#psP`) that opens the existing `board` / `pprojects` views (`navTo` maps `projects`; last choice in localStorage `projMode`). `#nBoard`, `#nPprojects`, `#nWorkouts` and the `soon` handler are gone; tests click `#nProjects` (+ `#psP`). Phone bar is icons only (labels hidden, `aria-label` set); phone header compact; Idea lane after In progress on phones (`ppl-<status>` classes). Visual layer = end of `app.css` ("v1053 premium layer"), sans-serif, `--sh` shadow token, muted text darkened for contrast, no text under 12px. Still open: chips are 36px, board tab/number buttons 26–30px (not 44px). Efficiency rules added above.
 - 2026-11-01 — Audit Deploy D (v1052, polling diet C5) done: `GET /api/todos?v=` "same" replies, 30 s refresh (idle still 10 min), Apple calendar sync every 5 min; rules in Pitfalls "Polling (v1052)". Two things beyond the approved plan, both to keep behaviour: `forceLoad()` for every refresh-and-trust-server path, and a "same" reply still redraws once a minute (clock-driven bits). New `tests/todos_node.js`; Deploy D browser checks are `deploy_d()` in `tests/t_deploya.py`. `docs/audit-2026-11/scripts/audit_calls.py` now also reports bytes. Next: Luc picks from `docs/AUDIT-2026-11.md` section 5 after testing v1052.
 - 2026-11-01 — Luc's iPhone Shortcuts use `?t=`: do NOT remove `?t=` support from any endpoint until he says (tabled with C1 token rotation). Anything that needs work from Luc (rotation, updating Shortcuts, env changes) is tabled until he asks. Google sign-in now starts by POST (v1051); run `node tests/gcal_node.js` after touching `api/gcal.js`.

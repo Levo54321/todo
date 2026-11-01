@@ -103,15 +103,14 @@
 .bdlegend .lg.td:before{background:#d9a21b}
 .bdlegend .lg.hi:before{background:var(--accent)}
 .bdlegend .lgx{display:block;margin-top:2px}
-.bdrow.st-blk{background:rgba(192,57,43,.13);box-shadow:inset 4px 0 0 var(--alert);margin:0 -8px;padding:0 8px;border-radius:8px;border-top-color:transparent}
+.bdrow.st-blk{background:var(--alertbg);box-shadow:inset 4px 0 0 var(--alert);margin:0 -8px;padding:0 8px;border-radius:8px;border-top-color:transparent}
 .bdrow.st-blk .title{color:var(--alert)}
 .bdrow.st-od{box-shadow:inset 4px 0 0 var(--alert);margin:0 -8px;padding:0 8px 0 12px}
-.bdrow.st-td{background:rgba(217,162,27,.17);box-shadow:inset 4px 0 0 #d9a21b;margin:0 -8px;padding:0 8px 0 12px;border-radius:8px;border-top-color:transparent}
+.bdrow.st-td{background:var(--warnbg);box-shadow:inset 4px 0 0 #d9a21b;margin:0 -8px;padding:0 8px 0 12px;border-radius:8px;border-top-color:transparent}
 .bdrow.st-hi{box-shadow:inset 4px 0 0 var(--accent);margin:0 -8px;padding:0 8px 0 12px}
 .bdrow.st-hi .title,.bdrow.st-td .title,.bdrow.st-od .title{font-weight:600}
 .bdrow.st-blk.bdnext,.bdrow.st-td.bdnext{border-top-color:transparent}
-.due.today{color:#a87408;font-weight:700}
-.night .due.today{color:#e6b94a}
+.due.today{color:var(--warnink);font-weight:700}
 .bdh.warn{background:#d9a21b;color:#fff;font-weight:700}
 .bdh.blk{background:var(--alert);color:#fff;font-weight:700}
 .bdh.auto{border:1px solid var(--rule);background:transparent;color:var(--accent);font-family:inherit;cursor:pointer;-webkit-appearance:none;outline:none}
@@ -132,9 +131,9 @@
 .ipm{font-size:var(--fs-sm);margin:2px 0 4px}
 .ipx{font-size:var(--fs-xs);color:var(--muted)}
 .neg{color:var(--alert);font-weight:600}
-.warnt{color:#a87408;font-weight:600}
+.warnt{color:var(--warnink);font-weight:600}
 svg.chart{display:block;width:100%;max-height:170px}
-.pau{display:inline-block;margin:2px 4px 0 0;padding:1px 7px;border-radius:9px;background:#e8eaf0;color:#4a5068;font-size:12px}
-.bdrow.st-pz{opacity:.62;background:#f1f2f5;border-left:4px solid #9aa0b4}
-.bdlegend .lg.pz:before{background:#9aa0b4}
-.bdh.pzc{background:#e8eaf0;color:#4a5068}
+.pau{display:inline-block;margin:2px 4px 0 0;padding:1px 7px;border-radius:9px;background:var(--pzbg);color:var(--pzink);font-size:12px}
+.bdrow.st-pz{opacity:.62;background:var(--pzbg);border-left:4px solid var(--pz)}
+.bdlegend .lg.pz:before{background:var(--pz)}
+.bdh.pzc{background:var(--pzbg);color:var(--pzink)}
