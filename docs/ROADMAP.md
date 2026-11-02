@@ -11,6 +11,8 @@ Tabled (needs work from Luc, only when he asks): C1 token rotation, the `?t=` re
 
 **Deploy F (v1054) UI round 2** done: CSS moved to files (W8), 44px targets (W5), night-safe board colours, Move to… collapse. Not restyled one by one: Budget, Insights, editor, screensaver, gate.
 
+**v1058 desktop Install app** done 2 Nov 2026: Chrome/Edge on Mac and PC offer "Install To-Do" in the address bar (manifest, pass-through service worker, 192/512 icons). Waiting for Luc's check on his Mac/PC. Not done on purpose: offline mode (the app needs the network for every list).
+
 **Deploy G (v1055) UI round 3** done: one sans-serif look everywhere, readable Insights chart labels, full-screen button hidden on phones. Budget line-chart labels not changed.
 
 **Deploys H and I (v1056, v1057) UI redesign** built 1 Nov 2026: Batch A (design system, lists, editor, nav) and Batch B (Work board, My projects, shared views). Not individually reworked: Budget/Insights internals, screensaver, gate (they pick up the new tokens and controls only). Next candidates: P3 density option, Work board JS heights (8a), a lighter project card, real-device pass.

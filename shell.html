@@ -11,6 +11,7 @@
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/app.css?v=@@V@@">
 <link rel="stylesheet" href="/work.css?v=@@V@@">
 <link rel="stylesheet" href="/pprojects.css?v=@@V@@">
@@ -188,6 +189,15 @@ var IN='M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',OUT='M4 9V4h5M20 9V4h-5M4 15v5h5
 b.hidden=false;
 b.addEventListener('click',function(){try{if(d.fullscreenElement)d.exitFullscreen();else e.requestFullscreen();}catch(x){}});
 d.addEventListener('fullscreenchange',function(){var on=!!d.fullscreenElement;p.setAttribute('d',on?IN:OUT);b.title=on?'Exit full screen':'Full screen';b.setAttribute('aria-label',b.title);});
+})();
+</script>
+<script>
+// Desktop "Install app" (Chrome/Edge): register the do-nothing service worker. Old Safari has no serviceWorker and skips this.
+(function(){
+  if(!('serviceWorker' in navigator))return;
+  window.addEventListener('load',function(){
+    try{navigator.serviceWorker.register('/sw.js')['catch'](function(){});}catch(e){}
+  });
 })();
 </script>
 </body>

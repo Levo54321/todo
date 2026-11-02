@@ -11,6 +11,7 @@
 - `deploy_d()` in `t_deploya.py` (v1052): "same" replies (list and page untouched), a change elsewhere comes through, a local edit forces the full list, a failed delete heals, 30 s refresh, idle every 10 minutes, calendar sync every 5 minutes, and the minute redraw (calendar event greys out), on Playwright's fake clock. The mock (`harness.py`) answers `GET /api/todos?v=` like the server (`h.same` counts "same" replies) and has `h.fail_delete`. Gotchas: `clock.install(time=)` reads a bare number as seconds (pass a `datetime`); `h.calls` is shared by every open page.
 - `todos_node.js` (v1052): the server side of that, no network: full first time, `same` when unchanged, full after a change or with no/junk `?v=`, `?t=` still works, bad token refused, Shortcut `POST {text}` unchanged.
 - `gcal_node.js` (v1051): Google sign-in start/state with no network (token not in the address, tampered state refused, old GET start retired).
+- `t_install.py` (v1058, standalone: `python3 tests/t_install.py`): serves `public/` on `http://localhost` (secure, unlike the harness's `todo.test`) in a normal non-incognito Chromium profile and checks the manifest, icons, `Page.getInstallabilityErrors` is empty, the worker registers, and it caches/answers nothing.
 - `es5.js`: parses every `public/js/*.js` as ES5 and warns about iOS 9 gaps.
 - `vault_node.js`: the vault's server-side crypto with an in-memory database (`node tests/vault_node.js`): ciphertext only,
   locked state, pass expiry, lockout, wrong pepper, reset, nothing sensitive in logs.
