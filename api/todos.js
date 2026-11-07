@@ -355,8 +355,9 @@ async function scanUpload(token, req, today, res) {
     var ct = String(req.headers['content-type'] || 'none').slice(0, 40), cl = String(req.headers['content-length'] || '0').slice(0, 12);
     return send(res, ie.status || 400, { error: ie.message + (ie.status === 400 ? ' [type ' + ct + ', length ' + cl + ']' : '') });
   }
-  var lst = String((req.query || {}).list || '').toLowerCase();
-  try { out = await scan.readNotes(buf, { today: today, list: lst === 'work' || lst === 'personal' ? lst : '' }); }
+  var lst = String((req.query || {}).list || '').toLowerCase(), names = [];
+  if (lst !== 'personal') { try { names = (await projectList(token)).map(function (p) { return p && p.name; }).filter(Boolean); } catch (pe) { names = []; } }
+  try { out = await scan.readNotes(buf, { today: today, list: lst === 'work' || lst === 'personal' ? lst : '', projects: names }); }
   catch (se) { console.error('scan', se.status || '', se.message); return send(res, se.status || 502, { error: se.message }); }
   if (!out.rows) return send(res, 200, { ok: true, rows: 0, id: null });
   sv = await rpc('todo_scan_save', { p_token: token, p_csv: out.csv, p_n: out.rows });

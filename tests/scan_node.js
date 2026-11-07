@@ -120,7 +120,7 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
 
 {
   var c = scan.forceList('title,list,category\nA,work,Proj\n"B, with comma",,\n', 'personal').split('\n');
-  ok('forceList sets list on every row, keeps header and quoting', c[0] === 'title,list,category' && c[1] === 'A,personal,Proj' && c[2] === '"B, with comma",personal,');
+  ok('forceList sets list on every row, keeps header and quoting', c[0] === 'title,list,category' && c[1].indexOf('A,personal,Proj') === 0 && c[2].indexOf('"B, with comma",personal,') === 0);
   ok('forceList leaves csv alone when no list given', scan.forceList('title,list\nA,work', '') === 'title,list\nA,work');
 }
 
@@ -128,6 +128,17 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
   gemini = function () { return reply('title,list,category\nCall dentist,work,Health'); }; geminiCalls.length = 0;
   r = await call('POST', { scan: '1', list: 'personal' }, T, jpeg());
   ok('?list=personal is told to Gemini and forced on the saved row', r.status === 200 && geminiCalls[0].body.contents[0].parts[0].text.indexOf('list is always personal') > 0, r.body);
+
+  {
+    var T0 = '2026-11-07'; // a Saturday
+    var f = scan.fixDateCategories('title,list,category,due_date,remind_time,repeat,priority,quick,must_today,notes,subtasks\nA,work,Tomorrow,,,,,,,,\nB,work,Fri,,,,,,,,\nC,work,Today,2026-11-09,,,,,,,\nD,work,Calls,,,,,,,,\nE,work,Thursday,,,,,,,,', T0).split('\n');
+    ok('date headings filed as category become due dates', f[1].indexOf('A,work,,2026-11-08') === 0 && f[2].indexOf('B,work,,2026-11-13') === 0 && f[5].indexOf('E,work,,2026-11-12') === 0);
+    ok('an existing due date is kept and a real heading stays', f[3].indexOf('C,work,,2026-11-09') === 0 && f[4].indexOf('D,work,Calls,') === 0);
+    var m = scan.matchProjects('title,list,category,due_date,remind_time,repeat,priority,quick,must_today,notes,subtasks\nupdate Firstwork data,work,Calls,,,,,,,,\nbuy milk,work,,,,,,,,,\nFirstwork lunch,personal,,,,,,,,,\nsync with the Firstwork team,work,,,,,,,,,', ['Firstwork', 'First', 'Human Signal']).split('\n');
+    ok('a Work task naming a real project goes to it (longest name wins)', m[1].indexOf('update Firstwork data,work,Firstwork,') === 0 && m[2].indexOf('buy milk,work,,') === 0 && m[3].indexOf('Firstwork lunch,personal,,') === 0 && m[4].indexOf(',work,Firstwork,') > 0);
+    var pr = scan.buildPrompt(T0, 'work');
+    ok('prompt covers date headings, dates and times in titles, wrapped lines, priority marks', pr.indexOf('(saturday)') > 0 && pr.indexOf('is a day or date') > 0 && pr.indexOf('remove those date words') > 0 && pr.indexOf('SAME task title') > 0 && pr.indexOf('!!! is 3') > 0);
+  }
 
   global.fetch = origFetch; console.error = origErr;
   console.log(fails ? fails + ' FAIL' : '0 FAIL');
