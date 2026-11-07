@@ -46,13 +46,13 @@ function buildPrompt(today, list) {
   var lc = (list === 'work' || list === 'personal')
     ? 'list is always ' + list + ' for every task. '
     : 'list is work or personal, personal only if the heading or task is clearly personal, otherwise work. ';
-  return 'You are converting a photo of handwritten notes into tasks for a to-do app. Output ONLY a JSON array (no code fences, no commentary), one object per task, in page order. ' +
-    'Each object has exactly these keys: raw (the task exactly as written on the page, wrapped lines joined, keeping every mark such as !!!, a lightning bolt, MDT, quick and (brackets)), title, list, category, due_date, remind_time, repeat, priority (number 0-3 or null), quick (true or false), must_today (true or false), notes, subtasks (array of strings, empty if none). Use "" for text keys with nothing to say. ' +
+  return 'You are converting a photo of handwritten notes into tasks for a to-do app. Output ONLY a JSON object (no code fences, no commentary) with two keys: "tasks" (an array, one object per task, in page order) and "done" (an array of strings, see DONE LINES). ' +
+    'Each task object has exactly these keys: raw (the task exactly as written on the page, wrapped lines joined, keeping every mark such as !!!, a lightning bolt, MDT, quick and (brackets)), title, list, category, due_date, remind_time, repeat, priority (number 0-3 or null), quick (true or false), must_today (true or false), notes, subtasks (array of strings, empty if none). Use "" for text keys with nothing to say. ' +
     'READING THE PAGE: every line that starts with a bullet (a dash, dot, asterisk, tick box, or number such as 1. or 1)) starts one task. ' +
     'A task can wrap over two or more lines: a line with no bullet that carries on the sentence of the bullet above (it starts lower case, or the sentence is unfinished, or it is indented under it) is part of the SAME task title, so join the lines with a single space. ' +
     'A heading is a short line with no bullet that is followed by bullets (often underlined, boxed, in capitals or ending in a colon). ' +
     'A bullet that is indented further right than the bullet above it is a SUBTASK of that task: put its text in that task\'s subtasks array and never make it a task of its own. A bracketed line under a task, such as (ask for the PO number), is that task\'s notes. ' +
-    'Skip anything ticked off or crossed out. Ignore ink showing through from the other side of the page. ' +
+    'DONE LINES: a task line that is crossed out, ticked off, or highlighted (any colour of highlighter pen over the text) is already DONE. Never make it a task (and never a subtask); instead write its text, tidied, as one string in the "done" array. A highlighted or crossed-out heading is ignored. Ignore ink showing through from the other side of the page. ' +
     'Fix obvious handwriting or spelling slips using context, for example healh becomes health; keep a trailing question mark; if a word is truly unreadable write [?] in its place. ' +
     'DATES: today is ' + today + ' (' + dayName(today) + '). due_date is YYYY-MM-DD. A weekday name means the next such day (today if it is that day); tomorrow, next week (the coming Monday), in 3 days, 9 Nov and 9/11 are worked out from today. ' +
     'If a HEADING is a day or date (Today, Tomorrow, Friday, Fri 14th, 14 Nov) it is NOT a category: leave category empty and give every task under it that due_date, unless the task itself names a different day. ' +
@@ -63,7 +63,7 @@ function buildPrompt(today, list) {
     'priority is a single digit 0 to 3 (3 is most important): ! is 1, !! is 2, !!! is 3, and the words urgent or asap are 3, high is 2, medium is 1; remove the marks from the title; otherwise null. ' +
     'quick is true if the task has a lightning bolt or the word quick, otherwise false. must_today is true if the task has MDT or must do today, otherwise false. ' +
     'notes is only extra context actually written next to a task, such as text in brackets or after the word note, never invented, otherwise empty; take it out of the title. subtasks is empty unless sub-items are clearly written under a task, one string per sub-item. ' +
-    'title is required, one line, max 500 characters, the task itself with the date, time, priority marks, bullets, lightning bolt, MDT and notes taken out. Add nothing of your own. If nothing is readable output [].';
+    'title is required, one line, max 500 characters, the task itself with the date, time, priority marks, bullets, lightning bolt, MDT and notes taken out. Add nothing of your own. If nothing is readable output {"tasks":[],"done":[]}.';
 }
 
 // Run fn(cells, rowNumber) over every CSV row (row 0 = header); quote-aware; returns csv text.
@@ -169,6 +169,20 @@ function jsonToCsv(text) {
   return out.join('\n');
 }
 
+
+// The "done" strings (crossed out / ticked / highlighted lines) from Gemini's JSON reply; [] for a CSV reply or bad JSON.
+function extractDone(text) {
+  var t = String(text || '').trim().replace(/^```[a-z]*\s*\n?/i, '').replace(/\n?```\s*$/, '').trim(), o, out = [], i, x;
+  try { o = JSON.parse(t); } catch (e) { return []; }
+  if (!o || Array.isArray(o) || !Array.isArray(o.done)) return [];
+  for (i = 0; i < o.done.length && out.length < 100; i++) {
+    x = o.done[i]; if (x && typeof x === 'object') x = x.title || x.raw;
+    x = String(x == null ? '' : x).replace(/\s+/g, ' ').replace(/^[-\u2022*\s]+/, '').trim().slice(0, 200);
+    if (x) out.push(x);
+  }
+  return out;
+}
+
 // Reply is JSON (preferred) or, for older/odd replies, CSV starting with the header.
 function toCsv(text) {
   var t = String(text || '').trim().replace(/^```[a-z]*\s*\n?/i, '');
@@ -216,7 +230,7 @@ async function readNotes(buf, opt) {
   if (!text) throw fail(502, 'Gemini sent back nothing. Try again, or retake the photo.');
   var csv = matchProjects(forceList(fixDateCategories(toCsv(text), opt.today), opt.list), opt.projects), rows = countRows(csv);
   if (rows > MAX_ROWS) throw fail(502, 'That page produced ' + rows + ' tasks; the limit is ' + MAX_ROWS + '.');
-  return { csv: csv, rows: rows };
+  return { csv: csv, rows: rows, done: extractDone(text) };
 }
 
-module.exports = { HEADER: HEADER, sniff: sniff, imageFrom: imageFrom, buildPrompt: buildPrompt, forceList: forceList, fixDateCategories: fixDateCategories, matchProjects: matchProjects, cleanCsv: cleanCsv, jsonToCsv: jsonToCsv, countRows: countRows, readNotes: readNotes };
+module.exports = { HEADER: HEADER, sniff: sniff, imageFrom: imageFrom, buildPrompt: buildPrompt, forceList: forceList, fixDateCategories: fixDateCategories, matchProjects: matchProjects, cleanCsv: cleanCsv, jsonToCsv: jsonToCsv, extractDone: extractDone, countRows: countRows, readNotes: readNotes };

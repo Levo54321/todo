@@ -239,6 +239,45 @@ def run(h):
     n1 = len(h.todos); pg.click('#scanbar [data-scan=skip]'); pg.wait_for_timeout(400)
     chk('scan: Dismiss hides the banner, marks it done and adds nothing', not pg.is_visible('#scanbar') and h.scan['status'] == 'done' and len(h.todos) == n1)
     ctx.close()
+    # crossed-out / ticked / highlighted lines mark matching open tasks done (v1069)
+    import copy, uuid as _u
+    def task(title, **kw):
+        t = copy.deepcopy([x for x in h.todos if x.get('list') == 'work' and not x.get('paused')][0]); t.update(id=str(_u.uuid4()), title=title, done=False, done_at=None, due_date=None, recur=None, successor_id=None, category=None, quick=False); t.update(kw); return t
+    h.todos.append(task('Email Sam with quote', list='work'))
+    h.todos.append(task('Sign docs for Friday', list='work'))
+    h.todos.append(task('Call Priya re budget', list='work'))
+    h.todos.append(task('Call Priya re holiday', list='work'))
+    DONE = {'list': 'work', 'titles': ['email sam re quote', 'Sign the docs', 'Call Priya', 'Totally unrelated thing']}
+    h.scan = {'id': 'sc-4', 'csv': SC.split('\n')[0] + '\n', 'n': 0, 'created_at': NOW, 'status': 'ready', 'done': DONE}
+    ctx, pg = phone('http://todo.test/?open=scan')
+    tb = pg.inner_text('#tabBody')
+    chk('done: matched lines are listed, unmatched ones are not mentioned', 'Email Sam with quote' in tb and 'Sign docs for Friday' in tb and 'Totally unrelated' not in tb and 'no match' not in tb.lower(), tb[:300])
+    chk('done: strong match is pre-ticked, an ambiguous one (two Call Priya tasks) is left on Skip', '✓ done' in tb.lower() and 'skip' in tb.lower() and 'mark 2 done' in tb.lower(), repr(tb[tb.lower().find('mark as done'):][:700]))
+    chk('done: the ambiguous line offers both tasks to choose from', pg.query_selector('#impDN2') is not None and len(pg.query_selector_all('#impDN2 option')) == 2)
+    pg.select_option('#impDN2', label='Call Priya re holiday'); pg.wait_for_timeout(300)
+    chk('done: choosing a task ticks that line (now 3)', 'mark 3 done' in pg.inner_text('#tabBody').lower())
+    pg.click('[data-imp=dntog][data-i="1"]'); pg.wait_for_timeout(300)
+    chk('done: a ticked line can be skipped (back to 2)', 'mark 2 done' in pg.inner_text('#tabBody').lower())
+    chk('done: tap targets and width fine on the phone', pg.evaluate("Array.prototype.every.call(document.querySelectorAll('.impdn .chip, .impdn .btn'), function(b){return b.getBoundingClientRect().height >= 44})") and not pg.evaluate("document.documentElement.scrollWidth > window.innerWidth"))
+    pg.click('[data-imp=dnapply]'); pg.wait_for_timeout(1500)
+    dn = dict((t['title'], t['done']) for t in h.todos if t['title'] in ('Email Sam with quote', 'Sign docs for Friday', 'Call Priya re budget', 'Call Priya re holiday'))
+    chk('done: only the ticked tasks were completed', dn['Email Sam with quote'] and not dn['Sign docs for Friday'] and not dn['Call Priya re budget'] and dn['Call Priya re holiday'], dn)
+    chk('done: the scan is marked done and the page says what happened', h.scan['status'] == 'done' and 'marked 2 tasks done' in pg.inner_text('#tabBody').lower(), pg.inner_text('#tabBody')[:200])
+    ctx.close()
+    # tasks plus done lines in one scan: one Add button does both
+    for t in h.todos:
+        if t['title'] == 'Email Sam with quote': t['done'] = False
+    h.scan = {'id': 'sc-5', 'csv': SC, 'n': 3, 'created_at': NOW, 'status': 'ready', 'done': {'list': 'work', 'titles': ['Email Sam re quote']}}
+    ctx, pg = phone('http://todo.test/?open=scan')
+    chk('done: with new tasks the Add button also says it will mark one done', 'add 3 tasks and mark 1 done' in pg.inner_text('#impGo').lower(), pg.inner_text('#impGo'))
+    pg.click('#impGo'); pg.wait_for_timeout(1800)
+    chk('done: Add imports the tasks and completes the matched one', any(t['title'] == 'Access, roles?' for t in h.todos) and [t for t in h.todos if t['title'] == 'Email Sam with quote'][0]['done'], '')
+    ctx.close()
+    # only unmatched lines: nothing to review
+    h.scan = {'id': 'sc-6', 'csv': SC.split('\n')[0] + '\n', 'n': 0, 'created_at': NOW, 'status': 'ready', 'done': {'list': 'work', 'titles': ['Totally unrelated thing']}}
+    ctx, pg = phone('http://todo.test/?open=scan')
+    chk('done: only unmatched lines gives a plain "nothing to add" note and clears the scan', 'Nothing to add' in pg.inner_text('#tabBody') and h.scan['status'] == 'done', pg.inner_text('#tabBody')[:160])
+    ctx.close()
     h.scan = None
     ctx, pg = phone('http://todo.test/')
     chk('scan: no banner when nothing is waiting', not pg.is_visible('#scanbar'))

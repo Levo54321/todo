@@ -484,3 +484,7 @@ html.work #projBtn{display:inline-block}
 .impbulk .chip{margin:4px 4px 0 0}
 .impbulkrow{display:-webkit-box;display:-webkit-flex;display:flex;margin-top:8px}
 .impbulkrow .edate{-webkit-box-flex:1;-webkit-flex:1 1 auto;flex:1 1 auto;min-width:0;margin-right:8px}
+.impdnrow{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-box-align:center;-webkit-align-items:center;align-items:center;margin-top:8px}
+.impdnrow .chip{margin-right:8px}
+.impdnx{-webkit-box-flex:1;-webkit-flex:1 1 140px;flex:1 1 140px;min-width:0;word-wrap:break-word}
+.impdnrow .impin{margin:4px 0 0;max-width:100%}

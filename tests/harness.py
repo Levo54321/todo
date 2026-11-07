@@ -51,7 +51,7 @@ class H:
         if path in self.extra: return self.extra[path](self, method, q, body)
         if path == '/api/todos':
             if method == 'GET' and 'scan' in q:  # newest scan still waiting for review (todo_scan_latest)
-                return 200, {'scan': ({'id': self.scan['id'], 'csv': self.scan['csv'], 'n': self.scan['n'], 'created_at': self.scan['created_at']} if self.scan and self.scan.get('status') != 'done' else None)}
+                return 200, {'scan': ({'id': self.scan['id'], 'csv': self.scan['csv'], 'n': self.scan['n'], 'created_at': self.scan['created_at'], 'done': self.scan.get('done') or {}} if self.scan and self.scan.get('status') != 'done' else None)}
             if method == 'POST' and 'scan_done' in q:
                 if self.scan and self.scan['id'] == q['scan_done'][0]: self.scan['status'] = 'done'
                 return 200, {'ok': True}

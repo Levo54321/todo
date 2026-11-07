@@ -49,7 +49,7 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
   ok('cleanCsv refuses a reply that is not a task list (502)', bad && bad.status === 502);
   ok('sniff knows jpeg and refuses text', scan.sniff(jpeg()) === 'image/jpeg' && scan.sniff(Buffer.from('hello world, not a photo')) === null);
   var p = scan.buildPrompt('2026-11-07', 'personal');
-  ok('prompt has today, the JSON fields, the forced list and no project names', p.indexOf('today is 2026-11-07') > 0 && p.indexOf('JSON array') > 0 && p.indexOf('subtasks (array') > 0 && p.indexOf('list is always personal') > 0 && p.indexOf('Google Health Request') < 0);
+  ok('prompt has today, the JSON fields, the forced list and no project names', p.indexOf('today is 2026-11-07') > 0 && p.indexOf('JSON object') > 0 && p.indexOf('DONE LINES') > 0 && p.indexOf('highlighted') > 0 && p.indexOf('subtasks (array') > 0 && p.indexOf('list is always personal') > 0 && p.indexOf('Google Health Request') < 0);
 
   // route: token first
   var r = await call('POST', { scan: '1' }, { 'x-todo-token': 'wrong' }, jpeg());
@@ -161,6 +161,17 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
   gemini = function () { return reply('[{"raw":"Chase invoice !!!","title":"Chase invoice","list":"work","priority":null,"quick":false,"must_today":false,"subtasks":[]}]'); }; geminiCalls.length = 0;
   r = await call('POST', { scan: '1' }, T, jpeg());
   ok('a JSON reply is accepted end to end and asked for as JSON', r.status === 200 && r.json.rows === 1 && geminiCalls[0].body.generationConfig.responseMimeType === 'application/json', r.body);
+
+  gemini = function () { return reply('{"tasks":[{"raw":"Chase invoice","title":"Chase invoice","list":"work","priority":null,"subtasks":[]}],"done":["- Email sam re quote","  ","Sign docs"]}'); }; geminiCalls.length = 0;
+  r = await call('POST', { scan: '1', list: 'work' }, T, jpeg());
+  ok('crossed-out/highlighted lines come back as done and are saved with the scan', r.status === 200 && r.json.rows === 1 && r.json.done === 2 && r.json.id, r.body);
+  gemini = function () { return reply('{"tasks":[],"done":["Sign docs"]}'); };
+  r = await call('POST', { scan: '1' }, T, jpeg());
+  ok('a page with only done lines is still saved (nothing to add, one to mark done)', r.status === 200 && r.json.rows === 0 && r.json.done === 1 && r.json.id, r.body);
+  gemini = function () { return reply('{"tasks":[],"done":[]}'); };
+  r = await call('POST', { scan: '1' }, T, jpeg());
+  ok('nothing readable at all saves nothing', r.status === 200 && r.json.rows === 0 && r.json.done === 0 && r.json.id === null, r.body);
+  ok('extractDone cleans bullets, drops blanks, ignores CSV replies', JSON.stringify(scan.extractDone('{"tasks":[],"done":["- A  b","",{"title":"C"}]}')) === '["A b","C"]' && scan.extractDone('title,list\nx,work').length === 0);
 
   global.fetch = origFetch; console.error = origErr;
   console.log(fails ? fails + ' FAIL' : '0 FAIL');

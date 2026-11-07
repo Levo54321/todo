@@ -1740,6 +1740,7 @@
   App.localISO = localISO; App.parseTS = parseTS; App.nowMs = nowMs; App.isFocus = isFocus; App.inMode = inMode;
   App.DOWL = DOWL; App.DOWS = DOWS; App.MONS = MONS; App.MONL = MONL;
   App.todos = function () { return todos; };
+  App.completeTask = function (id) { var t = find(id); if (t && !t.done) doTick(id); }; // marks an open task done (scan review)
   App.mode = function () { return mode; };
   App.token = function () { return token; };
   App.whenToken = whenToken; App.getProjects = getProjects;

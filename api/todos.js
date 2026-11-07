@@ -16,8 +16,8 @@
 // POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
 // POST   /api/todos?scan=1[&list=work|personal] -> photo (v1066: list forces that list on every task and no project is guessed; omit it and Gemini decides work/personal)  photo of handwritten notes -> tasks to review (v1065). Body: the photo itself (Shortcuts "File" body; JPEG, max 3.5 MB), or base64 text, or { image:"<base64>" }.
 //                                      Checks the token, asks Gemini (key in env GEMINI_API_KEY, model GEMINI_MODEL, see api/_scan.js) to turn it into import CSV, and keeps the newest scan for review.
-//                                      Reply { ok, rows, id } (rows 0 = nothing readable). Errors: 400 not a photo, 413 too big, 429 Gemini busy, 502 Gemini failed, 503 key not set. Nothing is added to the list by this call.
-// GET    /api/todos?scan=1          -> { scan: { id, csv, n, created_at } | null } the newest scan still waiting for review (the app asks once when it opens, and for ?open=scan)
+//                                      Reply { ok, rows, done, id } (rows 0 and done 0 = nothing readable; done = crossed-out/ticked/highlighted lines kept for the review to match against open tasks, v1069). Errors: 400 not a photo, 413 too big, 429 Gemini busy, 502 Gemini failed, 503 key not set. Nothing is added to the list by this call.
+// GET    /api/todos?scan=1          -> { scan: { id, csv, n, created_at, done:{list,titles:[...]} } | null } the newest scan still waiting for review (the app asks once when it opens, and for ?open=scan)
 // POST   /api/todos?scan_done=<uuid> -> marks that scan reviewed (added or dismissed). { ok }
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
@@ -359,9 +359,10 @@ async function scanUpload(token, req, today, res) {
   if (lst !== 'personal') { try { names = (await projectList(token)).map(function (p) { return p && p.name; }).filter(Boolean); } catch (pe) { names = []; } }
   try { out = await scan.readNotes(buf, { today: today, list: lst === 'work' || lst === 'personal' ? lst : '', projects: names }); }
   catch (se) { console.error('scan', se.status || '', se.message); return send(res, se.status || 502, { error: se.message }); }
-  if (!out.rows) return send(res, 200, { ok: true, rows: 0, id: null });
-  sv = await rpc('todo_scan_save', { p_token: token, p_csv: out.csv, p_n: out.rows });
-  return send(res, 200, { ok: true, rows: out.rows, id: sv && sv.id });
+  var nd = (out.done || []).length;
+  if (!out.rows && !nd) return send(res, 200, { ok: true, rows: 0, done: 0, id: null });
+  sv = await rpc('todo_scan_save', { p_token: token, p_csv: out.csv, p_n: out.rows, p_done: nd ? { list: lst === 'work' || lst === 'personal' ? lst : '', titles: out.done } : {} });
+  return send(res, 200, { ok: true, rows: out.rows, done: nd, id: sv && sv.id });
 }
 
 module.exports = async function handler(req, res) {

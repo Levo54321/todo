@@ -22,7 +22,7 @@
     note: 'notes', details: 'notes', description: 'notes', comment: 'notes', comments: 'notes',
     task_id: 'id', uuid: 'id', subtask: 'subtasks', sub_tasks: 'subtasks', sub_task: 'subtasks', steps: 'subtasks', checklist: 'subtasks', items: 'subtasks' };
   var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false, show: null }, exp = { note: '' }, projects = null, cache = null;
-  function fresh() { return { scan: '', phase: 'idle', file: '', batch: '', rows: [], items: [], ignored: [], mapping: [], msg: '', added: 0, updated: 0, skipped: 0, bad: 0 }; }
+  function fresh() { return { scan: '', phase: 'idle', file: '', batch: '', rows: [], items: [], ignored: [], mapping: [], msg: '', added: 0, updated: 0, skipped: 0, bad: 0, dn: [], dnDone: 0 }; }
   st = fresh();
   st = fresh();
   function uuid() {
@@ -215,9 +215,12 @@
       if (it.proj) { k = it.proj.name.toLowerCase(); if (!seen[k]) { seen[k] = 1; names.push(it.proj.name); } }
     }
     send = adds.concat(upds); // new tasks first: the first request carries the CSV copy kept in Previous imports
-    if (!send.length) return;
+    if (!send.length) {
+      if (dnCount()) { st.added = 0; st.updated = 0; st.skipped = nSkip; st.bad = nBad; st.msg = ''; st.dnDone = doneApply(); st.phase = 'done'; if (st.scan) scanDone(st.scan); App.mutated(); paint(); }
+      return;
+    }
     for (i = 0; i < send.length; i += CHUNK) parts.push(send.slice(i, i + CHUNK));
-    st.phase = 'importing'; st.added = 0; st.updated = 0; st.skipped = nSkip; st.bad = nBad; st.msg = ''; paint();
+    st.phase = 'importing'; st.added = 0; st.updated = 0; st.skipped = nSkip; st.bad = nBad; st.msg = ''; st.dnDone = doneApply(); paint();
     function finish() { App.mutated(); App.reloadWhenSettingsClose(); loadHist(); freshTodos(function () {}); }
     function go() {
       if (at >= parts.length) { st.phase = 'done'; if (st.scan) scanDone(st.scan); finish(); paint(); return; }
@@ -490,10 +493,79 @@
     if (exp.note) h += '<div class="impinfo" id="impExpNote">' + esc(exp.note) + '</div>';
     return h + panelHTML('exp');
   }
+  /* ---------- crossed-out / ticked / highlighted lines mark matching open tasks done (v1069) ---------- */
+  var STOP = { a: 1, an: 1, the: 1, to: 1, 'for': 1, 'with': 1, re: 1, and: 1, of: 1, on: 1, 'in': 1, my: 1, at: 1, by: 1, up: 1, out: 1 };
+  function toks(x) { var a = String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' '), o = [], i; for (i = 0; i < a.length; i++) if (a[i] && !STOP[a[i]]) o.push(a[i]); return o; }
+  function lev1(a, b) { // same word, or one letter out (a handwriting slip) for words of 5+ letters
+    if (a === b) return true;
+    if (a.length < 5 || Math.abs(a.length - b.length) > 1) return false;
+    var i = 0, j = 0, d = 0;
+    while (i < a.length && j < b.length) {
+      if (a.charAt(i) === b.charAt(j)) { i++; j++; continue; }
+      if (++d > 1) return false;
+      if (a.length > b.length) i++; else if (a.length < b.length) j++; else { i++; j++; }
+    }
+    return d + (a.length - i) + (b.length - j) <= 1;
+  }
+  function likeness(A, B) { // 0..1
+    if (!A.length || !B.length) return 0;
+    var hit = 0, used = {}, i, j;
+    for (i = 0; i < A.length; i++) for (j = 0; j < B.length; j++) if (!used[j] && lev1(A[i], B[j])) { used[j] = 1; hit++; break; }
+    return 2 * hit / (A.length + B.length);
+  }
+  /* Only lines that find a likely open task are kept (no match = nothing shown). Strong, unambiguous matches start ticked. */
+  function dnBuild(done, list) {
+    var out = [], want = done && done.list, titles = (done && done.titles) || [], open = [], i, j, c, tk, sc;
+    for (i = 0; i < list.length; i++) { c = list[i]; if (c.done || c.successor_id) continue; if (want && (c.list || 'personal') !== want) continue; open.push({ id: c.id, title: c.title, tk: toks(c.title) }); }
+    for (i = 0; i < titles.length; i++) {
+      tk = toks(titles[i]); c = [];
+      for (j = 0; j < open.length; j++) { sc = likeness(tk, open[j].tk); if (sc >= 0.6) c.push({ id: open[j].id, title: open[j].title, s: sc }); }
+      if (!c.length) continue;
+      c.sort(function (a, b) { return b.s - a.s; });
+      c = c.slice(0, 4);
+      out.push({ text: titles[i], c: c, pick: 0, on: c[0].s >= 0.8 && !(c[1] && c[0].s - c[1].s < 0.1) });
+    }
+    return out;
+  }
+  function dnCount() { var n = 0, i; for (i = 0; st && st.dn && i < st.dn.length; i++) if (st.dn[i].on) n++; return n; }
+  function doneApply() {
+    var n = 0, i, e, id, seen = {};
+    for (i = 0; i < st.dn.length; i++) {
+      e = st.dn[i]; if (!e.on) continue;
+      id = e.c[e.pick].id; e.on = false;
+      if (seen[id]) continue; seen[id] = 1;
+      if (App.completeTask) App.completeTask(id);
+      n++;
+    }
+    return n;
+  }
+  function doneMsg() {
+    var a = (st.added || st.updated || !st.dnDone) ? 'Added ' + plural(st.added, 'task') + (st.updated ? ' and updated ' + plural(st.updated, 'task') : '') + '.' : '';
+    if (st.dnDone) a += (a ? ' ' : '') + 'Marked ' + plural(st.dnDone, 'task') + ' done.';
+    return a;
+  }
+  function doneHTML(only) {
+    if (!st.dn || !st.dn.length) return '';
+    var h = '<div class="impinfo impdn"><b>Mark as done</b> <span class="impsoft">crossed out, ticked or highlighted on your page</span>', i, k, e, o;
+    for (i = 0; i < st.dn.length; i++) {
+      e = st.dn[i];
+      h += '<div class="impdnrow"><button class="chip' + (e.on ? ' on' : '') + '" type="button" data-imp="dntog" data-i="' + i + '">' + (e.on ? '✓ Done' : 'Skip') + '</button>' +
+        '<span class="impdnx">' + esc(e.text) + ' → <b>' + esc(e.c[e.pick].title) + '</b></span>';
+      if (e.c.length > 1) {
+        o = ''; for (k = 0; k < e.c.length; k++) o += '<option value="' + k + '"' + (k === e.pick ? ' selected' : '') + '>' + esc(e.c[k].title) + '</option>';
+        h += '<select class="impin" id="impDN' + i + '" data-i="' + i + '" aria-label="Which task">' + o + '</select>';
+      }
+      h += '</div>';
+    }
+    if (only) h += '<div class="impgo"><button class="btn primary impgobtn" type="button" data-imp="dnapply"' + (dnCount() ? '' : ' disabled') + '>Mark ' + dnCount() + ' done</button></div>';
+    return h + '</div>';
+  }
+
   function goLabel(t) {
     var p = [];
     if (t.add) p.push('Add ' + plural(t.add, 'task'));
     if (t.upd) p.push((p.length ? 'update ' : 'Update ') + plural(t.upd, 'task'));
+    if (dnCount()) p.push((p.length ? 'mark ' : 'Mark ') + dnCount() + ' done');
     return p.length ? p.join(' and ') : 'Nothing to import';
   }
 
@@ -504,6 +576,7 @@
     if (st.msg) h += '<div class="imperr" id="impMsg">' + esc(st.msg) + '</div>';
     if (st.phase === 'checking') h += '<div class="impinfo" id="impBusy">Checking ' + esc(st.file) + '…</div>';
     if (st.phase === 'importing') h += '<div class="impinfo" id="impBusy">Adding tasks…</div>';
+    if (st.phase === 'dnonly') h += doneHTML(true);
     if (st.phase === 'ready') {
       t = tally();
       h += '<div class="impstats" id="impSum"><div class="impstat"><b>' + st.items.length + '</b><span>' + (st.items.length === 1 ? 'task' : 'tasks') + ' found</span></div>' +
@@ -511,16 +584,17 @@
         '<div class="impstat' + (t.bad || st.ignored.length ? ' warn' : '') + '"><b>' + (t.bad + st.ignored.length) + '</b><span>' + (t.bad + st.ignored.length === 1 ? 'problem' : 'problems') + '</span></div>' +
         (t.dups ? '<div class="impstat warn"><b>' + t.dups + '</b><span>already in your list</span></div>' : '') + '</div>';
       h += '<div class="impsrc">' + esc(st.file) + '</div>';
-      h += '<div class="impgo top"><button class="btn primary impgobtn" id="impGoTop" data-imp="go" type="button"' + (t.add + t.upd ? '' : ' disabled') + '>' + esc(goLabel(t)) + '</button></div>';
+      h += '<div class="impgo top"><button class="btn primary impgobtn" id="impGoTop" data-imp="go" type="button"' + (t.add + t.upd + dnCount() ? '' : ' disabled') + '>' + esc(goLabel(t)) + '</button></div>';
       if (t.dups) h += '<div class="impdupbar"><span><b>' + plural(t.dups, 'task') + '</b> look like tasks you already have (skipped unless you change it):</span><div class="seg impseg"><button type="button" data-imp="dupall" data-v="skip">Skip all</button><button type="button" data-imp="dupall" data-v="update">Update them all</button><button type="button" data-imp="dupall" data-v="add">Add all anyway</button></div></div>';
       if (t.bad) h += '<div class="imperr" id="impErrs"><b>' + plural(t.bad, 'task') + ' with problems will be skipped.</b> Tap a card to fix it, or remove it. The rest import normally.</div>';
       if (t.names.length) h += '<div class="impinfo" id="impNewProj">New Work project' + (t.names.length === 1 ? '' : 's') + ' to be created: <b>' + esc(t.names.join(', ')) + '</b>. Pick an existing one on the card instead if it is a typo.</div>';
+      h += doneHTML(false);
       if (st.scan) h += bulkBar();
       h += previewHTML();
-      h += '<div class="impgo"><button class="btn primary impgobtn" id="impGo" data-imp="go" type="button"' + (t.add + t.upd ? '' : ' disabled') + '>' + esc(goLabel(t)) + '</button></div>';
+      h += '<div class="impgo"><button class="btn primary impgobtn" id="impGo" data-imp="go" type="button"' + (t.add + t.upd + dnCount() ? '' : ' disabled') + '>' + esc(goLabel(t)) + '</button></div>';
       h += '<div class="impinfo">Importing the same file twice adds every task twice unless you skip or update the matches. Added tasks can be undone below; updates cannot.</div>';
     }
-    if (st.phase === 'done') h += '<div class="impdone" id="impDone">✓ Added ' + plural(st.added, 'task') + (st.updated ? ' and updated ' + plural(st.updated, 'task') : '') + '.' + (st.skipped ? ' Skipped ' + st.skipped + ' you already had.' : '') + (st.bad ? ' Left out ' + plural(st.bad, 'task') + ' with problems.' : '') + ' Close Settings to see them' + (st.added ? ', or undo below.' : '.') + '</div>';
+    if (st.phase === 'done') h += '<div class="impdone" id="impDone">✓ ' + doneMsg() + (st.skipped ? ' Skipped ' + st.skipped + ' you already had.' : '') + (st.bad ? ' Left out ' + plural(st.bad, 'task') + ' with problems.' : '') + ' Close Settings to see them' + (st.added ? ', or undo below.' : '.') + '</div>';
     h += histHTML() + '</div>';
     var keep = document.getElementById('impPaste'); if (keep) pasteText = keep.value;
     body.innerHTML = h;
@@ -591,10 +665,13 @@
     else if (a === 'act' && st.items[i]) { st.items[i].act = v; st.items[i].target = v === 'update' && st.items[i].dup ? st.items[i].dup.id : null; paint(); }
     else if (a === 'bulkcat') bulkCat(v, true);
     else if (a === 'bulkgo') { var bi = document.getElementById('impBulkCat'); bulkCat(bi ? bi.value.replace(/^\s+|\s+$/g, '') : '', false); }
+    else if (a === 'dntog' && st.dn[i]) { st.dn[i].on = !st.dn[i].on; paint(); }
+    else if (a === 'dnapply') run();
     else if (a === 'dupall') { for (j = 0; j < st.items.length; j++) if (st.items[j].dup && !st.items[j].p.value.id) { st.items[j].act = v; st.items[j].target = v === 'update' ? st.items[j].dup.id : null; } paint(); }
   }
   function onChange(e) { // choosing an existing project on a card whose project is new
     var el = e.target, i, it, pick;
+    if (el && el.id && el.id.indexOf('impDN') === 0) { i = +el.getAttribute('data-i'); if (st.dn[i]) { st.dn[i].pick = +el.value; st.dn[i].on = true; paint(); } return; }
     if (!el || !el.id || el.id.indexOf('impPS') !== 0) return;
     i = +el.getAttribute('data-i'); it = st.items[i]; if (!it) return;
     pick = el.value; if (!pick) return;
@@ -607,7 +684,7 @@
     if (!scanBar) scanBar = document.getElementById('scanbar');
     if (!scanBar) return;
     if (!scanInfo) { scanBar.style.display = 'none'; scanBar.innerHTML = ''; return; }
-    scanBar.innerHTML = '<span class="scantx">Scan ready: <b>' + plural(scanInfo.n || 0, 'task') + '</b> from your photo</span>' +
+    scanBar.innerHTML = '<span class="scantx">Scan ready: <b>' + (scanInfo.n ? plural(scanInfo.n, 'task') : 'crossed-out items to check') + '</b>' + (scanInfo.n ? ' from your photo' : '') + '</span>' +
       '<button class="btn primary" type="button" data-scan="review">Review</button><button class="btn" type="button" data-scan="skip">Dismiss</button>';
     scanBar.style.display = 'block';
     scanBar.onclick = function (e) {
@@ -624,7 +701,12 @@
     var sc = scanInfo;
     App.openSettingsTab('import'); // draws the Import tab, which gives the module its body
     mode = 'paste'; pasteText = '';
-    start(sc.csv, 'Photo scan'); st.scan = sc.id;
+    var dn = dnBuild(sc.done, (App.todos && App.todos()) || []);
+    if ((sc.n || 0) > 0) { start(sc.csv, 'Photo scan'); st.scan = sc.id; st.dn = dn; return; }
+    st = fresh(); st.file = 'Photo scan'; st.scan = sc.id; st.dn = dn;
+    if (dn.length) st.phase = 'dnonly';
+    else { st.msg = 'Nothing to add: no new tasks, and the crossed-out lines did not match any open task.'; scanDone(sc.id); }
+    paint();
   }
   App.whenToken(function () {
     App.api('GET', '?scan=1', null, function (s, d) {

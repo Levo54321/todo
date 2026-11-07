@@ -18,7 +18,7 @@ Write on paper, photograph it, run the Shortcut (pick Work or Personal first). T
 | `MDT` or `must do today` | Must do today |
 | Text in (brackets) or after `note:` | Notes on the task |
 | Smaller indented bullets under a task | Sub-tasks of that task |
-| Crossed out or ticked off | Ignored |
+| Crossed out, ticked or **highlighted** (any colour) | Marks the matching open task **done** (you confirm in the review). Never added as a new task. Nothing happens if no task matches. |
 
 ## Tips
 - Write the date or time words in plain English, close to the task. A date written inside a task beats the heading date.
@@ -69,3 +69,10 @@ Calls:
 | Reply to Dan | none | | none | must do today |
 
 Anything that differs: tell Claude which line and what you expected.
+
+## Marking things done from the page (v1069)
+Cross out, tick or highlight a line you already have in the app, photograph the page, and the review shows a "Mark as done" section: what you wrote, an arrow, and the task it matched. Strong matches start ticked; tap one to skip it, or use the dropdown to pick a different task. "Add" does both: adds the new tasks and completes the ticked ones (repeating tasks move on to their next date).
+- Wording does not have to be identical ("Email Sam re quote" finds "Email Sam with quote"), but it needs most of the same words.
+- If two tasks look equally likely (two "Call Priya ..." tasks), it will not tick either for you: pick one.
+- It only looks at open tasks in the list you chose in the Shortcut (Work or Personal).
+- Highlighting a heading does nothing. A line that matches nothing is simply left alone.
