@@ -46,25 +46,24 @@ function buildPrompt(today, list) {
   var lc = (list === 'work' || list === 'personal')
     ? 'list is always ' + list + ' for every task. '
     : 'list is work or personal, personal only if the heading or task is clearly personal, otherwise work. ';
-  return 'You are converting a photo of handwritten notes into an import file for a to-do app. Output ONLY CSV text: no code fences, no commentary, no blank lines. ' +
-    'The first line is the header row: ' + HEADER + ' (copy it exactly). Every following line is one task with exactly 11 cells (10 commas outside quotes); leave unused cells empty; ' +
-    'wrap any cell containing a comma, quote mark or line break in quote marks and double any quote mark inside it. ' +
+  return 'You are converting a photo of handwritten notes into tasks for a to-do app. Output ONLY a JSON array (no code fences, no commentary), one object per task, in page order. ' +
+    'Each object has exactly these keys: raw (the task exactly as written on the page, wrapped lines joined, keeping every mark such as !!!, a lightning bolt, MDT, quick and (brackets)), title, list, category, due_date, remind_time, repeat, priority (number 0-3 or null), quick (true or false), must_today (true or false), notes, subtasks (array of strings, empty if none). Use "" for text keys with nothing to say. ' +
     'READING THE PAGE: every line that starts with a bullet (a dash, dot, asterisk, tick box, or number such as 1. or 1)) starts one task. ' +
     'A task can wrap over two or more lines: a line with no bullet that carries on the sentence of the bullet above (it starts lower case, or the sentence is unfinished, or it is indented under it) is part of the SAME task title, so join the lines with a single space. ' +
     'A heading is a short line with no bullet that is followed by bullets (often underlined, boxed, in capitals or ending in a colon). ' +
-    'Sub-items indented under a task (smaller bullets) are subtasks of that task, not new tasks. ' +
+    'A bullet that is indented further right than the bullet above it is a SUBTASK of that task: put its text in that task\'s subtasks array and never make it a task of its own. A bracketed line under a task, such as (ask for the PO number), is that task\'s notes. ' +
     'Skip anything ticked off or crossed out. Ignore ink showing through from the other side of the page. ' +
     'Fix obvious handwriting or spelling slips using context, for example healh becomes health; keep a trailing question mark; if a word is truly unreadable write [?] in its place. ' +
     'DATES: today is ' + today + ' (' + dayName(today) + '). due_date is YYYY-MM-DD. A weekday name means the next such day (today if it is that day); tomorrow, next week (the coming Monday), in 3 days, 9 Nov and 9/11 are worked out from today. ' +
     'If a HEADING is a day or date (Today, Tomorrow, Friday, Fri 14th, 14 Nov) it is NOT a category: leave category empty and give every task under it that due_date, unless the task itself names a different day. ' +
     'If a TASK mentions a day or date (tomorrow, by Friday, on 12th) put it in due_date and remove those date words from the title, so "send follow up email tomorrow" has title "Send follow up email". ' +
     'If a task mentions a time (3pm, 15:00, half two, 9.30am) put it in remind_time as HH:MM in 24-hour time and remove it from the title, so "sign documents by Friday at 3pm" has title "Sign documents", due_date the next Friday and remind_time 15:00. A time with no day means due_date today. ' +
-    'COLUMNS: ' + lc + 'category is ONLY a real heading actually written above the task (tidy spelling, max 60 characters); leave it empty if there is no real heading. Never infer, guess or invent a category or project from what the task is about, and never use a date as a category. ' +
+    'FIELDS: ' + lc + 'category is ONLY a real heading actually written above the task (tidy spelling, max 60 characters); leave it empty if there is no real heading. Never infer, guess or invent a category or project from what the task is about, and never use a date as a category. ' +
     'repeat is one of daily, weekdays, weekly, fortnightly, monthly, yearly and only if written (every Monday means weekly). ' +
-    'priority is a single digit 0 to 3 (3 is most important): ! is 1, !! is 2, !!! is 3, and the words urgent or asap are 3, high is 2, medium is 1; remove the marks from the title; otherwise empty. ' +
-    'quick is yes only if the page says quick or has a lightning bolt, otherwise empty. must_today is yes only if the page says must do today or MDT, otherwise empty. ' +
-    'notes is only extra context actually written next to a task, such as text in brackets or after the word note, never invented, otherwise empty; take it out of the title. subtasks is empty unless sub-items are clearly written under a task, then separate them with |. ' +
-    'title is required, one line, max 500 characters, the task itself with the date, time, priority marks, bullets and notes taken out. Do not add any column, number, or text of your own. If nothing is readable output only the header line.';
+    'priority is a single digit 0 to 3 (3 is most important): ! is 1, !! is 2, !!! is 3, and the words urgent or asap are 3, high is 2, medium is 1; remove the marks from the title; otherwise null. ' +
+    'quick is true if the task has a lightning bolt or the word quick, otherwise false. must_today is true if the task has MDT or must do today, otherwise false. ' +
+    'notes is only extra context actually written next to a task, such as text in brackets or after the word note, never invented, otherwise empty; take it out of the title. subtasks is empty unless sub-items are clearly written under a task, one string per sub-item. ' +
+    'title is required, one line, max 500 characters, the task itself with the date, time, priority marks, bullets, lightning bolt, MDT and notes taken out. Add nothing of your own. If nothing is readable output [].';
 }
 
 // Run fn(cells, rowNumber) over every CSV row (row 0 = header); quote-aware; returns csv text.
@@ -136,6 +135,46 @@ function cleanCsv(text) {
   return t;
 }
 
+
+function csvCell(x) { x = String(x == null ? '' : x); return /[",\n\r]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; }
+function yes(v) { return v === true || /^(yes|true|y|1)$/i.test(String(v == null ? '' : v).trim()); }
+
+// Gemini's JSON (named fields, so nothing can land in the wrong column) -> import CSV.
+// The raw line is also checked here for marks the model may have left out: !!! priority, lightning bolt/quick, MDT, (bracket notes).
+function jsonToCsv(text) {
+  var t = String(text || '').trim().replace(/^```[a-z]*\s*\n?/i, '').replace(/\n?```\s*$/, '').trim(), arr;
+  try { arr = JSON.parse(t); } catch (e) { throw fail(502, 'The reply was not a task list. Try again, or retake the photo.'); }
+  if (arr && !Array.isArray(arr) && Array.isArray(arr.tasks)) arr = arr.tasks;
+  if (!Array.isArray(arr)) throw fail(502, 'The reply was not a task list. Try again, or retake the photo.');
+  var out = [HEADER], i;
+  for (i = 0; i < arr.length; i++) {
+    var it = arr[i]; if (!it || typeof it !== 'object') continue;
+    var raw = String(it.raw || ''), title = String(it.title || raw || '').replace(/\s+/g, ' ').trim(), notes = String(it.notes || '').trim(), pr = '', m, subs = [];
+    var both = raw + ' ' + title;
+    // priority: the model's number, else its marks, else the marks in the raw line
+    if (it.priority != null && /^[0-3]$/.test(String(it.priority).trim())) pr = String(it.priority).trim();
+    else if ((m = /(?:^|\s)(!{1,3})(?=\s|$)/.exec(String(it.priority || '') + ' ' + raw)) || (m = /^\s*(!{1,3})\s*$/.exec(String(it.priority || '')))) pr = String(m[1].length);
+    else if (/\b(urgent|asap)\b/i.test(String(it.priority || ''))) pr = '3';
+    else if (/\bhigh\b/i.test(String(it.priority || ''))) pr = '2';
+    else if (/\bmedium\b/i.test(String(it.priority || ''))) pr = '1';
+    var quick = yes(it.quick) || /⚡|\bquick\b/i.test(raw);
+    var must = yes(it.must_today) || /\bMDT\b|\bmust do today\b/i.test(raw);
+    if (!notes && (m = /\(([^()]{2,})\)/.exec(raw))) notes = m[1].trim();
+    title = title.replace(/\s*\([^()]*\)\s*$/, '').replace(/\s*(!+|⚡|\bMDT\b|\bmust do today\b)\s*/gi, ' ').replace(/^[-•*\s]+/, '').replace(/\s+/g, ' ').trim();
+    if (!title) continue;
+    if (Array.isArray(it.subtasks)) subs = it.subtasks; else if (it.subtasks) subs = String(it.subtasks).split('|');
+    subs = subs.map(function (x) { return String(x).replace(/^[-•*\s]+/, '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|'); }).filter(Boolean);
+    out.push([title, it.list, it.category, it.due_date, it.remind_time, it.repeat, pr, quick ? 'yes' : '', must ? 'yes' : '', notes, subs.join('|')].map(csvCell).join(','));
+  }
+  return out.join('\n');
+}
+
+// Reply is JSON (preferred) or, for older/odd replies, CSV starting with the header.
+function toCsv(text) {
+  var t = String(text || '').trim().replace(/^```[a-z]*\s*\n?/i, '');
+  return /^[\[{]/.test(t) ? jsonToCsv(text) : cleanCsv(text);
+}
+
 // Number of task lines (quote-aware, ignores blank lines and the header).
 function countRows(csv) {
   var n = 0, q = false, any = false, i, c;
@@ -155,7 +194,7 @@ async function readNotes(buf, opt) {
   if (!key) throw fail(503, 'Scanning is not set up yet: GEMINI_API_KEY is missing in Vercel.');
   var model = String(process.env.GEMINI_MODEL || DEFAULT_MODEL); if (!/^[A-Za-z0-9._-]+$/.test(model)) model = DEFAULT_MODEL;
   var mime = sniff(buf), ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, opt.timeout || TIMEOUT_MS), r, raw, data = null;
-  var body = { generationConfig: { temperature: 0 }, contents: [{ parts: [{ text: buildPrompt(opt.today, opt.list) }, { inline_data: { mime_type: mime, data: buf.toString('base64') } }] }] };
+  var body = { generationConfig: { temperature: 0, responseMimeType: 'application/json' }, contents: [{ parts: [{ text: buildPrompt(opt.today, opt.list) }, { inline_data: { mime_type: mime, data: buf.toString('base64') } }] }] };
   try {
     r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
       method: 'POST', headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal
@@ -175,9 +214,9 @@ async function readNotes(buf, opt) {
   var parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts, text = '', i;
   for (i = 0; parts && i < parts.length; i++) if (typeof parts[i].text === 'string' && !parts[i].thought) text += parts[i].text;
   if (!text) throw fail(502, 'Gemini sent back nothing. Try again, or retake the photo.');
-  var csv = matchProjects(forceList(fixDateCategories(cleanCsv(text), opt.today), opt.list), opt.projects), rows = countRows(csv);
+  var csv = matchProjects(forceList(fixDateCategories(toCsv(text), opt.today), opt.list), opt.projects), rows = countRows(csv);
   if (rows > MAX_ROWS) throw fail(502, 'That page produced ' + rows + ' tasks; the limit is ' + MAX_ROWS + '.');
   return { csv: csv, rows: rows };
 }
 
-module.exports = { HEADER: HEADER, sniff: sniff, imageFrom: imageFrom, buildPrompt: buildPrompt, forceList: forceList, fixDateCategories: fixDateCategories, matchProjects: matchProjects, cleanCsv: cleanCsv, countRows: countRows, readNotes: readNotes };
+module.exports = { HEADER: HEADER, sniff: sniff, imageFrom: imageFrom, buildPrompt: buildPrompt, forceList: forceList, fixDateCategories: fixDateCategories, matchProjects: matchProjects, cleanCsv: cleanCsv, jsonToCsv: jsonToCsv, countRows: countRows, readNotes: readNotes };

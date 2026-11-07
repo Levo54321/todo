@@ -49,7 +49,7 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
   ok('cleanCsv refuses a reply that is not a task list (502)', bad && bad.status === 502);
   ok('sniff knows jpeg and refuses text', scan.sniff(jpeg()) === 'image/jpeg' && scan.sniff(Buffer.from('hello world, not a photo')) === null);
   var p = scan.buildPrompt('2026-11-07', 'personal');
-  ok('prompt has today, the real header, the forced list and no project names', p.indexOf('today is 2026-11-07') > 0 && p.indexOf(scan.HEADER) > 0 && p.indexOf('list is always personal') > 0 && p.indexOf('Google Health Request') < 0);
+  ok('prompt has today, the JSON fields, the forced list and no project names', p.indexOf('today is 2026-11-07') > 0 && p.indexOf('JSON array') > 0 && p.indexOf('subtasks (array') > 0 && p.indexOf('list is always personal') > 0 && p.indexOf('Google Health Request') < 0);
 
   // route: token first
   var r = await call('POST', { scan: '1' }, { 'x-todo-token': 'wrong' }, jpeg());
@@ -139,6 +139,28 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
     var pr = scan.buildPrompt(T0, 'work');
     ok('prompt covers date headings, dates and times in titles, wrapped lines, priority marks', pr.indexOf('(saturday)') > 0 && pr.indexOf('is a day or date') > 0 && pr.indexOf('remove those date words') > 0 && pr.indexOf('SAME task title') > 0 && pr.indexOf('!!! is 3') > 0);
   }
+
+  {
+    var J = scan.jsonToCsv(JSON.stringify([
+      { raw: '!!! Chase invoice (ask for PO number)', title: 'Chase invoice (ask for PO number)', list: 'work', due_date: '2026-11-08', priority: null, quick: false, must_today: false, notes: '', subtasks: [] },
+      { raw: 'Quick call with Dave', title: 'Quick call with Dave', list: 'work', priority: null, quick: false, must_today: false, subtasks: [] },
+      { raw: 'Put bins out \u26A1', title: 'Put bins out', list: 'personal', priority: null, subtasks: [] },
+      { raw: 'Reply to Dan MDT', title: 'Reply to Dan MDT', list: 'work', priority: null, subtasks: [] },
+      { raw: 'Plan Q1 priorities high', title: 'Plan Q1 priorities', list: 'work', priority: 2, subtasks: ['- list 3 goals', 'check budget'] },
+      { raw: 'Say well done!', title: 'Say well done!', list: 'work', priority: null, subtasks: [] }
+    ])).split('\n');
+    ok('JSON: !!! becomes priority 3 and the bracket note is kept, both out of the title', J[1].indexOf('Chase invoice,work,,2026-11-08,,,3,,,ask for PO number,') === 0);
+    ok('JSON: the word quick and the lightning bolt both set quick (in the quick column)', J[2].split(',')[7] === 'yes' && J[3].split(',')[7] === 'yes' && J[3].indexOf('Put bins out,personal') === 0);
+    ok('JSON: MDT sets must_today and leaves the title', J[4].indexOf('Reply to Dan,work') === 0 && J[4].split(',')[8] === 'yes');
+    ok('JSON: indented bullets arrive as sub-tasks joined with |', J[5].split(',')[10] === 'list 3 goals|check budget' && J[5].split(',')[6] === '2');
+    ok('JSON: a trailing ! in normal text is not a priority mark', J[6].split(',')[6] === '');
+    var bad = false; try { scan.jsonToCsv('not json'); } catch (e) { bad = e.status === 502; }
+    ok('JSON: garbage reply is a clear 502', bad);
+  }
+
+  gemini = function () { return reply('[{"raw":"Chase invoice !!!","title":"Chase invoice","list":"work","priority":null,"quick":false,"must_today":false,"subtasks":[]}]'); }; geminiCalls.length = 0;
+  r = await call('POST', { scan: '1' }, T, jpeg());
+  ok('a JSON reply is accepted end to end and asked for as JSON', r.status === 200 && r.json.rows === 1 && geminiCalls[0].body.generationConfig.responseMimeType === 'application/json', r.body);
 
   global.fetch = origFetch; console.error = origErr;
   console.log(fails ? fails + ' FAIL' : '0 FAIL');
