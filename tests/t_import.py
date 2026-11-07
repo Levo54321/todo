@@ -135,19 +135,22 @@ def run(h):
     chk('card list is not an inner scroller (one scroll area only)', p.evaluate("(function(){var e=document.getElementById('impPreview');var o=getComputedStyle(e).overflowY;return o==='visible'&&e.scrollHeight<=e.clientHeight+1})()"))
     p.click('#impCard1 .impopen'); p.wait_for_timeout(200)
     chk('tap a card opens its editor', p.query_selector('#impE_title_1') is not None)
-    p.select_option('#impE_priority_1', '3'); p.fill('#impE_notes_1', 'edited note'); p.click('[data-imp=save][data-i="1"]'); p.wait_for_timeout(600)
+    p.fill('#impE_notes_1', 'edited note'); p.click('[data-imp=ed][data-i="1"][data-f=prio][data-v="3"]'); p.wait_for_timeout(150)
+    chk('typed text survives pressing a chip in the editor', p.input_value('#impE_notes_1') == 'edited note')
+    p.click('[data-imp=save][data-i="1"]'); p.wait_for_timeout(600)
     cd = p.inner_text('#impCard1')
     chk('edit saved: card shows !!! (3) and the note, re-checked by the server', '!!! (3)' in cd and 'edited note' in cd and p.query_selector('#impE_title_1') is None, cd[:200])
     p.click('#impCard2 [data-imp=del]'); p.wait_for_timeout(200)
     chk('bad card removed with the x', p.query_selector('#impCard2') is None and 'with problems' not in p.inner_text('#tabBody'))
     p.select_option('#impPS1', 'Beta'); p.wait_for_timeout(200)
     chk('matching an existing project clears the flag and sets the category', p.query_selector('#impPS1') is None and 'Beta' in p.inner_text('#impCard1'))
-    p.click('[data-imp=dupall][data-v=update]'); p.wait_for_timeout(200)
-    chk('Update them all relabels the button', p.inner_text('#impGoTop').strip() == 'Add 1 task and update 1 task', p.inner_text('#impGoTop'))
+    p.click('[data-imp=act][data-i="0"][data-v=update]'); p.click('#impCard0 .impopen'); p.wait_for_timeout(200)
+    p.fill('#impE_title_0', 'Plan the review step edited'); p.click('[data-imp=save][data-i="0"]'); p.wait_for_timeout(600)
+    chk('Update chosen, then the title edited (no longer matches): still an update, button label right', p.inner_text('#impGoTop').strip() == 'Add 1 task and update 1 task', p.inner_text('#impGoTop'))
     before = {x['title']: dict(x) for x in h.todos}
     p.click('#impGo'); p.wait_for_timeout(900)
-    chk('1 added, 1 updated (existing task changed, not duplicated)', len(h.todos) == n2 + 1 and 'Added 1 task and updated 1 task' in p.inner_text('#impDone'), p.inner_text('#tabBody')[:200])
-    up = [x for x in h.todos if x['title'] == 'Plan the review step']
+    chk('Go works after editing an Update card: 1 added, 1 renamed (not duplicated)', len(h.todos) == n2 + 1 and 'Added 1 task and updated 1 task' in p.inner_text('#impDone'), p.inner_text('#tabBody')[:200])
+    up = [x for x in h.todos if x['title'] == 'Plan the review step edited']
     chk('update touched only the columns in the file (category, priority) and kept sub-tasks/notes', len(up) == 1 and up[0]['category'] == 'Alpha' and up[0]['prio'] == 2 and len(up[0]['items']) == 3 and '- India doctors' in (up[0]['notes'] or ''), up[:1])
     chk('new project was not created when an existing one was picked', not h.proj_posts, h.proj_posts)
     # new project is created when kept
@@ -195,5 +198,8 @@ def run(h):
         pg.click('.tab[data-val=import]'); pg.wait_for_timeout(300)
         chk('%s: Import tab opens with Paste and no file picker or template download' % label, pg.query_selector('#impPaste') is not None and pg.query_selector('#impFile') is None and pg.query_selector('#impTpl') is None)
         chk('%s: no horizontal overflow, paste box fits the screen' % label, not pg.evaluate("document.documentElement.scrollWidth > window.innerWidth") and pg.evaluate("document.getElementById('impPaste').getBoundingClientRect().right <= window.innerWidth"))
+        pg.fill('#impPaste', 'title,list,category,due_date,notes\nOverflow check,work,A very long project name for a phone screen,2026-11-09,some notes\n'); pg.click('#impCheck'); pg.wait_for_timeout(900)
+        pg.click('#impCard0 .impopen'); pg.wait_for_timeout(300)
+        chk('%s: editor open, no horizontal overflow, inputs 16px+ (no zoom)' % label, not pg.evaluate("document.documentElement.scrollWidth > window.innerWidth") and pg.evaluate("Array.prototype.every.call(document.querySelectorAll('#impEdit0 input, #impEdit0 textarea, #impPaste'), function(e){return parseFloat(getComputedStyle(e).fontSize) >= 16})"))
         ctx.close()
     return R

@@ -21,7 +21,7 @@
     recur: 'repeat', recurrence: 'repeat', repeats: 'repeat', frequency: 'repeat', prio: 'priority', quick_task: 'quick', must: 'must_today', must_do_today: 'must_today',
     note: 'notes', details: 'notes', description: 'notes', comment: 'notes', comments: 'notes',
     task_id: 'id', uuid: 'id', subtask: 'subtasks', sub_tasks: 'subtasks', sub_task: 'subtasks', steps: 'subtasks', checklist: 'subtasks', items: 'subtasks' };
-  var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false, show: null }, exp = { note: '' }, projects = null;
+  var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false, show: null }, exp = { note: '' }, projects = null, cache = null;
   function fresh() { return { phase: 'idle', file: '', batch: '', rows: [], items: [], ignored: [], mapping: [], msg: '', added: 0, updated: 0, skipped: 0, bad: 0 }; }
   st = fresh();
   st = fresh();
@@ -144,7 +144,7 @@
   function normT(t) { return String(t || '').toLowerCase().replace(/\s+/g, ' ').replace(/^ | $/g, ''); }
   /* Settings pauses the app's own refresh, so ask the server for the current list when it matters (a duplicate check or an export). */
   function freshTodos(cb) {
-    App.api('GET', '', null, function (s, d) { cb(s === 200 && d && d.todos ? d.todos : ((App.todos && App.todos()) || [])); });
+    App.api('GET', '', null, function (s, d) { if (s === 200 && d && d.todos) cache = d.todos; cb(s === 200 && d && d.todos ? d.todos : ((App.todos && App.todos()) || [])); });
   }
   function openTasks(l) {
     var out = {}, i, k;
@@ -164,7 +164,7 @@
     var v = it.p.value, t = v.title ? known[normT(v.title)] : null, c;
     if (v.id) { it.act = 'update'; it.target = v.id; it.dup = null; }
     else if (t) { if (!it.dup || it.dup.id !== t.id) { it.dup = { id: t.id, due: t.due_date || '', title: t.title }; it.act = 'skip'; } }
-    else { it.dup = null; if (it.act === 'skip') it.act = 'add'; }
+    else { it.dup = null; if (it.act === 'skip') it.act = 'add'; } // an 'update' chosen earlier keeps its target even if the title was edited
     it.proj = null; c = v.category;
     if (v.list === 'work' && c && projects && !knownProject(c)) it.proj = { name: c };
     else if (v.list === 'work' && c && projects) { var kp = knownProject(c); if (kp !== c) { it.raw.category = kp; v.category = kp; } }
@@ -176,7 +176,7 @@
       if (it.dup && !it.p.value.id) o.dups++;
       if (it.p.errors.length) { o.bad++; continue; }
       if (it.act === 'skip') { o.skip++; continue; }
-      if (it.act === 'update') o.upd++; else o.add++;
+      if (it.act === 'update' && (it.target || it.dup)) o.upd++; else o.add++;
       if (it.proj) { k = it.proj.name.toLowerCase(); if (!seen[k]) { seen[k] = 1; o.names.push(it.proj.name); } }
     }
     return o;
@@ -205,20 +205,20 @@
 
   function cloneRaw(o) { var r = {}, k; for (k in o) if (o.hasOwnProperty(k)) r[k] = o[k]; return r; }
   function run() {
-    var send = [], adds = [], upds = [], addVals = [], names = [], seen = {}, i, it, r, k, parts = [], at = 0, nSkip = 0, nBad = 0, t = tally();
+    var tid, send = [], adds = [], upds = [], addVals = [], names = [], seen = {}, i, it, r, k, parts = [], at = 0, nSkip = 0, nBad = 0, t = tally();
     for (i = 0; i < st.items.length; i++) {
       it = st.items[i];
       if (it.p.errors.length) { nBad++; continue; }
       if (it.act === 'skip') { nSkip++; continue; }
-      r = cloneRaw(it.raw);
-      if (it.act === 'update') { r.id = it.target || it.dup.id; upds.push(r); } else { delete r.id; adds.push(r); addVals.push(it.p.value); }
+      r = cloneRaw(it.raw); tid = it.target || (it.dup && it.dup.id);
+      if (it.act === 'update' && tid) { r.id = tid; upds.push(r); } else { delete r.id; adds.push(r); addVals.push(it.p.value); }
       if (it.proj) { k = it.proj.name.toLowerCase(); if (!seen[k]) { seen[k] = 1; names.push(it.proj.name); } }
     }
     send = adds.concat(upds); // new tasks first: the first request carries the CSV copy kept in Previous imports
     if (!send.length) return;
     for (i = 0; i < send.length; i += CHUNK) parts.push(send.slice(i, i + CHUNK));
     st.phase = 'importing'; st.added = 0; st.updated = 0; st.skipped = nSkip; st.bad = nBad; st.msg = ''; paint();
-    function finish() { App.mutated(); App.reloadWhenSettingsClose(); loadHist(); }
+    function finish() { App.mutated(); App.reloadWhenSettingsClose(); loadHist(); freshTodos(function () {}); }
     function go() {
       if (at >= parts.length) { st.phase = 'done'; finish(); paint(); return; }
       var req = { rows: parts[at], batch: st.batch, name: st.file }; if (at === 0 && addVals.length) req.csv = canonCSV(addVals);
@@ -286,27 +286,28 @@
     });
   }
   function say(where, msg) { if (where === 'exp') exp.note = msg; else hist.note = msg; }
-  function showText(d, why, where) { hist.show = { name: d.name, csv: d.csv, why: why, where: where || 'hist' }; paint(); var ta = document.getElementById('impCsvBox'); if (ta) { ta.focus(); ta.select(); } }
+  function selectBox(ta) { try { ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length); } catch (e) {} }
+  function showText(d, why, where) { hist.show = { name: d.name, csv: d.csv, why: why, where: where || 'hist' }; paint(); var ta = document.getElementById('impCsvBox'); if (ta) setTimeout(function () { selectBox(ta); }, 50); }
   /* d = { name, csv, file? }. where = 'hist' (Previous imports) or 'exp' (Export). */
   function copyData(d, where) {
     var done = function () { say(where, 'Copied “' + (d.name || 'import') + '” (' + d.csv.split('\n').length + ' lines) to the clipboard.'); paint(); };
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) { navigator.clipboard.writeText(d.csv).then(done, function () { showText(d, 'Select all and copy this text.', where); }); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) { navigator.clipboard.writeText(d.csv).then(done, function () { showText(d, 'Tap inside the box, tap Select All, then Copy.', where); }); return; }
       var t = document.createElement('textarea'); t.value = d.csv; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
       document.body.appendChild(t); t.focus(); t.select(); try { t.setSelectionRange(0, d.csv.length); } catch (e1) {}
       var ok = document.execCommand && document.execCommand('copy'); document.body.removeChild(t);
-      if (ok) done(); else showText(d, 'Your browser would not copy automatically. Select all and copy this text.', where);
-    } catch (e) { showText(d, 'Select all and copy this text.', where); }
+      if (ok) done(); else showText(d, 'Your browser would not copy automatically. Tap inside the box, tap Select All, then Copy.', where);
+    } catch (e) { showText(d, 'Tap inside the box, tap Select All, then Copy.', where); }
   }
   function saveData(d, where) {
     var fn = d.file || fileName(d.name);
-    if (oldIOS) { showText(d, 'This browser cannot save files. Select all and copy this text instead.', where); return; }
+    if (oldIOS) { showText(d, 'This browser cannot save files. Tap inside the box, tap Select All, then Copy.', where); return; }
     try {
       var blob = new Blob([d.csv], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
       a.href = URL.createObjectURL(blob); a.download = fn;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       say(where, 'Downloaded ' + fn + '.'); paint();
-    } catch (e) { showText(d, 'Could not save a file here. Select all and copy this text instead.', where); }
+    } catch (e) { showText(d, 'Could not save a file here. Tap inside the box, tap Select All, then Copy.', where); }
   }
   function copyImport(id) { withCsv(id, function (d) { copyData(d, 'hist'); }); }
   function downloadImport(id) { withCsv(id, function (d) { saveData(d, 'hist'); }); }
@@ -317,7 +318,7 @@
   }
   function panelHTML(where) {
     if (!hist.show || hist.show.where !== where) return '';
-    return '<div class="impcsvpanel" id="impCsvPanel"><div class="impinfo">' + esc(hist.show.why || '') + '</div><textarea id="impCsvBox" class="impta" rows="8" readonly spellcheck="false">' + esc(hist.show.csv) + '</textarea><div class="improw"><button class="btn" data-imp="closecsv" type="button">Close</button></div></div>';
+    return '<div class="impcsvpanel" id="impCsvPanel"><div class="impinfo">' + esc(hist.show.why || '') + '</div><textarea id="impCsvBox" class="impta" rows="8" spellcheck="false" autocorrect="off" autocapitalize="off">' + esc(hist.show.csv) + '</textarea><div class="improw"><button class="btn" data-imp="closecsv" type="button">Close</button></div></div>';
   }
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -358,24 +359,54 @@
     if (blank.length) h += '<div class="impinfo">Not in the file (left blank): ' + esc(blank.join(', ')) + '</div>';
     return h + '</div>';
   }
-  /* ---------- review cards (tap a card to edit it) ---------- */
-  function fld(label, inner, wide) { return '<label class="impfld' + (wide ? ' wide' : '') + '"><span>' + esc(label) + '</span>' + inner + '</label>'; }
-  function opt(val, label, cur) { return '<option value="' + esc(val) + '"' + (String(cur) === String(val) ? ' selected' : '') + '>' + esc(label) + '</option>'; }
+  /* ---------- review cards (tap a card to edit it; the editor reuses the task editor's look) ---------- */
+  function isoDay(n) { var d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function draftOf(v) { return { title: v.title || '', list: v.list || 'personal', category: v.category || '', due_date: v.due_date || '', remind_time: v.remind_time || '', repeat: v.recur || '', priority: v.prio || 0, quick: !!v.quick, must: !!v.must, notes: v.notes || '', subs: subLines(v.subtasks).join('\n') }; }
+  function draftCols(d) {
+    var lines = d.subs.split(/\r?\n/), out = [], k, x;
+    for (k = 0; k < lines.length; k++) { x = lines[k].replace(/^\s+|\s+$/g, ''); if (x) out.push(escPipe(x)); }
+    return { title: d.title.replace(/\s+/g, ' ').replace(/^ | $/g, ''), list: d.list, category: d.category.replace(/\s+/g, ' ').replace(/^ | $/g, ''), due_date: d.due_date, remind_time: d.remind_time, repeat: d.repeat,
+      priority: String(d.priority), quick: d.quick ? 'yes' : 'no', must_today: d.must ? 'yes' : 'no', notes: d.notes.replace(/^\s+|\s+$/g, ''), subtasks: out.join('\n') };
+  }
+  function syncDraft(i) { // typed text lives in the inputs until a button repaints the editor
+    var d = st.items[i].draft, g = function (n) { return document.getElementById('impE_' + n + '_' + i); }, k, map = { title: 'title', category: 'category', due_date: 'due_date', remind_time: 'remind_time', notes: 'notes', subs: 'subs' };
+    if (!d) return;
+    for (k in map) if (map.hasOwnProperty(k) && g(map[k])) d[k] = g(map[k]).value;
+  }
+  function setDraft(d, f, v) {
+    if (f === 'list') d.list = v;
+    else if (f === 'prio') d.priority = +v;
+    else if (f === 'recur') d.repeat = v;
+    else if (f === 'quick') d.quick = !d.quick;
+    else if (f === 'must') d.must = !d.must;
+    else if (f === 'cat') d.category = v;
+    else if (f === 'when') d.due_date = v === 'today' ? isoDay(0) : v === 'tomorrow' ? isoDay(1) : '';
+    else if (f === 'time') d.remind_time = v;
+  }
+  function chipB(i, f, v, label, on) { return '<button class="chip' + (on ? ' on' : '') + '" type="button" data-imp="ed" data-i="' + i + '" data-f="' + f + '" data-v="' + esc(v) + '">' + label + '</button>'; }
+  function frowH(label, inner) { return '<div class="frow"><div class="flbl">' + esc(label) + '</div><div class="fctl">' + inner + '</div></div>'; }
   function editorHTML(it, i) {
-    var v = it.p.value, id = function (n) { return 'impE_' + n + '_' + i; }, h = '<div class="impedit" id="impEdit' + i + '">', rep = ['', 'daily', 'weekdays', 'weekly', 'fortnightly', 'monthly', 'yearly'], j, r = '', pr = '';
-    for (j = 0; j < rep.length; j++) r += opt(rep[j], rep[j] || 'does not repeat', v.recur || '');
-    for (j = 0; j <= 3; j++) pr += opt(j, j === 0 ? '0 – none' : j === 3 ? '3 – most important' : String(j), v.prio || 0);
-    h += fld('Title', '<input type="text" class="impin" id="' + id('title') + '" value="' + esc(v.title) + '">', true);
-    h += fld('List', '<select class="impin" id="' + id('list') + '">' + opt('personal', 'Personal', v.list) + opt('work', 'Work', v.list) + '</select>');
-    h += fld('Category / project', '<input type="text" class="impin" id="' + id('category') + '" value="' + esc(v.category || '') + '">');
-    h += fld('Due date', '<input type="date" class="impin" id="' + id('due_date') + '" value="' + esc(v.due_date || '') + '">');
-    h += fld('Reminder time', '<input type="time" class="impin" id="' + id('remind_time') + '" value="' + esc(v.remind_time || '') + '">');
-    h += fld('Repeat', '<select class="impin" id="' + id('repeat') + '">' + r + '</select>');
-    h += fld('Priority', '<select class="impin" id="' + id('priority') + '">' + pr + '</select>');
-    h += '<div class="impfld wide impchecks"><label><input type="checkbox" id="' + id('quick') + '"' + (v.quick ? ' checked' : '') + '> Quick</label><label><input type="checkbox" id="' + id('must_today') + '"' + (v.must ? ' checked' : '') + '> Must do today</label></div>';
-    h += fld('Notes', '<textarea class="impin" rows="4" id="' + id('notes') + '">' + esc(v.notes || '') + '</textarea>', true);
-    h += fld('Sub-tasks (one per line, start with [x] if done)', '<textarea class="impin" rows="4" id="' + id('subtasks') + '">' + esc(subLines(v.subtasks).join('\n')) + '</textarea>', true);
-    return h + '<div class="improw"><button class="btn primary" data-imp="save" data-i="' + i + '" type="button">Save changes</button><button class="btn" data-imp="open" data-i="' + i + '" type="button">Cancel</button></div></div>';
+    var d = it.draft, id = function (n) { return 'impE_' + n + '_' + i; }, work = d.list === 'work', h = '<div class="impedit" id="impEdit' + i + '">', j, w, t, pg = '', rc = '', pc = '';
+    h += '<div class="shead"><div class="sg"><button type="button" class="' + (!work ? 'on' : '') + '" data-imp="ed" data-i="' + i + '" data-f="list" data-v="personal">Personal</button><button type="button" class="' + (work ? 'on' : '') + '" data-imp="ed" data-i="' + i + '" data-f="list" data-v="work">Work</button></div></div>';
+    h += '<input class="etitle" id="' + id('title') + '" type="text" maxlength="500" autocorrect="off" placeholder="Task title" value="' + esc(d.title) + '">';
+    w = chipB(i, 'when', 'today', 'Today', d.due_date === isoDay(0)) + chipB(i, 'when', 'tomorrow', 'Tomorrow', d.due_date === isoDay(1)) + chipB(i, 'when', 'none', 'No date', !d.due_date) + '<input class="edate" id="' + id('due_date') + '" type="date" value="' + esc(d.due_date) + '">';
+    t = ''; var tq = [['09:00', '9am'], ['12:00', '12pm'], ['15:00', '3pm'], ['18:00', '6pm']];
+    for (j = 0; j < tq.length; j++) t += chipB(i, 'time', tq[j][0], tq[j][1], d.remind_time === tq[j][0]);
+    t += chipB(i, 'time', '', 'None', !d.remind_time) + '<input class="edate" id="' + id('remind_time') + '" type="time" value="' + esc(d.remind_time) + '">';
+    h += '<div class="fsec">' + frowH('Due', w) + frowH('Time', t) + '</div>';
+    if (work) {
+      var pl = [[0, 'None'], [1, '!'], [2, '!!'], [3, '!!!']];
+      for (j = 0; j < pl.length; j++) pg += '<button type="button" class="' + (d.priority === pl[j][0] ? 'on' : '') + '" data-imp="ed" data-i="' + i + '" data-f="prio" data-v="' + pl[j][0] + '">' + pl[j][1] + '</button>';
+      h += '<div class="fsec">' + frowH('Priority', '<div class="sg">' + pg + '</div>') + frowH('Flags', chipB(i, 'quick', '', '⚡ Quick win', d.quick) + chipB(i, 'must', '', 'Must do today', d.must)) + '</div>';
+    }
+    if (work) for (j = 0; j < (projects || []).length; j++) pc += chipB(i, 'cat', projects[j], esc(projects[j]), d.category.toLowerCase() === String(projects[j]).toLowerCase());
+    h += '<div class="fsec">' + frowH('Category', pc + '<input class="edate" id="' + id('category') + '" type="text" maxlength="60" autocorrect="off" placeholder="' + (work ? 'Project name' : 'Category') + '" value="' + esc(d.category) + '">') +
+      frowH('Notes', '<textarea id="' + id('notes') + '" maxlength="2000" rows="3" autocorrect="off" placeholder="Optional notes…">' + esc(d.notes) + '</textarea>') + '</div>';
+    rc = chipB(i, 'recur', '', 'None', !d.repeat);
+    var rl = ['daily', 'weekdays', 'weekly', 'fortnightly', 'monthly', 'yearly'];
+    for (j = 0; j < rl.length; j++) rc += chipB(i, 'recur', rl[j], rl[j].charAt(0).toUpperCase() + rl[j].slice(1), d.repeat === rl[j]);
+    h += '<div class="fsec">' + frowH('Repeat', rc) + frowH('Sub-tasks', '<textarea id="' + id('subs') + '" rows="4" autocorrect="off" placeholder="One per line. Start with [x] if done.">' + esc(d.subs) + '</textarea>') + '</div>';
+    return h + '<div class="sfoot"><span class="sp"></span><button class="btn" type="button" data-imp="open" data-i="' + i + '">Cancel</button><button class="btn primary" type="button" data-imp="save" data-i="' + i + '">Save</button></div></div>';
   }
   function cardHTML(it, i) {
     var p = it.p, v = p.value, bad = p.errors.length > 0, skip = !bad && it.act === 'skip', h, c = '', n, k;
@@ -498,22 +529,11 @@
   }
 
   /* ---------- editing a card ---------- */
-  function readDraft(i) {
-    var g = function (n) { return document.getElementById('impE_' + n + '_' + i); }, d = {}, lines, k, s;
-    d.title = g('title').value.replace(/\s+/g, ' ').replace(/^ | $/g, '');
-    d.list = g('list').value; d.category = g('category').value.replace(/\s+/g, ' ').replace(/^ | $/g, '');
-    d.due_date = g('due_date').value; d.remind_time = g('remind_time').value; d.repeat = g('repeat').value; d.priority = g('priority').value;
-    d.quick = g('quick').checked ? 'yes' : 'no'; d.must_today = g('must_today').checked ? 'yes' : 'no';
-    d.notes = g('notes').value.replace(/^\s+|\s+$/g, '');
-    lines = g('subtasks').value.split(/\r?\n/); s = [];
-    for (k = 0; k < lines.length; k++) { lines[k] = lines[k].replace(/^\s+|\s+$/g, ''); if (lines[k]) s.push(escPipe(lines[k])); }
-    d.subtasks = s.join('\n');
-    return d;
-  }
   function saveEdit(i) {
-    var it = st.items[i], v = it.p.value, d = readDraft(i), c, changed = false;
+    var it = st.items[i], v = it.p.value, d, c, changed = false;
+    syncDraft(i); d = draftCols(it.draft);
     for (c in d) if (d.hasOwnProperty(c) && d[c] !== colStr(v, c)) { it.raw[c] = d[c]; changed = true; }
-    it.open = false;
+    it.open = false; it.draft = null;
     if (!changed) { paint(); return; }
     App.api('POST', '?bulk=1', { rows: [it.raw], dry: true }, function (s, r) {
       if ((s === 200 || s === 400) && r && r.preview && r.preview[0]) { it.p = r.preview[0]; setup(it, st.known || {}); }
@@ -523,7 +543,11 @@
   }
 
   function onClick(e) {
+    try { onClick2(e); } catch (err) { st.msg = 'Something went wrong (' + (err && err.message ? err.message : err) + '). Nothing was changed; try again.'; paint(); }
+  }
+  function onClick2(e) {
     var el = e.target, id, a, i, v, j;
+    if (el && el.id === 'impCsvBox') { selectBox(el); return; }
     while (el && el !== body) { if (el.getAttribute && el.getAttribute('data-imp')) break; el = el.parentNode; }
     if (!el || el === body) return;
     a = el.getAttribute('data-imp'); id = el.getAttribute('data-id'); i = +el.getAttribute('data-i'); v = el.getAttribute('data-v');
@@ -533,8 +557,8 @@
     else if (a === 'yes') undo(id);
     else if (a === 'copy') copyImport(id);
     else if (a === 'dl') downloadImport(id);
-    else if (a === 'expcopy') freshTodos(function (l) { copyData(exportData(l), 'exp'); });
-    else if (a === 'expdl') freshTodos(function (l) { saveData(exportData(l), 'exp'); });
+    else if (a === 'expcopy') copyData(exportData(cache || (App.todos && App.todos()) || []), 'exp'); // synchronous: iOS only copies inside the tap
+    else if (a === 'expdl') saveData(exportData(cache || (App.todos && App.todos()) || []), 'exp');
     else if (a === 'closecsv') { hist.show = null; paint(); }
     else if (a === 'mfile') { mode = 'file'; paint(); }
     else if (a === 'mpaste') { mode = 'paste'; paint(); }
@@ -542,11 +566,12 @@
     else if (a === 'clear') { pasteText = ''; st = fresh(); paint(); }
     else if (a === 'check') start(pasteText, 'Pasted CSV');
     else if (a === 'go') run();
-    else if (a === 'open' && st.items[i]) { st.items[i].open = !st.items[i].open; paint(); var ed = document.getElementById('impCard' + i); if (ed && ed.scrollIntoView && st.items[i].open) ed.scrollIntoView(); }
+    else if (a === 'open' && st.items[i]) { st.items[i].open = !st.items[i].open; st.items[i].draft = st.items[i].open ? draftOf(st.items[i].p.value) : null; paint(); }
+    else if (a === 'ed' && st.items[i] && st.items[i].draft) { syncDraft(i); setDraft(st.items[i].draft, el.getAttribute('data-f'), v); paint(); }
     else if (a === 'save' && st.items[i]) saveEdit(i);
     else if (a === 'del' && st.items[i]) { st.items.splice(i, 1); if (!st.items.length) { st = fresh(); st.msg = 'Every task was removed from this import.'; } paint(); }
-    else if (a === 'act' && st.items[i]) { st.items[i].act = v; paint(); }
-    else if (a === 'dupall') { for (j = 0; j < st.items.length; j++) if (st.items[j].dup && !st.items[j].p.value.id) st.items[j].act = v; paint(); }
+    else if (a === 'act' && st.items[i]) { st.items[i].act = v; st.items[i].target = v === 'update' && st.items[i].dup ? st.items[i].dup.id : null; paint(); }
+    else if (a === 'dupall') { for (j = 0; j < st.items.length; j++) if (st.items[j].dup && !st.items[j].p.value.id) { st.items[j].act = v; st.items[j].target = v === 'update' ? st.items[j].dup.id : null; } paint(); }
   }
   function onChange(e) { // choosing an existing project on a card whose project is new
     var el = e.target, i, it, pick;
@@ -558,7 +583,7 @@
 
   App.addTab('import', 'Import', function (el) {
     if (body !== el) { body = el; body.onclick = onClick; body.onchange = onChange; }
-    paint();
+    cache = null; paint();
     if (hist.list === null || !hist.busy) loadHist();
   });
 })();

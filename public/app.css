@@ -214,7 +214,7 @@ body[data-view=board] .seg.projsw,body[data-view=pprojects] .seg.projsw{display:
 .sbody{-webkit-flex:1 1 auto;flex:1 1 auto;min-height:0;padding:4px 18px 14px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .sfoot{-webkit-flex:none;flex:none;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;padding:12px 18px;padding-bottom:calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--rule);background:var(--paper)}
 .sfoot .sp{-webkit-flex:1;flex:1}
-#sheet .etitle{padding:8px 0 12px;border:0;border-bottom:1px solid var(--rule);border-radius:0;background:none;font:700 22px/1.3 var(--sans);letter-spacing:-.3px}
+#sheet .etitle,.impedit .etitle{padding:8px 0 12px;border:0;border-bottom:1px solid var(--rule);border-radius:0;background:none;font:700 22px/1.3 var(--sans);letter-spacing:-.3px}
 .fsec{margin-top:6px;padding:4px 0 8px;border-bottom:1px solid var(--rule)}
 #eMore{border-bottom:0}
 .frow{display:-webkit-flex;display:flex;-webkit-align-items:flex-start;align-items:flex-start;padding:4px 0}
@@ -427,7 +427,7 @@ html.work #projBtn{display:inline-block}
 .impdropt{margin-bottom:10px;font-size:var(--fs-sm);color:var(--muted)}
 .impfilebtn{display:inline-block;margin-left:0;line-height:28px;cursor:pointer}
 .impfile{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)}
-.impta{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--rule);border-radius:var(--r2);background:var(--bg);color:var(--ink);font:13px/1.45 Menlo,Consolas,monospace;-webkit-appearance:none;outline:none;resize:vertical}
+.impta{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--rule);border-radius:var(--r2);background:var(--bg);color:var(--ink);font:16px/1.45 Menlo,Consolas,monospace;-webkit-user-select:text;user-select:text;-webkit-appearance:none;outline:none;resize:vertical}
 .improw{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;gap:8px;margin-top:10px}
 .improw .btn{margin-left:0}
 .imph{margin:18px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
@@ -463,14 +463,9 @@ html.work #projBtn{display:inline-block}
 .impdupbar{margin:6px 0 10px}.impdup .seg,.impdupbar .seg{display:block;margin:6px 0 0}
 .impdup .seg button,.impdupbar .seg button{min-width:0;padding:0 12px}
 .impproj select{display:block;margin-top:6px}
-.impedit{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;gap:8px 12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--rule)}
-.impfld{-webkit-flex:1 1 200px;flex:1 1 200px;min-width:0;display:block;font-size:12px;color:var(--muted)}
-.impfld.wide{-webkit-flex-basis:100%;flex-basis:100%}
-.impfld span{display:block;margin-bottom:4px}
-.impin{display:block;width:100%;box-sizing:border-box;min-height:44px;padding:8px 10px;border:1px solid var(--rule);border-radius:var(--r2);background:var(--bg);color:var(--ink);font:16px/1.4 inherit;-webkit-appearance:none;outline:none}
-textarea.impin{min-height:0;resize:vertical}
-.impchecks label{display:inline-block;min-height:44px;margin-right:16px;font-size:var(--fs-sm);color:var(--ink)}
-.impedit .improw{-webkit-flex-basis:100%;flex-basis:100%}
+.impedit{margin-top:10px;padding-top:6px;border-top:1px solid var(--rule)}
+.impedit .shead{padding:6px 0}.impedit .sfoot{padding:12px 0 0;border-top:0}
+.impin{display:block;width:100%;max-width:100%;box-sizing:border-box;min-height:44px;margin-top:6px;padding:8px 10px;border:1px solid var(--rule);border-radius:var(--r2);background:var(--bg);color:var(--ink);font-family:inherit;font-size:16px;line-height:1.4;-webkit-appearance:none;outline:none}
 .imph.impsub{margin-top:16px}
 
 .impgo{margin-top:14px}.impgobtn{display:block;width:100%;margin-left:0;font-size:var(--fs-md)}
