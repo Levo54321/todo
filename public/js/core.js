@@ -1811,6 +1811,7 @@
   App.isIdle = function () { return idle; };
   App.applySettings = function (sv) { applySettings(sv); render(); };
   App.addTab = function (id, label, fn) { App.tabs[id] = { render: fn }; App.tabList.push([id, label]); };
+  App.openSettingsTab = function (id) { openSettings(); if (App.tabs[id]) { settingsTab = id; renderSettings(); } };
   App.refreshTab = function () { if (setDraft && settingsTab !== 'general' && App.tabs[settingsTab]) App.tabs[settingsTab].render($('tabBody')); };
   App.register = function (name, def) {
     App.views[name] = def;

@@ -22,7 +22,7 @@
     note: 'notes', details: 'notes', description: 'notes', comment: 'notes', comments: 'notes',
     task_id: 'id', uuid: 'id', subtask: 'subtasks', sub_tasks: 'subtasks', sub_task: 'subtasks', steps: 'subtasks', checklist: 'subtasks', items: 'subtasks' };
   var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false, show: null }, exp = { note: '' }, projects = null, cache = null;
-  function fresh() { return { phase: 'idle', file: '', batch: '', rows: [], items: [], ignored: [], mapping: [], msg: '', added: 0, updated: 0, skipped: 0, bad: 0 }; }
+  function fresh() { return { scan: '', phase: 'idle', file: '', batch: '', rows: [], items: [], ignored: [], mapping: [], msg: '', added: 0, updated: 0, skipped: 0, bad: 0 }; }
   st = fresh();
   st = fresh();
   function uuid() {
@@ -220,7 +220,7 @@
     st.phase = 'importing'; st.added = 0; st.updated = 0; st.skipped = nSkip; st.bad = nBad; st.msg = ''; paint();
     function finish() { App.mutated(); App.reloadWhenSettingsClose(); loadHist(); freshTodos(function () {}); }
     function go() {
-      if (at >= parts.length) { st.phase = 'done'; finish(); paint(); return; }
+      if (at >= parts.length) { st.phase = 'done'; if (st.scan) scanDone(st.scan); finish(); paint(); return; }
       var req = { rows: parts[at], batch: st.batch, name: st.file }; if (at === 0 && addVals.length) req.csv = canonCSV(addVals);
       App.api('POST', '?bulk=1', req, function (s, d) {
         if (s === 201 && d && d.ok) { st.added += d.added || 0; st.updated += d.updated || 0; at++; go(); }
@@ -580,6 +580,38 @@
     pick = el.value; if (!pick) return;
     it.raw.category = pick; it.p.value.category = pick; it.proj = null; paint();
   }
+
+  /* ---------- scanned notes: a photo sent from the Shortcut is read on the server and waits here for review (v1065) ---------- */
+  var scanBar = null, scanInfo = null, wantScan = /[?&]open=scan(&|#|$)/.test(window.location.search || '');
+  function scanPaint() {
+    if (!scanBar) scanBar = document.getElementById('scanbar');
+    if (!scanBar) return;
+    if (!scanInfo) { scanBar.style.display = 'none'; scanBar.innerHTML = ''; return; }
+    scanBar.innerHTML = '<span class="scantx">Scan ready: <b>' + plural(scanInfo.n || 0, 'task') + '</b> from your photo</span>' +
+      '<button class="btn primary" type="button" data-scan="review">Review</button><button class="btn" type="button" data-scan="skip">Dismiss</button>';
+    scanBar.style.display = 'block';
+    scanBar.onclick = function (e) {
+      var a = e.target && e.target.getAttribute ? e.target.getAttribute('data-scan') : null;
+      if (a === 'review') reviewScan(); else if (a === 'skip' && scanInfo) scanDone(scanInfo.id);
+    };
+  }
+  function scanDone(id) {
+    App.api('POST', '?scan_done=' + encodeURIComponent(id), {}, function () {});
+    if (scanInfo && scanInfo.id === id) { scanInfo = null; scanPaint(); }
+  }
+  function reviewScan() {
+    if (!scanInfo || (st && st.phase === 'importing')) return;
+    var sc = scanInfo;
+    App.openSettingsTab('import'); // draws the Import tab, which gives the module its body
+    mode = 'paste'; pasteText = '';
+    start(sc.csv, 'Photo scan'); st.scan = sc.id;
+  }
+  App.whenToken(function () {
+    App.api('GET', '?scan=1', null, function (s, d) {
+      scanInfo = (s === 200 && d && d.scan && d.scan.csv) ? d.scan : null; scanPaint();
+      if (wantScan && scanInfo) reviewScan();
+    });
+  });
 
   App.addTab('import', 'Import', function (el) {
     if (body !== el) { body = el; body.onclick = onClick; body.onchange = onChange; }

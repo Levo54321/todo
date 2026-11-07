@@ -460,6 +460,9 @@ html.work #projBtn{display:inline-block}
 .impchip.u{background-color:var(--accent);color:var(--onaccent);font-weight:600}
 .impgo.top{margin:6px 0 10px}.impgobtn:disabled{opacity:.5}
 .impdup,.impdupbar{margin-top:8px;padding:8px 12px;border-radius:var(--r1);background:var(--warnbg);color:var(--warnink);font-size:var(--fs-sm);line-height:1.45}
+.scanbar{margin:0 var(--s4) var(--s2);padding:var(--s3) var(--s4);border-radius:var(--r2);background:var(--accentbg);color:var(--ink)}
+.scantx{display:block;margin-bottom:var(--s2);font-size:var(--fs-md);line-height:1.4}
+.scanbar .btn{margin:0 var(--s2) 0 0}
 .impdupbar{margin:6px 0 10px}.impdup .seg,.impdupbar .seg{display:block;margin:6px 0 0}
 .impdup .seg button,.impdupbar .seg button{min-width:0;padding:0 12px}
 .impproj select{display:block;margin-top:6px}

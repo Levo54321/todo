@@ -36,6 +36,7 @@ class H:
         self.calls = []
         self.same = 0  # how many GET /api/todos?v= were answered "same" (unchanged)
         self.imports = []  # CSV import history (todo_imports)
+        self.scan = None  # a scanned photo waiting for review: {id, csv, n, created_at, status}
         self.proj_posts = []  # names POSTed to /api/projects (import creating new projects)
         self.fail_bulk = False  # make the real (non-dry) CSV import answer 500
         self.fail_delete = False  # make DELETE /api/todos answer 500 (the task stays on the server)
@@ -49,6 +50,11 @@ class H:
         self.calls.append((method, path, q, body))
         if path in self.extra: return self.extra[path](self, method, q, body)
         if path == '/api/todos':
+            if method == 'GET' and 'scan' in q:  # newest scan still waiting for review (todo_scan_latest)
+                return 200, {'scan': ({'id': self.scan['id'], 'csv': self.scan['csv'], 'n': self.scan['n'], 'created_at': self.scan['created_at']} if self.scan and self.scan.get('status') != 'done' else None)}
+            if method == 'POST' and 'scan_done' in q:
+                if self.scan and self.scan['id'] == q['scan_done'][0]: self.scan['status'] = 'done'
+                return 200, {'ok': True}
             if method == 'GET' and 'import_csv' in q:
                 b = [x for x in self.imports if x['id'] == q['import_csv'][0]]
                 return (200, {'name': b[0]['name'], 'csv': b[0]['csv']}) if b and b[0].get('csv') else (404, {'error': 'no copy saved'})

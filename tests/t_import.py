@@ -1,6 +1,7 @@
 """v1060 adds: preview panel (column mapping, ignored columns, understood values), previous imports list and Undo.
 v1059: Settings > Import (desktop CSV import). Runs the REAL api/_bulk.js through the harness mock (needs node)."""
 import os, tempfile, json
+NOW = '2026-11-01T10:00:00Z'
 
 GOOD = ('title,list,category,due_date,remind_time,repeat,priority,quick,must_today,notes\r\n'
         'Call the dentist,personal,Health,24/11/2026,09:30,,,,,"Ask about the invoice,\r\nthen book"\r\n'
@@ -202,4 +203,38 @@ def run(h):
         pg.click('#impCard0 .impopen'); pg.wait_for_timeout(300)
         chk('%s: editor open, no horizontal overflow, inputs 16px+ (no zoom)' % label, not pg.evaluate("document.documentElement.scrollWidth > window.innerWidth") and pg.evaluate("Array.prototype.every.call(document.querySelectorAll('#impEdit0 input, #impEdit0 textarea, #impPaste'), function(e){return parseFloat(getComputedStyle(e).fontSize) >= 16})"))
         ctx.close()
+
+    # scanned notes (v1065): banner, Review, add, done; ?open=scan; Dismiss
+    SC = 'title,list,category,due_date,remind_time,repeat,priority,quick,must_today,notes,subtasks\nGuidelines,work,Graphical Abstract,,,,,,,,\nPool health,work,GenMedia,,,,,,,,\n"Access, roles?",work,Human Signal,,,,,,,,\n'
+    UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+    def phone(url):
+        c = p.context.browser.new_context(viewport={'width': 390, 'height': 844}, user_agent=UA)
+        c.add_init_script("localStorage.setItem('todoToken','tok');localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');")
+        c.route('**/*', serve); g = c.new_page(); g.goto(url); g.wait_for_timeout(1000); return c, g
+    def scan_calls(): return [c for c in h.calls if c[0] == 'POST' and c[1] == '/api/todos' and 'scan_done' in c[2]]
+    h.scan = {'id': 'sc-1', 'csv': SC, 'n': 3, 'created_at': NOW, 'status': 'ready'}
+    ctx, pg = phone('http://todo.test/')
+    chk('scan: banner shows when a scan is waiting', pg.is_visible('#scanbar') and '3 tasks' in pg.inner_text('#scanbar'), pg.inner_text('#scanbar'))
+    chk('scan: banner buttons are 44px and nothing overflows', pg.evaluate("Array.prototype.every.call(document.querySelectorAll('#scanbar .btn'), function(b){return b.getBoundingClientRect().height >= 44})") and not pg.evaluate("document.documentElement.scrollWidth > window.innerWidth"))
+    n0 = len(h.todos)
+    pg.click('#scanbar [data-scan=review]'); pg.wait_for_timeout(1200)
+    chk('scan: Review opens Import with 3 task cards ready', len(pg.query_selector_all('[id^=impCard]')) == 3 and 'Pool health' in pg.inner_text('#tabBody'), pg.inner_text('#tabBody')[:120])
+    chk('scan: the two new projects are flagged', 'Human Signal' in pg.inner_text('#tabBody') and 'GenMedia' in pg.inner_text('#tabBody'))
+    pg.click('#impGo'); pg.wait_for_timeout(1500)
+    chk('scan: Add imports the 3 tasks', len(h.todos) == n0 + 3 and any(t['title'] == 'Access, roles?' for t in h.todos), len(h.todos) - n0)
+    chk('scan: the scan is marked done and the banner goes', len(scan_calls()) == 1 and scan_calls()[0][2].get('scan_done') == ['sc-1'] and not pg.is_visible('#scanbar'))
+    ctx.close()
+    h.scan = {'id': 'sc-2', 'csv': SC, 'n': 3, 'created_at': NOW, 'status': 'ready'}
+    ctx, pg = phone('http://todo.test/?open=scan')
+    chk('scan: ?open=scan goes straight to the review cards', len(pg.query_selector_all('[id^=impCard]')) == 3 and pg.is_visible('#impGo'), pg.inner_text('body')[:80])
+    ctx.close()
+    h.scan = {'id': 'sc-3', 'csv': SC, 'n': 3, 'created_at': NOW, 'status': 'ready'}
+    ctx, pg = phone('http://todo.test/')
+    n1 = len(h.todos); pg.click('#scanbar [data-scan=skip]'); pg.wait_for_timeout(400)
+    chk('scan: Dismiss hides the banner, marks it done and adds nothing', not pg.is_visible('#scanbar') and h.scan['status'] == 'done' and len(h.todos) == n1)
+    ctx.close()
+    h.scan = None
+    ctx, pg = phone('http://todo.test/')
+    chk('scan: no banner when nothing is waiting', not pg.is_visible('#scanbar'))
+    ctx.close()
     return R

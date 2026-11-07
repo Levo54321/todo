@@ -9,6 +9,14 @@ change the header in the endpoint file and regenerate._
 // One row = one task. Column names and rules are documented in docs/import/ (schema + column guide) and enforced here only.
 ```
 
+## api/_scan.js
+```
+// Scan helper (not an endpoint: the leading _ keeps it out of Vercel's 12-function limit). Used by POST /api/todos?scan=1.
+// Sends a photo of handwritten notes to Gemini and gets back import CSV text (the same 11 columns as Settings > Import).
+// The key lives ONLY in the Vercel env var GEMINI_API_KEY (Luc sets it); the model is GEMINI_MODEL (default below).
+// Never log the key, the image or the CSV text.
+```
+
 ## api/_vault.js
 ```
 // Vault handler, reached as POST /api/pprojects?vault=1 (api/pprojects.js hands the request over). The file name starts
@@ -187,6 +195,11 @@ change the header in the endpoint file and regenerate._
 // GET    /api/todos?imports=1       -> { imports: [{id, name, n, created_at, alive, undone_at, undone_n}] } latest 30 CSV imports, newest first (alive = how many of its tasks still exist)
 // GET    /api/todos?import_csv=<uuid> -> { name, csv } the clean CSV saved with that import (404 if none); an import sends it as csv:<text> with its first chunk
 // POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
+// POST   /api/todos?scan=1          -> photo of handwritten notes -> tasks to review (v1065). Body: the photo itself (Shortcuts "File" body; JPEG, max 3.5 MB), or base64 text, or { image:"<base64>" }.
+//                                      Checks the token, asks Gemini (key in env GEMINI_API_KEY, model GEMINI_MODEL, see api/_scan.js) to turn it into import CSV, and keeps the newest scan for review.
+//                                      Reply { ok, rows, id } (rows 0 = nothing readable). Errors: 400 not a photo, 413 too big, 429 Gemini busy, 502 Gemini failed, 503 key not set. Nothing is added to the list by this call.
+// GET    /api/todos?scan=1          -> { scan: { id, csv, n, created_at } | null } the newest scan still waiting for review (the app asks once when it opens, and for ?open=scan)
+// POST   /api/todos?scan_done=<uuid> -> marks that scan reviewed (added or dismissed). { ok }
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
 // pp_backlog: true keeps a project task on its project page only (Backlog), out of the Personal list.

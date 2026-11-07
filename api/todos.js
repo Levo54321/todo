@@ -14,6 +14,11 @@
 // GET    /api/todos?imports=1       -> { imports: [{id, name, n, created_at, alive, undone_at, undone_n}] } latest 30 CSV imports, newest first (alive = how many of its tasks still exist)
 // GET    /api/todos?import_csv=<uuid> -> { name, csv } the clean CSV saved with that import (404 if none); an import sends it as csv:<text> with its first chunk
 // POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
+// POST   /api/todos?scan=1          -> photo of handwritten notes -> tasks to review (v1065). Body: the photo itself (Shortcuts "File" body; JPEG, max 3.5 MB), or base64 text, or { image:"<base64>" }.
+//                                      Checks the token, asks Gemini (key in env GEMINI_API_KEY, model GEMINI_MODEL, see api/_scan.js) to turn it into import CSV, and keeps the newest scan for review.
+//                                      Reply { ok, rows, id } (rows 0 = nothing readable). Errors: 400 not a photo, 413 too big, 429 Gemini busy, 502 Gemini failed, 503 key not set. Nothing is added to the list by this call.
+// GET    /api/todos?scan=1          -> { scan: { id, csv, n, created_at } | null } the newest scan still waiting for review (the app asks once when it opens, and for ?open=scan)
+// POST   /api/todos?scan_done=<uuid> -> marks that scan reviewed (added or dismissed). { ok }
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
 // pp_backlog: true keeps a project task on its project page only (Backlog), out of the Personal list.
@@ -331,6 +336,20 @@ async function bulkImport(token, b, today, res) {
   return send(res, 201, { ok: true, dry: false, count: vals.length, errors: [], added: added, updated: updated, cal: cal, logged: logged });
 }
 
+// Photo of notes -> CSV waiting for review. The token is checked BEFORE Gemini is called (todo_scan_latest refuses a bad token), so nobody can spend the quota without it.
+async function scanUpload(token, req, today, res) {
+  var scan = require('./_scan.js'), buf, out, sv;
+  try { await rpc('todo_scan_latest', { p_token: token }); }
+  catch (ge) { if (ge.code === 'PGRST202') return send(res, 500, { error: 'database not updated yet (db/setup23.sql)' }); throw ge; }
+  try { buf = scan.imageFrom(req.body); } catch (ie) { return send(res, ie.status || 400, { error: ie.message }); }
+  var names = (await projectList(token)).map(function (p) { return p && p.name; }).filter(Boolean);
+  try { out = await scan.readNotes(buf, { today: today, projects: names }); }
+  catch (se) { console.error('scan', se.status || '', se.message); return send(res, se.status || 502, { error: se.message }); }
+  if (!out.rows) return send(res, 200, { ok: true, rows: 0, id: null });
+  sv = await rpc('todo_scan_save', { p_token: token, p_csv: out.csv, p_n: out.rows });
+  return send(res, 200, { ok: true, rows: out.rows, id: sv && sv.id });
+}
+
 module.exports = async function handler(req, res) {
   if (!SB_URL || !SB_KEY) return send(res, 500, { error: 'server not configured' });
 
@@ -352,10 +371,22 @@ module.exports = async function handler(req, res) {
       catch (ie) { if (ie.code === 'PGRST202') return send(res, 200, { imports: [], unavailable: true }); throw ie; } // database not updated yet (setup21.sql)
     }
 
+    if (req.method === 'GET' && query.scan) {
+      try { return send(res, 200, { scan: (await rpc('todo_scan_latest', { p_token: token })) || null }); }
+      catch (se) { if (se.code === 'PGRST202') return send(res, 200, { scan: null, unavailable: true }); throw se; } // database not updated yet (setup23.sql)
+    }
+
     if (req.method === 'GET') {
       var list = await rpc('todo_list', { p_token: token }), fp = fingerprint(list), nowIso = new Date().toISOString();
       if (typeof query.v === 'string' && query.v === fp) return send(res, 200, { same: true, today: today, now: nowIso });
       return send(res, 200, { today: today, now: nowIso, v: fp, todos: list });
+    }
+
+    if (req.method === 'POST' && query.scan) return await scanUpload(token, req, today, res); // before readBody: the body is a photo
+    if (req.method === 'POST' && query.scan_done) {
+      if (!UUID.test(String(query.scan_done))) return send(res, 400, { error: 'bad id' });
+      await rpc('todo_scan_done', { p_token: token, p_id: query.scan_done });
+      return send(res, 200, { ok: true });
     }
 
     if (req.method === 'POST') {
