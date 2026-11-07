@@ -78,6 +78,7 @@
     x.send(body ? JSON.stringify(body) : null);
   }
 
+  var reloadOnClose = false; // a settings tab (CSV import) added tasks while Settings was open: refresh the list when it closes
   function forceLoad() { lastMutation = 0; lastV = null; load(); } // "trust the server over what is on screen": always asks for the full list
   function load() {
     if (!token || inflight || editing || rv || sess || setDraft || pv || drag || askCb) return;
@@ -1351,7 +1352,7 @@
     renderSettings();
     $('settings').style.display = 'flex';
   }
-  function closeSettings() { setDraft = null; $('settings').style.display = 'none'; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
+  function closeSettings() { setDraft = null; $('settings').style.display = 'none'; if (reloadOnClose) { reloadOnClose = false; forceLoad(); } if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
   function saveSettings() {
     var body = {}, city = $('setCity').value.replace(/^\s+|\s+$/g, ''), cal = $('setCal') ? $('setCal').value.replace(/^\s+|\s+$/g, '') : '';
     if (city !== (settings.city || '')) body.city = city;
@@ -1720,6 +1721,7 @@
   App.render = render;
   App.ask = ask;
   App.reload = function () { forceLoad(); };
+  App.reloadWhenSettingsClose = function () { reloadOnClose = true; };
   // Projects board <-> Work list
   App.isPaused = isPaused;
   App.isShelved = isShelved;

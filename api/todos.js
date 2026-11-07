@@ -6,6 +6,9 @@
 //                                      of the list (not of `now`) and comes back in every full reply. No ?v= (an older cached app, the
 //                                      Shortcuts, the ?open=latest check) always gets the full list.
 // POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id?, pp_backlog? }
+// POST   /api/todos?bulk=1          -> CSV import (desktop). body { rows: [ {row?, title, list, category, due_date, remind_time, repeat, priority, quick, must_today, notes} ... up to 100 ], dry? }
+//                                      dry:true only checks the rows. Reply { ok, dry, count, errors:[{row, messages:[...]}], added, cal }. Rules: api/_bulk.js, docs/import/.
+//                                      A real run first checks every row and adds nothing if any row is wrong (400 with the same errors).
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
 // pp_backlog: true keeps a project task on its project page only (Backlog), out of the Personal list.
@@ -13,6 +16,7 @@
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
 
 var crypto = require('crypto');
+var bulk = require('./_bulk.js');
 
 var SB_URL = process.env.SUPABASE_URL;
 var SB_KEY = process.env.SUPABASE_KEY;
@@ -248,6 +252,48 @@ var ISO = /^\d{4}-\d{2}-\d{2}$/;
 var HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 var RECURS = ['daily', 'weekdays', 'weekly', 'fortnightly', 'monthly', 'yearly'];
 
+// CSV import: validate every row first (nothing is written if any row is wrong), then add them one by one.
+async function bulkImport(token, b, today, res) {
+  var rows = Array.isArray(b.rows) ? b.rows : null, i, r, out = [], errors = [], vals = [], n;
+  if (!rows || !rows.length) return send(res, 400, { error: 'no rows' });
+  if (rows.length > bulk.MAX_ROWS) return send(res, 400, { error: 'too many rows (max ' + bulk.MAX_ROWS + ' at a time)' });
+  for (i = 0; i < rows.length; i++) {
+    r = bulk.validateRow(rows[i], today);
+    n = rows[i] && typeof rows[i].row === 'number' ? rows[i].row : i + 2;
+    if (r.errors.length) errors.push({ row: n, messages: r.errors });
+    vals.push(r.value);
+  }
+  if (errors.length) return send(res, 400, { ok: false, dry: b.dry === true, count: rows.length, errors: errors, added: 0 });
+  if (b.dry === true) return send(res, 200, { ok: true, dry: true, count: rows.length, errors: [], added: 0 });
+
+  var added = 0, anyRemind = false;
+  try {
+    for (i = 0; i < vals.length; i++) {
+      var v = vals[i], cat = v.category;
+      if (cat && v.list === 'work') cat = await canonProject(token, cat);
+      var args = { p_token: token, p_title: v.title, p_due: v.due_date, p_category: cat, p_recur: v.recur, p_session: SESSION.test(v.title), p_remind: v.remind_time, p_list: v.list }, row;
+      if (v.prio || v.quick || v.must) {
+        try {
+          args.p_prio = v.prio; args.p_quick = v.quick; args.p_must = v.must;
+          row = await rpc('todo_add', args);
+        } catch (ae) {
+          if (ae.code !== 'PGRST202') throw ae; // database not updated yet (setup10.sql): add the task without its tags
+          delete args.p_prio; delete args.p_quick; delete args.p_must;
+          row = await rpc('todo_add', args);
+        }
+      } else row = await rpc('todo_add', args);
+      if (v.notes && row && row.id) await rpc('todo_update', { p_token: token, p_id: row.id, p_patch: { notes: v.notes } });
+      added++;
+      if (v.remind_time) anyRemind = true;
+    }
+  } catch (e) {
+    console.error('bulk import', e.message);
+    return send(res, 500, { ok: false, error: 'stopped after ' + added + ' of ' + vals.length + ' rows', added: added, count: vals.length, errors: [] });
+  }
+  var cal = anyRemind ? await calHook(token) : null;
+  return send(res, 201, { ok: true, dry: false, count: vals.length, errors: [], added: added, cal: cal });
+}
+
 module.exports = async function handler(req, res) {
   if (!SB_URL || !SB_KEY) return send(res, 500, { error: 'server not configured' });
 
@@ -266,6 +312,7 @@ module.exports = async function handler(req, res) {
 
     if (req.method === 'POST') {
       var b = readBody(req);
+      if (query.bulk) return await bulkImport(token, b, today, res);
       if (Array.isArray(b.plan)) { // Daily Preview: save today's running order
         var ids = [];
         for (var pi = 0; pi < b.plan.length && pi < 200; pi++) if (typeof b.plan[pi] === 'string' && UUID.test(b.plan[pi])) ids.push(b.plan[pi]);

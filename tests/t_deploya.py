@@ -5,6 +5,7 @@ import importlib.util, os, json, mimetypes
 from urllib.parse import urlparse, parse_qs
 D = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(D)
 spec = importlib.util.spec_from_file_location('tp', os.path.join(D, 't_projects.py')); tp = importlib.util.module_from_spec(spec); spec.loader.exec_module(tp)
+spec = importlib.util.spec_from_file_location('ti', os.path.join(D, 't_import.py')); ti = importlib.util.module_from_spec(spec); spec.loader.exec_module(ti)
 
 def fresh(h, token_js, w=1024, hh=768, tz=None):
     b = h.page.context.browser
@@ -98,6 +99,8 @@ def run(h):
     chk('#t= link signs in and clears the token from the address bar', pg.url == 'http://todo.test/' and pg.evaluate("localStorage.getItem('todoToken')") == 'tok' and not pg.is_visible('#gate'), pg.url)
     ctx.close()
     deploy_d(h, chk)
+    h.page.goto('http://todo.test/'); h.page.wait_for_timeout(600)  # v1059: CSV import runs last (it adds tasks)
+    R += ti.run(h)
     return R
 
 def deploy_d(h, chk):

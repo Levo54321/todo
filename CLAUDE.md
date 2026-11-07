@@ -49,7 +49,7 @@ Keep it short: facts and rules, not history.
 ## Stack and repo
 - Repo `Levo54321/todo` (private). Branch `main` auto-deploys to Vercel project `luc-todo` (team `teamevo`, region
   dub1). Live: https://luc-todo.vercel.app.
-- `shell.html` → `python3 tools/build.py <ver> budget saver calendar insights projects workcal board pprojects`
+- `shell.html` → `python3 tools/build.py <ver> budget saver calendar insights projects workcal board pprojects csvimport`
   → `public/index.html`. Module load order matters. **Bump `<ver>` (the `?v=` cache buster) on every
   frontend change**; the current version is in `public/index.html`.
 - `public/js/core.js` (~100 KB) is the shell: `window.App`, view registry `App.register(name,{title,render,show})`,
@@ -133,6 +133,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-07 — v1059: desktop-only CSV import (Settings > Import, `public/js/csvimport.js`, `api/_bulk.js`, `POST /api/todos?bulk=1`; no DB change). Build line now ends `… pprojects csvimport`. Row rules live ONLY in `_bulk.js`; if columns change update `docs/import/*` and `TEMPLATE` in csvimport.js too. Tests: `node tests/bulk_node.js` and `tests/t_import.py` (chained at the end of `t_deploya.py`; the harness mock runs the real `_bulk.js` through node). `load()` is paused while Settings is open, so anything added from a settings tab uses `App.reloadWhenSettingsClose()`.
 - 2026-11-02 — v1058: desktop Chrome/Edge "Install app" (manifest, pass-through service worker, 192/512 icons, `tests/t_install.py`). No JS module, API or database change; iPad/iPhone behaviour unchanged (old Safari ignores the service worker).
 - 2026-11-01 — Redesign Batches A+B (v1056, v1057; Luc asked for two big batches and skipped the full suite): `app.css` rewritten as one ordered design-system file (override layers merged; list tags, editor sheet and segmented controls moved in from `work.css`); `work.css`/`pprojects.css` trimmed to board/My projects only. Chip/pill look unified (`.cat .qk .mst .blk .pau .bdh .bdp .pplk`: categories and states are pills, times/repeats plain text; only Must-today is solid). Board rows: coloured edge bar instead of tinted rows. Phones: Glance and category filters are one sideways-scrolling line. Checked with a Playwright audit (tap targets, font size, overflow at 1024x768, 768x1024, 390x844, 1440x900) and screenshots, not the mock suites. No JS or API changes.
 - 2026-11-01 — Deploy G (v1055) UI round 3: `--serif` token now points at the sans stack (no serif/italic headings, gate, editor title, saver clock); Insights bar-chart labels every other bar (viewBox text is scaled, so keep SVG text >= 14 units); `.fsbtn` hidden under 700px. SVG text size is NOT covered by the min-font check (it measures CSS size, not scaled size). Luc once saw the iPad load slowly with only Personal/Work/Tomorrow tabs right after a deploy; it cleared by itself (likely the old page loading while the new files arrived), so wait and reload before debugging.

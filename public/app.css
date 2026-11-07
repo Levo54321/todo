@@ -415,3 +415,8 @@ html.work #projBtn{display:inline-block}
 }
 @media (max-width:700px){#saverEvents{left:24px;right:24px;width:auto;max-width:none;bottom:120px;max-height:calc(100% - 150px)}}
 @media (max-width:420px){.flbl{width:70px}}
+
+/* Settings > Import (desktop CSV import) */
+.impline{margin:8px 0}
+.imperr{margin:10px 0;padding:10px 12px;border-radius:var(--r2);background:var(--warnbg);color:var(--warnink);font-size:var(--fs-sm);line-height:1.45}
+#impFile{display:block;max-width:100%;margin:4px 0 8px;font-size:var(--fs-sm)}

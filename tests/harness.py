@@ -35,6 +35,7 @@ class H:
         self.pevents = []
         self.calls = []
         self.same = 0  # how many GET /api/todos?v= were answered "same" (unchanged)
+        self.fail_bulk = False  # make the real (non-dry) CSV import answer 500
         self.fail_delete = False  # make DELETE /api/todos answer 500 (the task stays on the server)
         self.errors = []
         self.extra = {}
@@ -50,6 +51,18 @@ class H:
                 v = hashlib.sha1(json.dumps(self.todos, sort_keys=True).encode()).hexdigest()[:20]  # like api/todos.js: fingerprint of the list, not of `now`
                 if q.get('v', [None])[0] == v: self.same += 1; return 200, {'same': True, 'today': TODAY, 'now': NOW}
                 return 200, {'today': TODAY, 'now': NOW, 'v': v, 'todos': self.todos}
+            if method == 'POST' and 'bulk' in q:  # CSV import: the REAL api/_bulk.js judges the rows (node), the mock only stores them
+                import subprocess
+                js = "var b=require('./api/_bulk.js'),i=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(JSON.stringify(i.rows.map(function(r,k){var v=b.validateRow(r,i.today);return {row:typeof r.row==='number'?r.row:k+2,errors:v.errors,value:v.value}})))"
+                out = json.loads(subprocess.run(['node', '-e', js], input=json.dumps({'rows': body.get('rows') or [], 'today': TODAY}), capture_output=True, text=True, cwd=REPO).stdout)
+                errs = [{'row': o['row'], 'messages': o['errors']} for o in out if o['errors']]
+                if errs: return 400, {'ok': False, 'dry': body.get('dry') is True, 'count': len(out), 'errors': errs, 'added': 0}
+                if body.get('dry') is True: return 200, {'ok': True, 'dry': True, 'count': len(out), 'errors': [], 'added': 0}
+                if self.fail_bulk: return 500, {'ok': False, 'error': 'stopped', 'added': 0}
+                for o in out:
+                    v = o['value']; t = task(v['title'], list=v['list'], category=v['category'], due_date=v['due_date'], remind_time=v['remind_time'], recur=v['recur'], prio=v['prio'], quick=v['quick'], must=v['must'], notes=v['notes'] or None)
+                    self.todos.append(t)
+                return 201, {'ok': True, 'dry': False, 'count': len(out), 'errors': [], 'added': len(out), 'cal': None}
             if method == 'POST':
                 title = body.get('text') or body.get('title')
                 t = task(title, list='work' if (re.search(r'\swork$', title or '') or body.get('list') == 'work') else 'personal')
