@@ -185,6 +185,7 @@ change the header in the endpoint file and regenerate._
 //                                      Every reply also carries preview:[{row, errors, value:{title,list,category,due_date,remind_time,recur,prio,quick,must,notes,subtasks:[{t,d}]}}] (the rows as the app understood them).
 //                                      A real run may send batch:<uuid> (same id for every chunk of one file) and name:<file name>; the ids it added are logged under that batch so it can be undone.
 // GET    /api/todos?imports=1       -> { imports: [{id, name, n, created_at, alive, undone_at, undone_n}] } latest 30 CSV imports, newest first (alive = how many of its tasks still exist)
+// GET    /api/todos?import_csv=<uuid> -> { name, csv } the clean CSV saved with that import (404 if none); an import sends it as csv:<text> with its first chunk
 // POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.

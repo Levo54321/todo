@@ -6,6 +6,7 @@
   var esc = App.esc;
   var ua = navigator.userAgent || '';
   var touchy = /iPad|iPhone|iPod|Android|Mobi/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  var oldIOS = /iP(ad|hone|od)/.test(ua) && /OS [0-9]_/.test(ua); // iOS 9 and older cannot save a file or copy by script
   var canFile = !!window.FileReader && !/iPad|iPhone|iPod/.test(ua); // iOS 9 cannot pick a CSV from Files reliably: paste is the way there
 
   var COLS = ['title', 'list', 'category', 'due_date', 'remind_time', 'repeat', 'priority', 'quick', 'must_today', 'notes', 'subtasks'];
@@ -20,7 +21,7 @@
     recur: 'repeat', recurrence: 'repeat', repeats: 'repeat', frequency: 'repeat', prio: 'priority', quick_task: 'quick', must: 'must_today', must_do_today: 'must_today',
     note: 'notes', details: 'notes', description: 'notes', comment: 'notes', comments: 'notes',
     subtask: 'subtasks', sub_tasks: 'subtasks', sub_task: 'subtasks', steps: 'subtasks', checklist: 'subtasks', items: 'subtasks' };
-  var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false };
+  var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false, show: null };
   function fresh() { return { phase: 'idle', file: '', batch: '', rows: [], ignored: [], mapping: [], errors: [], preview: [], msg: '', added: 0 }; }
   st = fresh();
   function uuid() {
@@ -94,6 +95,20 @@
     return { rows: rows, ignored: ignored, mapping: mapping };
   }
 
+  /* The clean CSV of what was understood (same 11 columns the app reads), kept with the import so it can be downloaded or copied later. */
+  function csvCell(x) { x = x == null ? '' : String(x); return /[",\r\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; }
+  function canonCSV() {
+    var out = [COLS.join(',')], i, v, subs, k, row;
+    for (i = 0; i < st.preview.length; i++) {
+      v = st.preview[i].value; subs = [];
+      for (k = 0; k < (v.subtasks || []).length; k++) subs.push((v.subtasks[k].d ? '[x] ' : '') + v.subtasks[k].t);
+      row = [v.title, v.list, v.category || '', v.due_date || '', v.remind_time || '', v.recur || '', v.prio ? v.prio : '', v.quick ? 'yes' : '', v.must ? 'yes' : '', v.notes || '', subs.join('|')];
+      for (k = 0; k < row.length; k++) row[k] = csvCell(row[k]);
+      out.push(row.join(','));
+    }
+    return out.join('\r\n') + '\r\n';
+  }
+
   function chunks() { var out = [], i; for (i = 0; i < st.rows.length; i += CHUNK) out.push(st.rows.slice(i, i + CHUNK)); return out; }
 
   function check() {
@@ -118,7 +133,8 @@
     function finish() { App.mutated(); App.reloadWhenSettingsClose(); loadHist(); }
     function next() {
       if (at >= parts.length) { st.phase = 'done'; finish(); paint(); return; }
-      App.api('POST', '?bulk=1', { rows: parts[at], batch: st.batch, name: st.file }, function (s, d) {
+      var req = { rows: parts[at], batch: st.batch, name: st.file }; if (at === 0) req.csv = canonCSV();
+      App.api('POST', '?bulk=1', req, function (s, d) {
         if (s === 201 && d && d.ok) { st.added += d.added; at++; next(); }
         else {
           st.added += (d && d.added) || 0;
@@ -168,6 +184,38 @@
       else if (s === 409) hist.note = 'That import was already undone.';
       else hist.note = 'Could not undo that import (' + (d && d.error ? d.error : 'error ' + s) + '). Nothing was changed.';
       loadHist();
+    });
+  }
+
+  function fileName(n) { return String(n || 'import').replace(/\.csv$/i, '').replace(/[^A-Za-z0-9._-]+/g, '-') + '-copy.csv'; }
+  function withCsv(id, cb) {
+    hist.note = ''; hist.show = null;
+    App.api('GET', '?import_csv=' + encodeURIComponent(id), null, function (s, d) {
+      if (s === 200 && d && d.csv) cb(d); else { hist.note = s === 404 ? 'No copy was saved for that import (only imports made since this feature was added have one).' : 'Could not get that import (error ' + s + ').'; paint(); }
+    });
+  }
+  function showText(d, why) { hist.show = { name: d.name, csv: d.csv, why: why }; paint(); var ta = document.getElementById('impCsvBox'); if (ta) { ta.focus(); ta.select(); } }
+  function copyImport(id) {
+    withCsv(id, function (d) {
+      var done = function () { hist.note = 'Copied “' + (d.name || 'import') + '” (' + d.csv.split('\n').length + ' lines) to the clipboard.'; paint(); };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) { navigator.clipboard.writeText(d.csv).then(done, function () { showText(d, 'Select all and copy this text.'); }); return; }
+        var t = document.createElement('textarea'); t.value = d.csv; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+        document.body.appendChild(t); t.focus(); t.select(); try { t.setSelectionRange(0, d.csv.length); } catch (e1) {}
+        var ok = document.execCommand && document.execCommand('copy'); document.body.removeChild(t);
+        if (ok) done(); else showText(d, 'Your browser would not copy automatically. Select all and copy this text.');
+      } catch (e) { showText(d, 'Select all and copy this text.'); }
+    });
+  }
+  function downloadImport(id) {
+    withCsv(id, function (d) {
+      if (oldIOS) { showText(d, 'This browser cannot save files. Select all and copy this text instead.'); return; }
+      try {
+        var blob = new Blob([d.csv], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = fileName(d.name);
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        hist.note = 'Downloaded ' + fileName(d.name) + '.'; paint();
+      } catch (e) { showText(d, 'Could not save a file here. Select all and copy this text instead.'); }
     });
   }
 
@@ -240,6 +288,7 @@
   function histHTML() {
     var h = '<div class="imph">Previous imports</div>', i, x, list = hist.list;
     if (hist.note) h += '<div class="impinfo" id="impHistNote">' + esc(hist.note) + '</div>';
+    if (hist.show) h += '<div class="impcsvpanel" id="impCsvPanel"><div class="impinfo">' + esc(hist.show.why || '') + '</div><textarea id="impCsvBox" class="impta" rows="8" readonly spellcheck="false">' + esc(hist.show.csv) + '</textarea><div class="improw"><button class="btn" data-imp="closecsv" type="button">Close</button></div></div>';
     if (list === null) return h + '<div class="impinfo">Loading…</div>';
     if (hist.unavailable) return h + '<div class="impinfo">Import history needs the database update (setup21.sql) first.</div>';
     if (!list.length) return h + '<div class="impinfo" id="impHistEmpty">No imports yet. Each import you make is listed here so it can be undone.</div>';
@@ -248,6 +297,7 @@
       x = list[i];
       h += '<div class="imphrow' + (x.undone_at ? ' undone' : '') + '"><div class="imphinfo"><b>' + esc(x.name || 'Import') + '</b><span class="impsoft">' + esc(fmtWhen(x.created_at)) + ' · ' + plural(x.n, 'task') + ' added' +
         (x.undone_at ? ' · undone (' + plural(x.undone_n || 0, 'task') + ' removed)' : ' · ' + x.alive + ' still in your lists') + '</span></div>';
+      if (x.has_csv) h += '<div class="imphact imphcopy"><button class="btn" data-imp="copy" data-id="' + esc(x.id) + '" type="button">Copy</button><button class="btn" data-imp="dl" data-id="' + esc(x.id) + '" type="button">Download</button></div>';
       if (!x.undone_at) {
         if (hist.confirm === x.id) h += '<div class="imphact"><span class="impsoft">Remove ' + plural(x.alive, 'task') + '?</span><button class="btn danger" data-imp="yes" data-id="' + esc(x.id) + '" type="button">Yes, undo</button><button class="btn" data-imp="no" type="button">Keep</button></div>';
         else h += '<div class="imphact"><button class="btn" data-imp="ask" data-id="' + esc(x.id) + '" type="button"' + (hist.busy ? ' disabled' : '') + '>Undo</button></div>';
@@ -317,6 +367,9 @@
     if (a === 'ask') { hist.confirm = id; hist.note = ''; paint(); }
     else if (a === 'no') { hist.confirm = ''; paint(); }
     else if (a === 'yes') undo(id);
+    else if (a === 'copy') copyImport(id);
+    else if (a === 'dl') downloadImport(id);
+    else if (a === 'closecsv') { hist.show = null; paint(); }
     else if (a === 'mfile') { mode = 'file'; paint(); }
     else if (a === 'mpaste') { mode = 'paste'; paint(); }
     else if (a === 'example') { pasteText = TEMPLATE; paint(); }

@@ -48,9 +48,12 @@ class H:
         self.calls.append((method, path, q, body))
         if path in self.extra: return self.extra[path](self, method, q, body)
         if path == '/api/todos':
+            if method == 'GET' and 'import_csv' in q:
+                b = [x for x in self.imports if x['id'] == q['import_csv'][0]]
+                return (200, {'name': b[0]['name'], 'csv': b[0]['csv']}) if b and b[0].get('csv') else (404, {'error': 'no copy saved'})
             if method == 'GET' and 'imports' in q:
                 ids = {t['id'] for t in self.todos}
-                return 200, {'imports': [{'id': x['id'], 'name': x['name'], 'n': x['n'], 'created_at': x['created_at'], 'undone_at': x['undone_at'], 'undone_n': x['undone_n'], 'alive': len([i for i in x['ids'] if i in ids])} for x in reversed(self.imports)]}
+                return 200, {'imports': [{'id': x['id'], 'name': x['name'], 'n': x['n'], 'created_at': x['created_at'], 'undone_at': x['undone_at'], 'undone_n': x['undone_n'], 'has_csv': bool(x.get('csv')), 'alive': len([i for i in x['ids'] if i in ids])} for x in reversed(self.imports)]}
             if method == 'POST' and 'import_undo' in q:  # mirrors todo_import_undo
                 b = [x for x in self.imports if x['id'] == q['import_undo'][0]]
                 if not b: return 404, {'error': 'not found'}
@@ -78,7 +81,7 @@ class H:
                 if body.get('batch'):  # mirrors todo_import_log: same batch id extends the same import
                     b = [x for x in self.imports if x['id'] == body['batch']]
                     if b: b[0]['ids'] += new_ids; b[0]['n'] += len(new_ids)
-                    else: self.imports.append({'id': body['batch'], 'name': body.get('name') or '', 'n': len(new_ids), 'ids': list(new_ids), 'created_at': NOW, 'undone_at': None, 'undone_n': None})
+                    else: self.imports.append({'id': body['batch'], 'name': body.get('name') or '', 'n': len(new_ids), 'ids': list(new_ids), 'created_at': NOW, 'undone_at': None, 'undone_n': None, 'csv': body.get('csv')})
                 return 201, {'ok': True, 'dry': False, 'count': len(out), 'errors': [], 'added': len(out), 'cal': None, 'logged': True}
             if method == 'POST':
                 title = body.get('text') or body.get('title')

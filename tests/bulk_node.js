@@ -31,6 +31,8 @@ function fakeRpc(name, args) {
   if (name === 'todo_add') { if (fail && rows.length >= 2) throw new Error('db down'); var r = { id: 'n' + rows.length, title: args.p_title, args: args }; rows.push(r); return r; }
   if (name === 'todo_update') { patches.push(args); return {}; }
   if (name === 'todo_import_log') { if (failLog) throw new Error('log down'); var bt = imports.filter(function (x) { return x.id === args.p_batch; })[0]; if (bt) bt.ids = bt.ids.concat(args.p_ids); else imports.push({ id: args.p_batch, name: args.p_name, ids: args.p_ids.slice(), undone: false }); return { ok: true }; }
+  if (name === 'todo_import_csv_set') { var cs = imports.filter(function (x) { return x.id === args.p_batch; })[0]; if (cs && !cs.csv) cs.csv = args.p_csv; return { ok: true }; }
+  if (name === 'todo_import_csv_get') { var cg = imports.filter(function (x) { return x.id === args.p_id; })[0]; if (!cg) { var e3 = new Error('no such import'); e3.code = 'P0002'; throw e3; } return { name: cg.name, csv: cg.csv || null }; }
   if (name === 'todo_import_list') return imports.map(function (x) { return { id: x.id, name: x.name, n: x.ids.length, alive: x.ids.length, undone_at: x.undone ? 'x' : null }; });
   if (name === 'todo_import_undo') { var u = imports.filter(function (x) { return x.id === args.p_id; })[0]; if (!u) { var e1 = new Error('no such import'); e1.code = 'P0002'; throw e1; } if (u.undone) { var e2 = new Error('already undone'); e2.code = '23505'; throw e2; } u.undone = true; return { ok: true, removed: u.ids.length, added: u.ids.length }; }
   if (name === 'cfg_get') return JSON.stringify([{ name: 'Alpha' }]);
@@ -56,7 +58,7 @@ function call(method, query, body) {
   r = await call('POST', { bulk: '1' }, { rows: good.concat([{ row: 5, title: '', due_date: 'zzz' }]) });
   ok('one bad row: 400 with its line number, NOTHING added, preview still shown', r.status === 400 && r.json.preview.length === 4 && r.json.preview[3].errors.length === 2 && r.json.errors.length === 1 && r.json.errors[0].row === 5 && r.json.errors[0].messages.length === 2 && rows.length === 0, JSON.stringify(r.json));
   var BATCH = '11111111-1111-4111-8111-111111111111';
-  r = await call('POST', { bulk: '1' }, { rows: good, batch: BATCH, name: 'my file.csv' });
+  r = await call('POST', { bulk: '1' }, { rows: good, batch: BATCH, name: 'my file.csv', csv: 'title\r\nOne\r\n' });
   ok('real run: 201, three added', r.status === 201 && r.json.added === 3 && rows.length === 3, JSON.stringify(r.json));
   ok('real run logged under its batch with the 3 new ids', r.json.logged === true && imports.length === 1 && imports[0].name === 'my file.csv' && imports[0].ids.length === 3, JSON.stringify(imports));
   ok('UK date arrives as ISO; notes saved by update', rows[0].args.p_due === '2026-11-24' && patches.length === 1 && patches[0].p_patch.notes === 'hello' && patches[0].p_patch.items.length === 2 && patches[0].p_patch.items[1].t === 'B');
@@ -64,6 +66,12 @@ function call(method, query, body) {
   ok('plain row sends no tag arguments', !('p_prio' in rows[2].args));
   var l = await call('GET', { imports: '1' }, null);
   ok('history list', l.status === 200 && l.json.imports.length === 1 && l.json.imports[0].name === 'my file.csv', JSON.stringify(l.json));
+  var g1 = await call('GET', { import_csv: BATCH }, null);
+  ok('saved CSV copy comes back with its name', g1.status === 200 && g1.json.csv === 'title\r\nOne\r\n' && g1.json.name === 'my file.csv', JSON.stringify(g1.json));
+  var g2 = await call('GET', { import_csv: '22222222-2222-4222-8222-222222222222' }, null);
+  ok('copy of an unknown import: 404', g2.status === 404, g2.status);
+  var g3 = await call('GET', { import_csv: 'nope' }, null);
+  ok('bad id: 400', g3.status === 400);
   var u1 = await call('POST', { import_undo: BATCH }, { go: 1 });
   ok('undo: 200 with counts', u1.status === 200 && u1.json.ok === true && u1.json.removed === 3, JSON.stringify(u1.json));
   var u2 = await call('POST', { import_undo: BATCH }, { go: 1 });

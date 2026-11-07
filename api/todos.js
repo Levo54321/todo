@@ -12,6 +12,7 @@
 //                                      Every reply also carries preview:[{row, errors, value:{title,list,category,due_date,remind_time,recur,prio,quick,must,notes,subtasks:[{t,d}]}}] (the rows as the app understood them).
 //                                      A real run may send batch:<uuid> (same id for every chunk of one file) and name:<file name>; the ids it added are logged under that batch so it can be undone.
 // GET    /api/todos?imports=1       -> { imports: [{id, name, n, created_at, alive, undone_at, undone_n}] } latest 30 CSV imports, newest first (alive = how many of its tasks still exist)
+// GET    /api/todos?import_csv=<uuid> -> { name, csv } the clean CSV saved with that import (404 if none); an import sends it as csv:<text> with its first chunk
 // POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
@@ -259,7 +260,9 @@ var RECURS = ['daily', 'weekdays', 'weekly', 'fortnightly', 'monthly', 'yearly']
 // Remember which tasks an import added, so it can be undone. Best effort: the import itself never fails because of this.
 async function logBatch(token, b, ids) {
   if (!ids.length || typeof b.batch !== 'string' || !UUID.test(b.batch)) return false;
-  try { await rpc('todo_import_log', { p_token: token, p_batch: b.batch, p_name: typeof b.name === 'string' ? b.name.slice(0, 200) : '', p_ids: ids }); return true; }
+  try { await rpc('todo_import_log', { p_token: token, p_batch: b.batch, p_name: typeof b.name === 'string' ? b.name.slice(0, 200) : '', p_ids: ids });
+    if (typeof b.csv === 'string' && b.csv && b.csv.length <= 600000) await rpc('todo_import_csv_set', { p_token: token, p_batch: b.batch, p_csv: b.csv });
+    return true; }
   catch (e) { console.error('import log', e.code, e.message); return false; }
 }
 
@@ -322,6 +325,12 @@ module.exports = async function handler(req, res) {
   try {
     var today = todayISO();
 
+    if (req.method === 'GET' && query.import_csv) {
+      if (!UUID.test(String(query.import_csv))) return send(res, 400, { error: 'bad id' });
+      var cr = await rpc('todo_import_csv_get', { p_token: token, p_id: query.import_csv }); // P0002 -> 404 below
+      if (!cr || !cr.csv) return send(res, 404, { error: 'no copy saved for this import' });
+      return send(res, 200, { name: cr.name, csv: cr.csv });
+    }
     if (req.method === 'GET' && query.imports) {
       try { return send(res, 200, { imports: (await rpc('todo_import_list', { p_token: token })) || [] }); }
       catch (ie) { if (ie.code === 'PGRST202') return send(res, 200, { imports: [], unavailable: true }); throw ie; } // database not updated yet (setup21.sql)
