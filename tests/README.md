@@ -13,6 +13,7 @@
 - `gcal_node.js` (v1051): Google sign-in start/state with no network (token not in the address, tampered state refused, old GET start retired).
 - `t_install.py` (v1058, standalone: `python3 tests/t_install.py`): serves `public/` on `http://localhost` (secure, unlike the harness's `todo.test`) in a normal non-incognito Chromium profile and checks the manifest, icons, `Page.getInstallabilityErrors` is empty, the worker registers, and it caches/answers nothing.
 - `bulk_node.js` + `t_import.py` (v1059): CSV import. Node: every row rule and the `?bulk=1` endpoint (dry run, all-or-nothing, part-way failure, 101 rows). Browser (runs last inside `t_deploya.py`; standalone `python3 tests/harness.py . tests/t_import.py`): template download, faulty file, good file with quoted commas/line breaks/UK dates, semicolons, server failure, and no Import tab on iPad 2 / iPhone user agents.
+  v1060 adds: preview panel and mapping (LLM-style file with Row/Other details, alias headers), previous-imports list, Undo with confirm, node tests for `preview`, batch logging, `?imports=1`, `import_undo` (404/409/400) and a failing log never failing the import.
 - `es5.js`: parses every `public/js/*.js` as ES5 and warns about iOS 9 gaps.
 - `vault_node.js`: the vault's server-side crypto with an in-memory database (`node tests/vault_node.js`): ciphertext only,
   locked state, pass expiry, lockout, wrong pepper, reset, nothing sensitive in logs.

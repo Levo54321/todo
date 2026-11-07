@@ -12,6 +12,7 @@ Tabled (needs work from Luc, only when he asks): C1 token rotation, the `?t=` re
 **Deploy F (v1054) UI round 2** done: CSS moved to files (W8), 44px targets (W5), night-safe board colours, Move to… collapse. Not restyled one by one: Budget, Insights, editor, screensaver, gate.
 
 **v1058 desktop Install app** done 2 Nov 2026: Chrome/Edge on Mac and PC offer "Install To-Do" in the address bar (manifest, pass-through service worker, 192/512 icons). Waiting for Luc's check on his Mac/PC. Not done on purpose: offline mode (the app needs the network for every list).
+**v1060 import preview + undo** done 7 Nov 2026: preview panel (how columns were read + understood values), Previous imports list with Undo, header aliases, `db/setup21.sql`. Skill rewritten so any LLM makes a strict file.
 **v1059 desktop CSV import** done 7 Nov 2026: Settings > Import on Mac/PC adds many tasks from a CSV (template download, checked before anything is added, all-or-nothing). Files for Luc: `docs/import/`. Not built (ask if wanted): recurrence end date, project-page links, duplicate detection, import of done tasks.
 
 **Deploy G (v1055) UI round 3** done: one sans-serif look everywhere, readable Insights chart labels, full-screen button hidden on phones. Budget line-chart labels not changed.

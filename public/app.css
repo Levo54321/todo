@@ -420,3 +420,20 @@ html.work #projBtn{display:inline-block}
 .impline{margin:8px 0}
 .imperr{margin:10px 0;padding:10px 12px;border-radius:var(--r2);background:var(--warnbg);color:var(--warnink);font-size:var(--fs-sm);line-height:1.45}
 #impFile{display:block;max-width:100%;margin:4px 0 8px;font-size:var(--fs-sm)}
+
+/* Import preview + history (v1060) */
+.impmap{font-size:var(--fs-sm);line-height:1.6;margin:4px 0 10px}
+.impok{color:var(--ink)}.impnone2,.impnote,.impnote2,.impnone{color:var(--muted)}.impnote{font-size:12px}
+.imperr2{color:var(--warnink);background:var(--warnbg);border-radius:var(--r1);padding:4px 8px;margin:4px 0}
+.impwrap{max-height:320px;overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--rule);border-radius:var(--r2);background:var(--bg)}
+.imptbl{border-collapse:collapse;width:100%;font-size:12px;line-height:1.35}
+.imptbl th{position:static;text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);color:var(--muted);font-weight:600;white-space:nowrap;background:var(--paper)}
+.imptbl td{padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+.imptbl td:nth-child(2){min-width:180px}
+.imprerr td{background:var(--warnbg);color:var(--warnink)}
+.imphist{border:1px solid var(--rule);border-radius:var(--r2);overflow:hidden}
+.imphrow{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--rule)}
+.imphrow:last-child{border-bottom:0}.imphrow.undone{opacity:.6}
+.imphinfo{-webkit-flex:1;flex:1;min-width:0;font-size:var(--fs-sm)}
+.imphact{-webkit-flex:none;flex:none;text-align:right}
+.imptbl td:nth-child(5){white-space:nowrap}

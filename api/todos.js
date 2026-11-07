@@ -9,6 +9,10 @@
 // POST   /api/todos?bulk=1          -> CSV import (desktop). body { rows: [ {row?, title, list, category, due_date, remind_time, repeat, priority, quick, must_today, notes} ... up to 100 ], dry? }
 //                                      dry:true only checks the rows. Reply { ok, dry, count, errors:[{row, messages:[...]}], added, cal }. Rules: api/_bulk.js, docs/import/.
 //                                      A real run first checks every row and adds nothing if any row is wrong (400 with the same errors).
+//                                      Every reply also carries preview:[{row, errors, value:{title,list,category,due_date,remind_time,recur,prio,quick,must,notes}}] (the rows as the app understood them).
+//                                      A real run may send batch:<uuid> (same id for every chunk of one file) and name:<file name>; the ids it added are logged under that batch so it can be undone.
+// GET    /api/todos?imports=1       -> { imports: [{id, name, n, created_at, alive, undone_at, undone_n}] } latest 30 CSV imports, newest first (alive = how many of its tasks still exist)
+// POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
 // PATCH  /api/todos?id=<uuid>       -> body { done?, title?, due_date?, category?, recur?, recur_until?, low?, remind_time?, list?, focus?, reviewed?, is_session?, items?, notes?, prio?, quick?, must?, blocked?, unblock_action?, pproject_id?, pp_backlog? }
 // pproject_id links a Personal task to a Personal Project (see /api/pprojects); null unlinks. Ignored for Work tasks.
 // pp_backlog: true keeps a project task on its project page only (Backlog), out of the Personal list.
@@ -252,21 +256,29 @@ var ISO = /^\d{4}-\d{2}-\d{2}$/;
 var HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 var RECURS = ['daily', 'weekdays', 'weekly', 'fortnightly', 'monthly', 'yearly'];
 
+// Remember which tasks an import added, so it can be undone. Best effort: the import itself never fails because of this.
+async function logBatch(token, b, ids) {
+  if (!ids.length || typeof b.batch !== 'string' || !UUID.test(b.batch)) return false;
+  try { await rpc('todo_import_log', { p_token: token, p_batch: b.batch, p_name: typeof b.name === 'string' ? b.name.slice(0, 200) : '', p_ids: ids }); return true; }
+  catch (e) { console.error('import log', e.code, e.message); return false; }
+}
+
 // CSV import: validate every row first (nothing is written if any row is wrong), then add them one by one.
 async function bulkImport(token, b, today, res) {
-  var rows = Array.isArray(b.rows) ? b.rows : null, i, r, out = [], errors = [], vals = [], n;
+  var rows = Array.isArray(b.rows) ? b.rows : null, i, r, out = [], errors = [], vals = [], n, preview = [];
   if (!rows || !rows.length) return send(res, 400, { error: 'no rows' });
   if (rows.length > bulk.MAX_ROWS) return send(res, 400, { error: 'too many rows (max ' + bulk.MAX_ROWS + ' at a time)' });
   for (i = 0; i < rows.length; i++) {
     r = bulk.validateRow(rows[i], today);
     n = rows[i] && typeof rows[i].row === 'number' ? rows[i].row : i + 2;
     if (r.errors.length) errors.push({ row: n, messages: r.errors });
+    preview.push({ row: n, errors: r.errors, value: r.value });
     vals.push(r.value);
   }
-  if (errors.length) return send(res, 400, { ok: false, dry: b.dry === true, count: rows.length, errors: errors, added: 0 });
-  if (b.dry === true) return send(res, 200, { ok: true, dry: true, count: rows.length, errors: [], added: 0 });
+  if (errors.length) return send(res, 400, { ok: false, dry: b.dry === true, count: rows.length, errors: errors, added: 0, preview: preview });
+  if (b.dry === true) return send(res, 200, { ok: true, dry: true, count: rows.length, errors: [], added: 0, preview: preview });
 
-  var added = 0, anyRemind = false;
+  var added = 0, anyRemind = false, newIds = [], logged = false;
   try {
     for (i = 0; i < vals.length; i++) {
       var v = vals[i], cat = v.category;
@@ -284,14 +296,17 @@ async function bulkImport(token, b, today, res) {
       } else row = await rpc('todo_add', args);
       if (v.notes && row && row.id) await rpc('todo_update', { p_token: token, p_id: row.id, p_patch: { notes: v.notes } });
       added++;
+      if (row && row.id) newIds.push(row.id);
       if (v.remind_time) anyRemind = true;
     }
   } catch (e) {
     console.error('bulk import', e.message);
+    await logBatch(token, b, newIds);
     return send(res, 500, { ok: false, error: 'stopped after ' + added + ' of ' + vals.length + ' rows', added: added, count: vals.length, errors: [] });
   }
+  logged = await logBatch(token, b, newIds);
   var cal = anyRemind ? await calHook(token) : null;
-  return send(res, 201, { ok: true, dry: false, count: vals.length, errors: [], added: added, cal: cal });
+  return send(res, 201, { ok: true, dry: false, count: vals.length, errors: [], added: added, cal: cal, logged: logged });
 }
 
 module.exports = async function handler(req, res) {
@@ -304,6 +319,11 @@ module.exports = async function handler(req, res) {
   try {
     var today = todayISO();
 
+    if (req.method === 'GET' && query.imports) {
+      try { return send(res, 200, { imports: (await rpc('todo_import_list', { p_token: token })) || [] }); }
+      catch (ie) { if (ie.code === 'PGRST202') return send(res, 200, { imports: [], unavailable: true }); throw ie; } // database not updated yet (setup21.sql)
+    }
+
     if (req.method === 'GET') {
       var list = await rpc('todo_list', { p_token: token }), fp = fingerprint(list), nowIso = new Date().toISOString();
       if (typeof query.v === 'string' && query.v === fp) return send(res, 200, { same: true, today: today, now: nowIso });
@@ -313,6 +333,17 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST') {
       var b = readBody(req);
       if (query.bulk) return await bulkImport(token, b, today, res);
+      if (query.import_undo) {
+        if (!UUID.test(String(query.import_undo))) return send(res, 400, { error: 'bad id' });
+        var ur;
+        try { ur = await rpc('todo_import_undo', { p_token: token, p_id: query.import_undo }); }
+        catch (ue) {
+          if (ue.code === '23505') return send(res, 409, { error: 'already undone' });
+          throw ue; // P0002 -> 404 and the rest are handled below
+        }
+        var undoCal = await calHook(token); // timed tasks that were in Apple Calendar go with them
+        return send(res, 200, { ok: true, removed: ur.removed, added: ur.added, cal: undoCal });
+      }
       if (Array.isArray(b.plan)) { // Daily Preview: save today's running order
         var ids = [];
         for (var pi = 0; pi < b.plan.length && pi < 200; pi++) if (typeof b.plan[pi] === 'string' && UUID.test(b.plan[pi])) ids.push(b.plan[pi]);

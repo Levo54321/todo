@@ -23,11 +23,14 @@ ok('several faults all reported for one row', v({ title: '', due_date: 'x', prio
 ok('notes over 2000 refused; unknown keys ignored', v({ title: 'a', notes: new Array(2002).join('n') }).errors.length === 1 && v({ title: 'a', bogus: 'x' }).errors.length === 0);
 
 // ---- endpoint
-var rows = [], patches = [], fail = false;
+var rows = [], patches = [], fail = false, imports = [], failLog = false;
 function fakeRpc(name, args) {
   if (args.p_token !== 'goodtoken') { var e = new Error('no'); e.code = '28000'; throw e; }
   if (name === 'todo_add') { if (fail && rows.length >= 2) throw new Error('db down'); var r = { id: 'n' + rows.length, title: args.p_title, args: args }; rows.push(r); return r; }
   if (name === 'todo_update') { patches.push(args); return {}; }
+  if (name === 'todo_import_log') { if (failLog) throw new Error('log down'); var bt = imports.filter(function (x) { return x.id === args.p_batch; })[0]; if (bt) bt.ids = bt.ids.concat(args.p_ids); else imports.push({ id: args.p_batch, name: args.p_name, ids: args.p_ids.slice(), undone: false }); return { ok: true }; }
+  if (name === 'todo_import_list') return imports.map(function (x) { return { id: x.id, name: x.name, n: x.ids.length, alive: x.ids.length, undone_at: x.undone ? 'x' : null }; });
+  if (name === 'todo_import_undo') { var u = imports.filter(function (x) { return x.id === args.p_id; })[0]; if (!u) { var e1 = new Error('no such import'); e1.code = 'P0002'; throw e1; } if (u.undone) { var e2 = new Error('already undone'); e2.code = '23505'; throw e2; } u.undone = true; return { ok: true, removed: u.ids.length, added: u.ids.length }; }
   if (name === 'cfg_get') return JSON.stringify([{ name: 'Alpha' }]);
   if (name === 'proj_list' || name === 'project_list') return [{ name: 'Alpha' }];
   throw new Error('unexpected rpc ' + name);
@@ -47,13 +50,30 @@ function call(method, query, body) {
   var good = [{ row: 2, title: 'One', list: 'personal', due_date: '24/11/2026', notes: 'hello' }, { row: 3, title: 'Two', list: 'work', category: 'alpha', priority: '2', quick: 'yes' }, { row: 4, title: 'Three' }];
   var r = await call('POST', { bulk: '1' }, { rows: good, dry: true });
   ok('dry run: 200, nothing written', r.status === 200 && r.json.dry === true && r.json.count === 3 && rows.length === 0, JSON.stringify(r.json));
+  ok('dry run returns a preview of how each row was understood', r.json.preview.length === 3 && r.json.preview[0].row === 2 && r.json.preview[0].value.due_date === '2026-11-24' && r.json.preview[1].value.prio === 2 && r.json.preview[1].value.quick === true && r.json.preview[1].value.list === 'work', JSON.stringify(r.json.preview[1]));
   r = await call('POST', { bulk: '1' }, { rows: good.concat([{ row: 5, title: '', due_date: 'zzz' }]) });
-  ok('one bad row: 400 with its line number, NOTHING added', r.status === 400 && r.json.errors.length === 1 && r.json.errors[0].row === 5 && r.json.errors[0].messages.length === 2 && rows.length === 0, JSON.stringify(r.json));
-  r = await call('POST', { bulk: '1' }, { rows: good });
+  ok('one bad row: 400 with its line number, NOTHING added, preview still shown', r.status === 400 && r.json.preview.length === 4 && r.json.preview[3].errors.length === 2 && r.json.errors.length === 1 && r.json.errors[0].row === 5 && r.json.errors[0].messages.length === 2 && rows.length === 0, JSON.stringify(r.json));
+  var BATCH = '11111111-1111-4111-8111-111111111111';
+  r = await call('POST', { bulk: '1' }, { rows: good, batch: BATCH, name: 'my file.csv' });
   ok('real run: 201, three added', r.status === 201 && r.json.added === 3 && rows.length === 3, JSON.stringify(r.json));
+  ok('real run logged under its batch with the 3 new ids', r.json.logged === true && imports.length === 1 && imports[0].name === 'my file.csv' && imports[0].ids.length === 3, JSON.stringify(imports));
   ok('UK date arrives as ISO; notes saved by update', rows[0].args.p_due === '2026-11-24' && patches.length === 1 && patches[0].p_patch.notes === 'hello');
   ok('work category matched to the real project name; tags sent', rows[1].args.p_category === 'Alpha' && rows[1].args.p_list === 'work' && rows[1].args.p_prio === 2 && rows[1].args.p_quick === true);
   ok('plain row sends no tag arguments', !('p_prio' in rows[2].args));
+  var l = await call('GET', { imports: '1' }, null);
+  ok('history list', l.status === 200 && l.json.imports.length === 1 && l.json.imports[0].name === 'my file.csv', JSON.stringify(l.json));
+  var u1 = await call('POST', { import_undo: BATCH }, { go: 1 });
+  ok('undo: 200 with counts', u1.status === 200 && u1.json.ok === true && u1.json.removed === 3, JSON.stringify(u1.json));
+  var u2 = await call('POST', { import_undo: BATCH }, { go: 1 });
+  ok('second undo: 409', u2.status === 409);
+  var u3 = await call('POST', { import_undo: '22222222-2222-4222-8222-222222222222' }, { go: 1 });
+  ok('unknown import: 404', u3.status === 404);
+  var u4 = await call('POST', { import_undo: 'nope' }, { go: 1 });
+  ok('bad id: 400', u4.status === 400);
+  failLog = true;
+  var rl = await call('POST', { bulk: '1' }, { rows: [{ title: 'z' }], batch: '33333333-3333-4333-8333-333333333333' });
+  ok('history log failing never fails the import (logged:false)', rl.status === 201 && rl.json.added === 1 && rl.json.logged === false, JSON.stringify(rl.json));
+  failLog = false; rows.length = 0;
   r = await call('POST', { bulk: '1' }, { rows: [] });
   ok('no rows -> 400', r.status === 400);
   var many = []; for (var i = 0; i < 101; i++) many.push({ title: 't' + i });

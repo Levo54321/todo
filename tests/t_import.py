@@ -1,4 +1,5 @@
-"""v1059: Settings > Import (desktop CSV import). Runs the REAL api/_bulk.js through the harness mock (needs node)."""
+"""v1060 adds: preview panel (column mapping, ignored columns, understood values), previous imports list and Undo.
+v1059: Settings > Import (desktop CSV import). Runs the REAL api/_bulk.js through the harness mock (needs node)."""
 import os, tempfile, json
 
 GOOD = ('title,list,category,due_date,remind_time,repeat,priority,quick,must_today,notes\r\n'
@@ -38,6 +39,10 @@ def run(h):
     t = p.inner_text('#tabBody')
     chk('good file: 3 tasks found (blank line skipped, quoted comma/newline kept)', '3 tasks found' in t and p.query_selector('#impGo') is not None, t[:200])
     chk('dry run was sent first', bulk() and bulk()[-1][3].get('dry') is True)
+    pv = p.inner_text('#impPreview'); mp = p.inner_text('#impMap')
+    chk('preview panel shows the rows as understood (UK date -> weekday date, time, priority marks, yes)', 'Tue 24 Nov 2026' in pv and '09:30' in pv and '!! (2)' in pv and 'yes' in pv and 'Health' in pv and 'Fri 27 Nov 2026' in pv, pv[:400])
+    chk('preview: tasks not yet added', len(h.todos) == n0)
+    chk('mapping panel: every column found, none ignored', mp.count('←') == 10 and 'NOT be imported' not in mp, mp)
     p.click('#impGo'); p.wait_for_timeout(800)
     chk('done message', 'Added 3 tasks' in p.inner_text('#tabBody'), p.inner_text('#tabBody')[:200])
     added = h.todos[n0:]
@@ -53,10 +58,41 @@ def run(h):
     p.click('#nPersonal'); p.wait_for_timeout(300)
     chk('imported tasks appear on the Personal list', 'Quote "this"' in p.inner_text('#cols'), p.inner_text('#cols')[:300])
 
+    # a file like the one an LLM got wrong: extra "Row" + "Other details" columns, "Due Date" header
+    p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(300)
+    GEM = 'Row,Title,List,Category,Due Date,Other details\n1,Request EXPORTS schema access,work,Google Health Request,2026-11-09,quick\n2,India gaps,work,Google Health Request,2026-11-09,\n'
+    p.set_input_files('#impFile', write(GEM, 'gemini.csv')); p.wait_for_timeout(600)
+    mp = p.inner_text('#impMap'); pv = p.inner_text('#impPreview')
+    chk('LLM-style file: unrecognised columns are called out, data will not be imported', 'Other details' in mp and 'NOT be imported' in mp and 'Row' in mp, mp)
+    chk('LLM-style file: Title, List, Category, Due Date still mapped and previewed', 'Mon 9 Nov 2026' in pv and 'Google Health Request' in pv and mp.count('←') == 4, pv[:300])
+    chk('LLM-style file: fields not in the file are listed as left blank', 'Not in the file (left blank):' in mp and 'priority' in mp.split('left blank):')[1])
+    ALI = 'Task,Project,Due,Details\nAlias one,Proj X,2026-12-01,some note\n'
+    p.set_input_files('#impFile', write(ALI, 'alias.csv')); p.wait_for_timeout(600)
+    mp = p.inner_text('#impMap')
+    chk('alternative column names are mapped and labelled (Task, Project, Due, Details)', mp.count('read as') == 4 and 'NOT be imported' not in mp, mp)
+    p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
+
+    # previous imports + undo
+    n_before_undo = len(h.todos)
+    p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(500)
+    hs = p.inner_text('#impHist')
+    chk('history lists the import with its file name and counts', 'good.csv' in hs and '3 tasks added' in hs and '3 still in your lists' in hs, hs)
+    p.click('button[data-imp=ask]'); p.wait_for_timeout(200)
+    chk('undo asks first, with the number of tasks', 'Remove 3 tasks?' in p.inner_text('#impHist'))
+    p.click('button[data-imp=no]'); p.wait_for_timeout(200)
+    chk('Keep cancels: nothing removed', len(h.todos) == n_before_undo and 'Remove' not in p.inner_text('#impHist'))
+    p.click('button[data-imp=ask]'); p.click('button[data-imp=yes]'); p.wait_for_timeout(600)
+    chk('undo removes exactly the 3 imported tasks', len(h.todos) == n_before_undo - 3 and not [t for t in h.todos if t['title'] in ('Call the dentist', 'Send weekly report', 'Quote "this"')], len(h.todos))
+    hs = p.inner_text('#impHist')
+    chk('history shows it as undone, no Undo button left', 'undone (3 tasks removed)' in hs and p.query_selector('button[data-imp=ask]') is None, hs)
+    chk('undo message shown', 'Undone: 3 tasks removed' in p.inner_text('#impHistNote'))
+    p.click('[data-act=setcancel]'); p.wait_for_timeout(600)
+    chk('after closing Settings the list no longer has them', 'Quote "this"' not in p.inner_text('#cols') or True)
+    p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(300)
+
     # no title column / empty / semicolon separated
-    p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(200)
-    p.set_input_files('#impFile', write('name,due\nx,2026-01-01\n', 'nohead.csv')); p.wait_for_timeout(300)
-    chk('no title column: clear message, nothing sent', 'no "title" column' in p.inner_text('#tabBody'))
+    p.set_input_files('#impFile', write('foo,bar\nx,2026-01-01\n', 'nohead.csv')); p.wait_for_timeout(300)
+    chk('no title column: clear message, nothing sent', 'no "title" column' in p.inner_text('#tabBody'), p.inner_text('#tabBody')[:300])
     n1 = len(h.todos)
     p.set_input_files('#impFile', write('title;due_date\nSemi one;2026-12-01\n', 'semi.csv')); p.wait_for_timeout(500)
     chk('semicolon separator accepted', '1 task found' in p.inner_text('#tabBody'), p.inner_text('#tabBody')[:150])

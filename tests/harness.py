@@ -35,6 +35,7 @@ class H:
         self.pevents = []
         self.calls = []
         self.same = 0  # how many GET /api/todos?v= were answered "same" (unchanged)
+        self.imports = []  # CSV import history (todo_imports)
         self.fail_bulk = False  # make the real (non-dry) CSV import answer 500
         self.fail_delete = False  # make DELETE /api/todos answer 500 (the task stays on the server)
         self.errors = []
@@ -47,6 +48,16 @@ class H:
         self.calls.append((method, path, q, body))
         if path in self.extra: return self.extra[path](self, method, q, body)
         if path == '/api/todos':
+            if method == 'GET' and 'imports' in q:
+                ids = {t['id'] for t in self.todos}
+                return 200, {'imports': [{'id': x['id'], 'name': x['name'], 'n': x['n'], 'created_at': x['created_at'], 'undone_at': x['undone_at'], 'undone_n': x['undone_n'], 'alive': len([i for i in x['ids'] if i in ids])} for x in reversed(self.imports)]}
+            if method == 'POST' and 'import_undo' in q:  # mirrors todo_import_undo
+                b = [x for x in self.imports if x['id'] == q['import_undo'][0]]
+                if not b: return 404, {'error': 'not found'}
+                if b[0]['undone_at']: return 409, {'error': 'already undone'}
+                before = len(self.todos); self.todos = [t for t in self.todos if t['id'] not in b[0]['ids']]
+                b[0]['undone_at'] = NOW; b[0]['undone_n'] = before - len(self.todos)
+                return 200, {'ok': True, 'removed': b[0]['undone_n'], 'added': b[0]['n'], 'cal': None}
             if method == 'GET':
                 v = hashlib.sha1(json.dumps(self.todos, sort_keys=True).encode()).hexdigest()[:20]  # like api/todos.js: fingerprint of the list, not of `now`
                 if q.get('v', [None])[0] == v: self.same += 1; return 200, {'same': True, 'today': TODAY, 'now': NOW}
@@ -56,13 +67,19 @@ class H:
                 js = "var b=require('./api/_bulk.js'),i=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(JSON.stringify(i.rows.map(function(r,k){var v=b.validateRow(r,i.today);return {row:typeof r.row==='number'?r.row:k+2,errors:v.errors,value:v.value}})))"
                 out = json.loads(subprocess.run(['node', '-e', js], input=json.dumps({'rows': body.get('rows') or [], 'today': TODAY}), capture_output=True, text=True, cwd=REPO).stdout)
                 errs = [{'row': o['row'], 'messages': o['errors']} for o in out if o['errors']]
-                if errs: return 400, {'ok': False, 'dry': body.get('dry') is True, 'count': len(out), 'errors': errs, 'added': 0}
-                if body.get('dry') is True: return 200, {'ok': True, 'dry': True, 'count': len(out), 'errors': [], 'added': 0}
+                prev = [{'row': o['row'], 'errors': o['errors'], 'value': o['value']} for o in out]
+                if errs: return 400, {'ok': False, 'dry': body.get('dry') is True, 'count': len(out), 'errors': errs, 'added': 0, 'preview': prev}
+                if body.get('dry') is True: return 200, {'ok': True, 'dry': True, 'count': len(out), 'errors': [], 'added': 0, 'preview': prev}
                 if self.fail_bulk: return 500, {'ok': False, 'error': 'stopped', 'added': 0}
+                new_ids = []
                 for o in out:
                     v = o['value']; t = task(v['title'], list=v['list'], category=v['category'], due_date=v['due_date'], remind_time=v['remind_time'], recur=v['recur'], prio=v['prio'], quick=v['quick'], must=v['must'], notes=v['notes'] or None)
-                    self.todos.append(t)
-                return 201, {'ok': True, 'dry': False, 'count': len(out), 'errors': [], 'added': len(out), 'cal': None}
+                    self.todos.append(t); new_ids.append(t['id'])
+                if body.get('batch'):  # mirrors todo_import_log: same batch id extends the same import
+                    b = [x for x in self.imports if x['id'] == body['batch']]
+                    if b: b[0]['ids'] += new_ids; b[0]['n'] += len(new_ids)
+                    else: self.imports.append({'id': body['batch'], 'name': body.get('name') or '', 'n': len(new_ids), 'ids': list(new_ids), 'created_at': NOW, 'undone_at': None, 'undone_n': None})
+                return 201, {'ok': True, 'dry': False, 'count': len(out), 'errors': [], 'added': len(out), 'cal': None, 'logged': True}
             if method == 'POST':
                 title = body.get('text') or body.get('title')
                 t = task(title, list='work' if (re.search(r'\swork$', title or '') or body.get('list') == 'work') else 'personal')
