@@ -341,7 +341,20 @@ async function scanUpload(token, req, today, res) {
   var scan = require('./_scan.js'), buf, out, sv;
   try { await rpc('todo_scan_latest', { p_token: token }); }
   catch (ge) { if (ge.code === 'PGRST202') return send(res, 500, { error: 'database not updated yet (db/setup23.sql)' }); throw ge; }
-  try { buf = scan.imageFrom(req.body); } catch (ie) { return send(res, ie.status || 400, { error: ie.message }); }
+  var raw = req.body;
+  if ((raw == null || raw === '' || (typeof raw === 'object' && !Buffer.isBuffer(raw) && !raw.image)) && req.readable && !req.readableEnded) {
+    raw = await new Promise(function (ok) { // body not handed over by the runtime: read the stream ourselves
+      var ch = [], n = 0;
+      req.on('data', function (c) { n += c.length; if (n < 6e6) ch.push(c); });
+      req.on('end', function () { ok(Buffer.concat(ch)); });
+      req.on('error', function () { ok(null); });
+    });
+  }
+  try { buf = scan.imageFrom(raw); }
+  catch (ie) {
+    var ct = String(req.headers['content-type'] || 'none').slice(0, 40), cl = String(req.headers['content-length'] || '0').slice(0, 12);
+    return send(res, ie.status || 400, { error: ie.message + (ie.status === 400 ? ' [type ' + ct + ', length ' + cl + ']' : '') });
+  }
   var names = (await projectList(token)).map(function (p) { return p && p.name; }).filter(Boolean);
   try { out = await scan.readNotes(buf, { today: today, projects: names }); }
   catch (se) { console.error('scan', se.status || '', se.message); return send(res, se.status || 502, { error: se.message }); }
