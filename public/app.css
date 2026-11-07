@@ -481,3 +481,6 @@ html.work #projBtn{display:inline-block}
 .notesmd{margin-top:8px;padding:8px 12px;border-radius:var(--r1);background:var(--bg);border:1px solid var(--rule);font-size:var(--fs-sm);line-height:1.5}
 .notesmd p{margin:0 0 4px}.notesmd ul,.notesmd ol{margin:0 0 4px;padding-left:20px}.notesmd .mdh{font-weight:700;margin:4px 0}.notesmd code{background:var(--chip);padding:0 4px;border-radius:4px}.notesmd a{color:var(--accent)}
 .impcsvpanel{margin:8px 0 12px}.imphcopy{margin-left:auto}.imphrow .imphact .btn{margin-left:0}
+.impbulk .chip{margin:4px 4px 0 0}
+.impbulkrow{display:-webkit-box;display:-webkit-flex;display:flex;margin-top:8px}
+.impbulkrow .edate{-webkit-box-flex:1;-webkit-flex:1 1 auto;flex:1 1 auto;min-width:0;margin-right:8px}

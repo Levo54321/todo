@@ -38,21 +38,44 @@ function imageFrom(body) {
   return b;
 }
 
-function buildPrompt(today, projects) {
-  var known = (projects && projects.length) ? ' known Work projects are ' + projects.slice(0, 40).join(', ') + ', so if a heading clearly means one of those use that exact name.' : '';
+function buildPrompt(today, list) {
+  var lc = (list === 'work' || list === 'personal')
+    ? 'list is always ' + list + ' for every task. '
+    : 'list is work or personal, personal only if the heading or task is clearly personal, otherwise work. ';
   return 'You are converting a photo of handwritten notes into an import file for a to-do app. Output ONLY CSV text: no code fences, no commentary, no blank lines. ' +
     'The first line is the header row: ' + HEADER + ' (copy it exactly). Every following line is one task with exactly 11 cells (10 commas outside quotes); leave unused cells empty; ' +
     'wrap any cell containing a comma, quote mark or line break in quote marks and double any quote mark inside it. ' +
     'READING THE PAGE: a line with no dash is a heading and becomes the category of the dash lines below it until the next heading; every line that starts with a dash is one task (its title). ' +
     'Skip anything ticked off or crossed out. Ignore ink showing through from the other side of the page. ' +
     'Fix obvious handwriting or spelling slips using context, for example healh becomes health; keep a trailing question mark; if a word is truly unreadable write [?] in its place. ' +
-    'COLUMNS: list is work or personal, default work unless the heading or task is clearly personal. category is the heading text (tidy spelling, max 60 characters), or empty if there is no heading;' + known + ' ' +
+    'COLUMNS: ' + lc + 'category is ONLY the heading text actually written above the task (tidy spelling, max 60 characters). If the task has no heading above it, category MUST be empty. Never infer, guess or invent a category or project from what the task is about. ' +
     'due_date is YYYY-MM-DD and only if a day or date is written; today is ' + today + ', and a weekday name means the next such day (today if it is that day). ' +
     'remind_time is HH:MM in 24-hour time and only if a time is written. repeat is one of daily, weekdays, weekly, fortnightly, monthly, yearly and only if written. ' +
     'priority is a single digit 0 to 3 (3 is most important), only if shown by marks such as ! !! !!! or the word urgent or high, otherwise empty. ' +
     'quick is yes only if the page says quick, otherwise empty. must_today is yes only if the page says must do today, otherwise empty. ' +
     'notes is only extra context actually written next to a task, never invented, otherwise empty. subtasks is empty unless sub-items are clearly written under a task, then separate them with |. ' +
     'title is required, one line, max 500 characters. Do not add any column, number, or text of your own. If nothing is readable output only the header line.';
+}
+
+// Force the list column (2nd cell) on every task row, whatever the model wrote. Quote-aware.
+function forceList(csv, list) {
+  if (list !== 'work' && list !== 'personal') return csv;
+  var rows = [], cells = [], cur = '', q = false, i, c, any = false;
+  function endCell() { cells.push(cur); cur = ''; }
+  function endRow() { endCell(); rows.push(cells); cells = []; any = false; }
+  for (i = 0; i < csv.length; i++) {
+    c = csv.charAt(i);
+    if (q) { if (c === '"') { if (csv.charAt(i + 1) === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') { q = true; any = true; }
+    else if (c === ',') { endCell(); any = true; }
+    else if (c === '\n') { if (any || cur) endRow(); }
+    else { cur += c; any = true; }
+  }
+  if (any || cur) endRow();
+  return rows.map(function (r, n) {
+    if (n > 0) { while (r.length < 2) r.push(''); r[1] = list; }
+    return r.map(function (x) { return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; }).join(',');
+  }).join('\n');
 }
 
 // Tidy what the model sent: no BOM, no ``` fences, must start with the header.
@@ -82,7 +105,7 @@ async function readNotes(buf, opt) {
   if (!key) throw fail(503, 'Scanning is not set up yet: GEMINI_API_KEY is missing in Vercel.');
   var model = String(process.env.GEMINI_MODEL || DEFAULT_MODEL); if (!/^[A-Za-z0-9._-]+$/.test(model)) model = DEFAULT_MODEL;
   var mime = sniff(buf), ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, opt.timeout || TIMEOUT_MS), r, raw, data = null;
-  var body = { generationConfig: { temperature: 0 }, contents: [{ parts: [{ text: buildPrompt(opt.today, opt.projects) }, { inline_data: { mime_type: mime, data: buf.toString('base64') } }] }] };
+  var body = { generationConfig: { temperature: 0 }, contents: [{ parts: [{ text: buildPrompt(opt.today, opt.list) }, { inline_data: { mime_type: mime, data: buf.toString('base64') } }] }] };
   try {
     r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
       method: 'POST', headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal
@@ -102,9 +125,9 @@ async function readNotes(buf, opt) {
   var parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts, text = '', i;
   for (i = 0; parts && i < parts.length; i++) if (typeof parts[i].text === 'string' && !parts[i].thought) text += parts[i].text;
   if (!text) throw fail(502, 'Gemini sent back nothing. Try again, or retake the photo.');
-  var csv = cleanCsv(text), rows = countRows(csv);
+  var csv = forceList(cleanCsv(text), opt.list), rows = countRows(csv);
   if (rows > MAX_ROWS) throw fail(502, 'That page produced ' + rows + ' tasks; the limit is ' + MAX_ROWS + '.');
   return { csv: csv, rows: rows };
 }
 
-module.exports = { HEADER: HEADER, sniff: sniff, imageFrom: imageFrom, buildPrompt: buildPrompt, cleanCsv: cleanCsv, countRows: countRows, readNotes: readNotes };
+module.exports = { HEADER: HEADER, sniff: sniff, imageFrom: imageFrom, buildPrompt: buildPrompt, forceList: forceList, cleanCsv: cleanCsv, countRows: countRows, readNotes: readNotes };

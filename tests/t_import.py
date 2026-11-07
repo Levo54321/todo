@@ -220,10 +220,16 @@ def run(h):
     pg.click('#scanbar [data-scan=review]'); pg.wait_for_timeout(1200)
     chk('scan: Review opens Import with 3 task cards ready', len(pg.query_selector_all('[id^=impCard]')) == 3 and 'Pool health' in pg.inner_text('#tabBody'), pg.inner_text('#tabBody')[:120])
     chk('scan: the two new projects are flagged', 'Human Signal' in pg.inner_text('#tabBody') and 'GenMedia' in pg.inner_text('#tabBody'))
+    chk('scan: bulk project bar is there and 44px', pg.is_visible('#impBulkCat') and pg.evaluate("Array.prototype.every.call(document.querySelectorAll('.impbulk .btn, .impbulk .chip'), function(b){return b.getBoundingClientRect().height >= 44})"))
+    pg.fill('#impBulkCat', 'Zeta'); pg.click('[data-imp=bulkgo]'); pg.wait_for_timeout(500)
+    chk('scan: Apply to all gives every task the typed project', 'Zeta' in pg.inner_text('#impNewProj') and 'Human Signal' not in pg.inner_text('#impNewProj'), pg.inner_text('#tabBody')[:300])
+    pg.click('[data-imp=bulkcat][data-v=""]'); pg.wait_for_timeout(500)
+    chk('scan: None clears the project on every task', pg.query_selector('#impNewProj') is None)
     pg.click('#impGo'); pg.wait_for_timeout(1500)
     chk('scan: Add imports the 3 tasks', len(h.todos) == n0 + 3 and any(t['title'] == 'Access, roles?' for t in h.todos), len(h.todos) - n0)
     chk('scan: the scan is marked done and the banner goes', len(scan_calls()) == 1 and scan_calls()[0][2].get('scan_done') == ['sc-1'] and not pg.is_visible('#scanbar'))
     ctx.close()
+    del h.todos[n0:]  # the first scan's tasks would now count as duplicates
     h.scan = {'id': 'sc-2', 'csv': SC, 'n': 3, 'created_at': NOW, 'status': 'ready'}
     ctx, pg = phone('http://todo.test/?open=scan')
     chk('scan: ?open=scan goes straight to the review cards', len(pg.query_selector_all('[id^=impCard]')) == 3 and pg.is_visible('#impGo'), pg.inner_text('body')[:80])

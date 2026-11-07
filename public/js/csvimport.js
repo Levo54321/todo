@@ -515,6 +515,7 @@
       if (t.dups) h += '<div class="impdupbar"><span><b>' + plural(t.dups, 'task') + '</b> look like tasks you already have (skipped unless you change it):</span><div class="seg impseg"><button type="button" data-imp="dupall" data-v="skip">Skip all</button><button type="button" data-imp="dupall" data-v="update">Update them all</button><button type="button" data-imp="dupall" data-v="add">Add all anyway</button></div></div>';
       if (t.bad) h += '<div class="imperr" id="impErrs"><b>' + plural(t.bad, 'task') + ' with problems will be skipped.</b> Tap a card to fix it, or remove it. The rest import normally.</div>';
       if (t.names.length) h += '<div class="impinfo" id="impNewProj">New Work project' + (t.names.length === 1 ? '' : 's') + ' to be created: <b>' + esc(t.names.join(', ')) + '</b>. Pick an existing one on the card instead if it is a typo.</div>';
+      if (st.scan) h += bulkBar();
       h += previewHTML();
       h += '<div class="impgo"><button class="btn primary impgobtn" id="impGo" data-imp="go" type="button"' + (t.add + t.upd ? '' : ' disabled') + '>' + esc(goLabel(t)) + '</button></div>';
       h += '<div class="impinfo">Importing the same file twice adds every task twice unless you skip or update the matches. Added tasks can be undone below; updates cannot.</div>';
@@ -542,6 +543,23 @@
     });
   }
 
+  /* Set one project/category on every scanned task (v1066). Chips only touch Work tasks; the text box touches all. */
+  function bulkBar() {
+    var h = '<div class="impinfo impbulk"><b>Project for all ' + st.items.length + ' tasks</b><div class="chips">', j;
+    h += '<button class="chip" type="button" data-imp="bulkcat" data-v="">None</button>';
+    for (j = 0; j < (projects || []).length; j++) h += '<button class="chip" type="button" data-imp="bulkcat" data-v="' + esc(projects[j]) + '">' + esc(projects[j]) + '</button>';
+    return h + '</div><div class="impbulkrow"><input class="edate" id="impBulkCat" type="text" maxlength="60" autocorrect="off" placeholder="Or type a project / heading" aria-label="Project for all"><button class="btn" type="button" data-imp="bulkgo">Apply to all</button></div></div>';
+  }
+  function bulkCat(name, workOnly) {
+    var j, it, v;
+    for (j = 0; j < st.items.length; j++) {
+      it = st.items[j]; v = it.p && it.p.value; if (!v) continue;
+      if (workOnly && v.list !== 'work') continue;
+      it.raw.category = name; v.category = name;
+      it.proj = (v.list === 'work' && name && projects && !knownProject(name)) ? { name: name } : null;
+    }
+    paint();
+  }
   function onClick(e) {
     try { onClick2(e); } catch (err) { st.msg = 'Something went wrong (' + (err && err.message ? err.message : err) + '). Nothing was changed; try again.'; paint(); }
   }
@@ -571,6 +589,8 @@
     else if (a === 'save' && st.items[i]) saveEdit(i);
     else if (a === 'del' && st.items[i]) { st.items.splice(i, 1); if (!st.items.length) { st = fresh(); st.msg = 'Every task was removed from this import.'; } paint(); }
     else if (a === 'act' && st.items[i]) { st.items[i].act = v; st.items[i].target = v === 'update' && st.items[i].dup ? st.items[i].dup.id : null; paint(); }
+    else if (a === 'bulkcat') bulkCat(v, true);
+    else if (a === 'bulkgo') { var bi = document.getElementById('impBulkCat'); bulkCat(bi ? bi.value.replace(/^\s+|\s+$/g, '') : '', false); }
     else if (a === 'dupall') { for (j = 0; j < st.items.length; j++) if (st.items[j].dup && !st.items[j].p.value.id) { st.items[j].act = v; st.items[j].target = v === 'update' ? st.items[j].dup.id : null; } paint(); }
   }
   function onChange(e) { // choosing an existing project on a card whose project is new

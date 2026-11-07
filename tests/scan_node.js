@@ -48,8 +48,8 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
   var bad = null; try { scan.cleanCsv('Sorry, I cannot read this.'); } catch (e) { bad = e; }
   ok('cleanCsv refuses a reply that is not a task list (502)', bad && bad.status === 502);
   ok('sniff knows jpeg and refuses text', scan.sniff(jpeg()) === 'image/jpeg' && scan.sniff(Buffer.from('hello world, not a photo')) === null);
-  var p = scan.buildPrompt('2026-11-07', ['Google Health Request', 'Human Signal']);
-  ok('prompt has today, the real header and the known projects', p.indexOf('today is 2026-11-07') > 0 && p.indexOf(scan.HEADER) > 0 && p.indexOf('Google Health Request, Human Signal') > 0);
+  var p = scan.buildPrompt('2026-11-07', 'personal');
+  ok('prompt has today, the real header, the forced list and no project names', p.indexOf('today is 2026-11-07') > 0 && p.indexOf(scan.HEADER) > 0 && p.indexOf('list is always personal') > 0 && p.indexOf('Google Health Request') < 0);
 
   // route: token first
   var r = await call('POST', { scan: '1' }, { 'x-todo-token': 'wrong' }, jpeg());
@@ -59,7 +59,7 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
   gemini = function () { return reply('```csv\n' + CSV + '\n```', [{ text: 'thinking out loud', thought: true }]); };
   r = await call('POST', { scan: '1' }, T, jpeg());
   ok('photo -> 200 with 3 rows and a scan id', r.status === 200 && r.json.ok === true && r.json.rows === 3 && /^[0-9a-f-]{36}$/.test(r.json.id), r.body);
-  ok('Gemini got the key in a header, jpeg mime, temperature 0, today and the live project names', geminiCalls.length === 1 && geminiCalls[0].headers['x-goog-api-key'] === KEY && geminiCalls[0].body.contents[0].parts[1].inline_data.mime_type === 'image/jpeg' && geminiCalls[0].body.generationConfig.temperature === 0 && /today is \d{4}-\d{2}-\d{2}/.test(geminiCalls[0].body.contents[0].parts[0].text) && geminiCalls[0].body.contents[0].parts[0].text.indexOf('Human Signal') > 0);
+  ok('Gemini got the key in a header, jpeg mime, temperature 0, today, and no project names', geminiCalls.length === 1 && geminiCalls[0].headers['x-goog-api-key'] === KEY && geminiCalls[0].body.contents[0].parts[1].inline_data.mime_type === 'image/jpeg' && geminiCalls[0].body.generationConfig.temperature === 0 && /today is \d{4}-\d{2}-\d{2}/.test(geminiCalls[0].body.contents[0].parts[0].text) && geminiCalls[0].body.contents[0].parts[0].text.indexOf('Human Signal') < 0);
   ok('the key is not in the URL or the reply', geminiCalls[0].url.indexOf(KEY) < 0 && r.body.indexOf(KEY) < 0);
   ok('saved CSV is clean (no fence, no thought text)', scans.length === 1 && scans[0].csv.indexOf('```') < 0 && scans[0].csv.indexOf('thinking') < 0 && scans[0].csv.indexOf('"Access, roles?"') > 0);
 
@@ -116,6 +116,18 @@ function reply(text, extra) { return { status: 200, body: { candidates: [{ conte
   process.env.GEMINI_MODEL = 'gemini-test-model'; gemini = null; geminiCalls.length = 0;
   await call('POST', { scan: '1' }, T, jpeg());
   ok('GEMINI_MODEL picks the model', geminiCalls[0] && geminiCalls[0].url.indexOf('/models/gemini-test-model:generateContent') > 0);
+
+
+{
+  var c = scan.forceList('title,list,category\nA,work,Proj\n"B, with comma",,\n', 'personal').split('\n');
+  ok('forceList sets list on every row, keeps header and quoting', c[0] === 'title,list,category' && c[1] === 'A,personal,Proj' && c[2] === '"B, with comma",personal,');
+  ok('forceList leaves csv alone when no list given', scan.forceList('title,list\nA,work', '') === 'title,list\nA,work');
+}
+
+
+  gemini = function () { return reply('title,list,category\nCall dentist,work,Health'); }; geminiCalls.length = 0;
+  r = await call('POST', { scan: '1', list: 'personal' }, T, jpeg());
+  ok('?list=personal is told to Gemini and forced on the saved row', r.status === 200 && geminiCalls[0].body.contents[0].parts[0].text.indexOf('list is always personal') > 0, r.body);
 
   global.fetch = origFetch; console.error = origErr;
   console.log(fails ? fails + ' FAIL' : '0 FAIL');

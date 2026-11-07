@@ -195,7 +195,7 @@ change the header in the endpoint file and regenerate._
 // GET    /api/todos?imports=1       -> { imports: [{id, name, n, created_at, alive, undone_at, undone_n}] } latest 30 CSV imports, newest first (alive = how many of its tasks still exist)
 // GET    /api/todos?import_csv=<uuid> -> { name, csv } the clean CSV saved with that import (404 if none); an import sends it as csv:<text> with its first chunk
 // POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
-// POST   /api/todos?scan=1          -> photo of handwritten notes -> tasks to review (v1065). Body: the photo itself (Shortcuts "File" body; JPEG, max 3.5 MB), or base64 text, or { image:"<base64>" }.
+// POST   /api/todos?scan=1[&list=work|personal] -> photo (v1066: list forces that list on every task and no project is guessed; omit it and Gemini decides work/personal)  photo of handwritten notes -> tasks to review (v1065). Body: the photo itself (Shortcuts "File" body; JPEG, max 3.5 MB), or base64 text, or { image:"<base64>" }.
 //                                      Checks the token, asks Gemini (key in env GEMINI_API_KEY, model GEMINI_MODEL, see api/_scan.js) to turn it into import CSV, and keeps the newest scan for review.
 //                                      Reply { ok, rows, id } (rows 0 = nothing readable). Errors: 400 not a photo, 413 too big, 429 Gemini busy, 502 Gemini failed, 503 key not set. Nothing is added to the list by this call.
 // GET    /api/todos?scan=1          -> { scan: { id, csv, n, created_at } | null } the newest scan still waiting for review (the app asks once when it opens, and for ?open=scan)
