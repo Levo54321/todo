@@ -3,7 +3,7 @@
 'use strict';
 
 var RECURS = ['daily', 'weekdays', 'weekly', 'fortnightly', 'monthly', 'yearly'];
-var COLUMNS = ['title', 'list', 'category', 'due_date', 'remind_time', 'repeat', 'priority', 'quick', 'must_today', 'notes'];
+var COLUMNS = ['title', 'list', 'category', 'due_date', 'remind_time', 'repeat', 'priority', 'quick', 'must_today', 'notes', 'subtasks'];
 var MAX_ROWS = 100; // per request; the page sends bigger files in several requests
 
 function str(v) { return v == null ? '' : String(v).replace(/^\s+|\s+$/g, ''); }
@@ -76,6 +76,22 @@ function validateRow(raw, today) {
   s = str(raw.notes);
   if (s.length > 2000) e.push('notes is longer than 2000 characters');
   v.notes = s;
+
+  // Sub-tasks: separated by | or line breaks; "[x] " at the start marks one as already done. Shown in the task's Sub-tasks list.
+  s = str(raw.subtasks);
+  v.subtasks = [];
+  if (s) {
+    var parts = s.split(/\r?\n|\|/), j, it, done;
+    for (j = 0; j < parts.length; j++) {
+      it = str(parts[j]); done = false;
+      if (/^\[[xX]\]/.test(it)) { done = true; it = str(it.replace(/^\[[xX]\]/, '')); } else if (/^\[ ?\]/.test(it)) it = str(it.replace(/^\[ ?\]/, ''));
+      it = it.replace(/^[-*•]\s+/, '');
+      if (!it) continue;
+      if (it.length > 200) { e.push('each sub-task must be 200 characters or fewer'); break; }
+      v.subtasks.push({ t: it, d: done });
+    }
+    if (v.subtasks.length > 100) e.push('at most 100 sub-tasks per task');
+  }
 
   // Same defaults as quick add: repeats, reminders and "must do today" start today unless a date is given.
   if (!v.due_date && (v.recur || v.remind_time || v.must)) v.due_date = today;

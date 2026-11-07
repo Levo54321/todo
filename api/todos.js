@@ -6,10 +6,10 @@
 //                                      of the list (not of `now`) and comes back in every full reply. No ?v= (an older cached app, the
 //                                      Shortcuts, the ?open=latest check) always gets the full list.
 // POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id?, pp_backlog? }
-// POST   /api/todos?bulk=1          -> CSV import (desktop). body { rows: [ {row?, title, list, category, due_date, remind_time, repeat, priority, quick, must_today, notes} ... up to 100 ], dry? }
+// POST   /api/todos?bulk=1          -> CSV import (desktop). body { rows: [ {row?, title, list, category, due_date, remind_time, repeat, priority, quick, must_today, notes, subtasks} ... up to 100 ], dry? }
 //                                      dry:true only checks the rows. Reply { ok, dry, count, errors:[{row, messages:[...]}], added, cal }. Rules: api/_bulk.js, docs/import/.
 //                                      A real run first checks every row and adds nothing if any row is wrong (400 with the same errors).
-//                                      Every reply also carries preview:[{row, errors, value:{title,list,category,due_date,remind_time,recur,prio,quick,must,notes}}] (the rows as the app understood them).
+//                                      Every reply also carries preview:[{row, errors, value:{title,list,category,due_date,remind_time,recur,prio,quick,must,notes,subtasks:[{t,d}]}}] (the rows as the app understood them).
 //                                      A real run may send batch:<uuid> (same id for every chunk of one file) and name:<file name>; the ids it added are logged under that batch so it can be undone.
 // GET    /api/todos?imports=1       -> { imports: [{id, name, n, created_at, alive, undone_at, undone_n}] } latest 30 CSV imports, newest first (alive = how many of its tasks still exist)
 // POST   /api/todos?import_undo=<uuid> -> deletes the tasks that import added (once). { ok, removed, added, cal }; 404 unknown import, 409 already undone
@@ -294,7 +294,10 @@ async function bulkImport(token, b, today, res) {
           row = await rpc('todo_add', args);
         }
       } else row = await rpc('todo_add', args);
-      if (v.notes && row && row.id) await rpc('todo_update', { p_token: token, p_id: row.id, p_patch: { notes: v.notes } });
+      if ((v.notes || v.subtasks.length) && row && row.id) {
+        var ipatch = {}; if (v.notes) ipatch.notes = v.notes; if (v.subtasks.length) ipatch.items = v.subtasks;
+        await rpc('todo_update', { p_token: token, p_id: row.id, p_patch: ipatch });
+      }
       added++;
       if (row && row.id) newIds.push(row.id);
       if (v.remind_time) anyRemind = true;

@@ -73,7 +73,7 @@ class H:
                 if self.fail_bulk: return 500, {'ok': False, 'error': 'stopped', 'added': 0}
                 new_ids = []
                 for o in out:
-                    v = o['value']; t = task(v['title'], list=v['list'], category=v['category'], due_date=v['due_date'], remind_time=v['remind_time'], recur=v['recur'], prio=v['prio'], quick=v['quick'], must=v['must'], notes=v['notes'] or None)
+                    v = o['value']; t = task(v['title'], list=v['list'], category=v['category'], due_date=v['due_date'], remind_time=v['remind_time'], recur=v['recur'], prio=v['prio'], quick=v['quick'], must=v['must'], notes=v['notes'] or None, items=v['subtasks'])
                     self.todos.append(t); new_ids.append(t['id'])
                 if body.get('batch'):  # mirrors todo_import_log: same batch id extends the same import
                     b = [x for x in self.imports if x['id'] == body['batch']]

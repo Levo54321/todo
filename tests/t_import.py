@@ -24,7 +24,7 @@ def run(h):
     chk('lists the columns', 'due_date' in p.inner_text('#tabBody') and 'must_today' in p.inner_text('#tabBody'))
     with p.expect_download() as dl: p.click('#impTpl')
     tpl = open(dl.value.path(), encoding='utf-8', newline='').read()
-    chk('template downloads with all 10 columns + examples', tpl.split('\r\n')[0].count(',') == 9 and 'Call the dentist' in tpl, tpl[:80])
+    chk('template downloads with all 11 columns + examples', tpl.split('\r\n')[0].count(',') == 10 and 'Call the dentist' in tpl and 'Draft summary|Check numbers' in tpl, tpl[:80])
 
     # a file with faults: nothing is added, lines are named, unknown column reported
     n0 = len(h.todos)
@@ -37,10 +37,10 @@ def run(h):
     # a good file
     p.set_input_files('#impFile', write(GOOD, 'good.csv')); p.wait_for_timeout(600)
     t = p.inner_text('#tabBody')
-    chk('good file: 3 tasks found (blank line skipped, quoted comma/newline kept)', '3 tasks found' in t and p.query_selector('#impGo') is not None, t[:200])
+    chk('good file: 3 tasks found (blank line skipped, quoted comma/newline kept)', '3 tasks found' in ' '.join(p.inner_text('#impSum').split()) and p.query_selector('#impGo') is not None, t[:200])
     chk('dry run was sent first', bulk() and bulk()[-1][3].get('dry') is True)
     pv = p.inner_text('#impPreview'); mp = p.inner_text('#impMap')
-    chk('preview panel shows the rows as understood (UK date -> weekday date, time, priority marks, yes)', 'Tue 24 Nov 2026' in pv and '09:30' in pv and '!! (2)' in pv and 'yes' in pv and 'Health' in pv and 'Fri 27 Nov 2026' in pv, pv[:400])
+    chk('preview panel shows the rows as understood (UK date -> weekday date, time, priority marks, yes)', 'Tue 24 Nov 2026' in pv and '09:30' in pv and '!! (2)' in pv and 'quick' in pv and 'Health' in pv and 'Fri 27 Nov 2026' in pv, pv[:400])
     chk('preview: tasks not yet added', len(h.todos) == n0)
     chk('mapping panel: every column found, none ignored', mp.count('←') == 10 and 'NOT be imported' not in mp, mp)
     p.click('#impGo'); p.wait_for_timeout(800)
@@ -95,10 +95,25 @@ def run(h):
     chk('no title column: clear message, nothing sent', 'no "title" column' in p.inner_text('#tabBody'), p.inner_text('#tabBody')[:300])
     n1 = len(h.todos)
     p.set_input_files('#impFile', write('title;due_date\nSemi one;2026-12-01\n', 'semi.csv')); p.wait_for_timeout(500)
-    chk('semicolon separator accepted', '1 task found' in p.inner_text('#tabBody'), p.inner_text('#tabBody')[:150])
+    chk('semicolon separator accepted', '1 task found' in ' '.join(p.inner_text('#impSum').split()))
     h.fail_bulk = True; h.allow.append('500')
     p.click('#impGo'); p.wait_for_timeout(600); h.fail_bulk = False
     chk('server failure: says nothing/part added, no crash', 'Stopped part-way' in p.inner_text('#tabBody') and len(h.todos) == n1, p.inner_text('#tabBody')[:200])
+    p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
+
+    # paste mode + sub-tasks + markdown-style notes
+    p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(300)
+    p.click('#impModePaste'); p.wait_for_timeout(150)
+    nP = len(h.todos)
+    PASTE = 'title,list,notes,subtasks\nPlan the review step,work,"**Context**\n- India doctors\n- Details before client sheet","Draft checklist|[x] Agree owner|Send to team"\n'
+    p.fill('#impPaste', PASTE); p.click('#impCheck'); p.wait_for_timeout(600)
+    pv = p.inner_text('#impPreview')
+    chk('paste: reviewed with sub-tasks count and notes shown', '3 sub-tasks' in pv and 'Draft checklist' in pv and 'India doctors' in pv, pv[:300])
+    chk('paste: stats tiles show 1 task', '1\ntask found' in p.inner_text('#impSum').replace('\n\n', '\n') or '1' in p.inner_text('#impSum'))
+    p.click('#impGo'); p.wait_for_timeout(700)
+    a_ = [x for x in h.todos[nP:] if x['title'] == 'Plan the review step']
+    chk('paste: task added with sub-tasks (one done) and multi-line notes', a_ and [i['t'] for i in a_[0]['items']] == ['Draft checklist', 'Agree owner', 'Send to team'] and a_[0]['items'][1]['d'] is True and '- India doctors' in (a_[0]['notes'] or ''), a_[:1])
+    chk('paste: listed in history as "Pasted CSV"', 'Pasted CSV' in p.inner_text('#impHist'))
     p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
 
     # not offered on phones/tablets
@@ -123,6 +138,8 @@ def run(h):
         ctx.route('**/*', serve)
         pg = ctx.new_page(); pg.goto('http://todo.test/'); pg.wait_for_timeout(900)
         pg.evaluate("document.querySelector('[data-act=settings]').click()"); pg.wait_for_timeout(300)
-        chk('%s: no Import tab' % label, pg.query_selector('.tab[data-val=import]') is None and pg.query_selector('.tab') is not None)
+        pg.click('.tab[data-val=import]'); pg.wait_for_timeout(300)
+        chk('%s: Import tab opens with Paste and no file picker or template download' % label, pg.query_selector('#impPaste') is not None and pg.query_selector('#impFile') is None and pg.query_selector('#impTpl') is None)
+        chk('%s: no horizontal overflow, paste box fits the screen' % label, not pg.evaluate("document.documentElement.scrollWidth > window.innerWidth") and pg.evaluate("document.getElementById('impPaste').getBoundingClientRect().right <= window.innerWidth"))
         ctx.close()
     return R

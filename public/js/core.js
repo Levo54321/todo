@@ -843,7 +843,7 @@
     var t = find(id); if (!t) return;
     editing = { id: id, list: t.list || 'personal', due: t.due_date || null, cat: t.category || null, pp: t.pproject_id || null, bl: !!(t.pproject_id && t.pp_backlog), recur: t.recur || null, low: !!t.low, until: t.recur_until || null, untilOn: !!t.recur_until, time: timeOf(t) || null, focus: isFocus(t), prio: t.prio || 0, quick: !!t.quick, must: isMust(t), blocked: !!t.blocked, unblock: t.unblock_action || '', paused: isPaused(t), pausedOn: t.paused_on || '', more: !!(t.recur || t.low || (t.items && t.items.length && !t.is_session)) };
     $('eTitle').value = t.title;
-    $('eNotes').value = t.notes || '';
+    $('eNotes').value = t.notes || ''; notesPreview();
     $('eUnblock').value = editing.paused ? editing.pausedOn : editing.unblock;
     renderSheet();
     $('sheet').style.display = 'flex';
@@ -1345,6 +1345,32 @@
     if (keepCity !== null) $('setCity').value = keepCity;
     if (keepCal !== null) $('setCal').value = keepCal;
   }
+  /* Notes can use light markdown: **bold**, *italic*, `code`, "- " / "1." lists, "# " headings, [text](https://link). Shown as a preview under the notes box. */
+  function mdInline(t) {
+    t = esc(t);
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    return t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  function mdHTML(src) {
+    var lines = String(src || '').split(/\r?\n/), out = '', list = '', i, l, m;
+    function close() { if (list) { out += '</' + list + '>'; list = ''; } }
+    for (i = 0; i < lines.length; i++) {
+      l = lines[i];
+      if ((m = l.match(/^\s*[-*•]\s+(.*)$/))) { if (list !== 'ul') { close(); out += '<ul>'; list = 'ul'; } out += '<li>' + mdInline(m[1]) + '</li>'; }
+      else if ((m = l.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== 'ol') { close(); out += '<ol>'; list = 'ol'; } out += '<li>' + mdInline(m[1]) + '</li>'; }
+      else if ((m = l.match(/^#{1,4}\s+(.*)$/))) { close(); out += '<div class="mdh">' + mdInline(m[1]) + '</div>'; }
+      else if (/^\s*$/.test(l)) close();
+      else { close(); out += '<p>' + mdInline(l) + '</p>'; }
+    }
+    close();
+    return out;
+  }
+  function notesPreview() {
+    var el = $('eNotesMd'); if (!el) return;
+    var v = $('eNotes').value, has = /(\*\*|^\s*[-*•]\s|^\s*\d+[.)]\s|^#{1,4}\s|`|\]\(https?:)/m.test(v);
+    el.style.display = has ? 'block' : 'none';
+    if (has) el.innerHTML = mdHTML(v);
+  }
   function openSettings() {
     settingsTab = 'general';
     setDraft = { units: settings.units, stale_days: settings.stale_days, night_start: settings.night_start, night_end: settings.night_end, clearCal: false };
@@ -1721,6 +1747,8 @@
   App.render = render;
   App.ask = ask;
   App.reload = function () { forceLoad(); };
+  App.md = mdHTML;
+  (function () { var n = document.getElementById('eNotes'); if (n) n.oninput = notesPreview; })();
   App.reloadWhenSettingsClose = function () { reloadOnClose = true; };
   // Projects board <-> Work list
   App.isPaused = isPaused;

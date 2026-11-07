@@ -22,6 +22,8 @@ ok('must_today with no date -> today; later date refused; earlier ok', v({ title
 ok('several faults all reported for one row', v({ title: '', due_date: 'x', priority: '9' }).errors.length === 3);
 ok('notes over 2000 refused; unknown keys ignored', v({ title: 'a', notes: new Array(2002).join('n') }).errors.length === 1 && v({ title: 'a', bogus: 'x' }).errors.length === 0);
 
+ok('subtasks split on | and line breaks, [x] marks done, bullets stripped', JSON.stringify(v({ title: 'a', subtasks: 'One|[x] Two\n- Three|  | ' }).value.subtasks) === JSON.stringify([{ t: 'One', d: false }, { t: 'Two', d: true }, { t: 'Three', d: false }]));
+ok('subtask over 200 chars refused; over 100 refused', v({ title: 'a', subtasks: new Array(202).join('x') }).errors.length === 1 && v({ title: 'a', subtasks: new Array(102).join('s|') }).errors.length === 1);
 // ---- endpoint
 var rows = [], patches = [], fail = false, imports = [], failLog = false;
 function fakeRpc(name, args) {
@@ -47,7 +49,7 @@ function call(method, query, body) {
     try { out = fakeRpc(name, args); } catch (e) { status = e.code === '28000' ? 401 : 500; out = { message: e.message, code: e.code }; }
     return { ok: status === 200, status: status, text: async function () { return JSON.stringify(out); } };
   };
-  var good = [{ row: 2, title: 'One', list: 'personal', due_date: '24/11/2026', notes: 'hello' }, { row: 3, title: 'Two', list: 'work', category: 'alpha', priority: '2', quick: 'yes' }, { row: 4, title: 'Three' }];
+  var good = [{ row: 2, title: 'One', list: 'personal', due_date: '24/11/2026', notes: 'hello', subtasks: 'A|B' }, { row: 3, title: 'Two', list: 'work', category: 'alpha', priority: '2', quick: 'yes' }, { row: 4, title: 'Three' }];
   var r = await call('POST', { bulk: '1' }, { rows: good, dry: true });
   ok('dry run: 200, nothing written', r.status === 200 && r.json.dry === true && r.json.count === 3 && rows.length === 0, JSON.stringify(r.json));
   ok('dry run returns a preview of how each row was understood', r.json.preview.length === 3 && r.json.preview[0].row === 2 && r.json.preview[0].value.due_date === '2026-11-24' && r.json.preview[1].value.prio === 2 && r.json.preview[1].value.quick === true && r.json.preview[1].value.list === 'work', JSON.stringify(r.json.preview[1]));
@@ -57,7 +59,7 @@ function call(method, query, body) {
   r = await call('POST', { bulk: '1' }, { rows: good, batch: BATCH, name: 'my file.csv' });
   ok('real run: 201, three added', r.status === 201 && r.json.added === 3 && rows.length === 3, JSON.stringify(r.json));
   ok('real run logged under its batch with the 3 new ids', r.json.logged === true && imports.length === 1 && imports[0].name === 'my file.csv' && imports[0].ids.length === 3, JSON.stringify(imports));
-  ok('UK date arrives as ISO; notes saved by update', rows[0].args.p_due === '2026-11-24' && patches.length === 1 && patches[0].p_patch.notes === 'hello');
+  ok('UK date arrives as ISO; notes saved by update', rows[0].args.p_due === '2026-11-24' && patches.length === 1 && patches[0].p_patch.notes === 'hello' && patches[0].p_patch.items.length === 2 && patches[0].p_patch.items[1].t === 'B');
   ok('work category matched to the real project name; tags sent', rows[1].args.p_category === 'Alpha' && rows[1].args.p_list === 'work' && rows[1].args.p_prio === 2 && rows[1].args.p_quick === true);
   ok('plain row sends no tag arguments', !('p_prio' in rows[2].args));
   var l = await call('GET', { imports: '1' }, null);
