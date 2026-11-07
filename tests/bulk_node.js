@@ -12,11 +12,15 @@ ok('title over 500 refused', v({ title: new Array(502).join('a') }).errors.lengt
 ok('list: Work (any case) ok, junk refused', v({ title: 'a', list: 'WORK' }).value.list === 'work' && v({ title: 'a', list: 'home' }).errors.length === 1);
 ok('date ISO ok', v({ title: 'a', due_date: '2026-11-24' }).value.due_date === '2026-11-24');
 ok('date UK DD/MM/YYYY converted', v({ title: 'a', due_date: '24/11/2026' }).value.due_date === '2026-11-24' && v({ title: 'a', due_date: '4/1/2027' }).value.due_date === '2027-01-04');
-ok('impossible / US-style / short dates refused', ['2026-02-30', '31/04/2026', '11/24/2026', '24/11/26', 'tomorrow', '2026-1-5'].every(function (d) { return v({ title: 'a', due_date: d }).errors.length === 1; }));
-ok('time HH:MM ok, 9:05 padded, junk refused', v({ title: 'a', remind_time: '09:30' }).value.remind_time === '09:30' && v({ title: 'a', remind_time: '9:05' }).value.remind_time === '09:05' && ['24:00', '9:60', '9am', '0930'].every(function (t) { return v({ title: 'a', remind_time: t }).errors.length === 1; }));
+ok('impossible / US-style / short dates refused', ['2026-02-30', '31/04/2026', '11/24/2026', '24/11/26', 'funday', '2026-1-5'].every(function (d) { return v({ title: 'a', due_date: d }).errors.length === 1; }));
+ok('time HH:MM ok, 9:05 padded, junk refused', v({ title: 'a', remind_time: '09:30' }).value.remind_time === '09:30' && v({ title: 'a', remind_time: '9:05' }).value.remind_time === '09:05' && ['24:00', '9:60', '13pm', '0930'].every(function (t) { return v({ title: 'a', remind_time: t }).errors.length === 1; }));
+ok('words accepted: tomorrow, weekday, 9 Nov, today', v({ title: 'a', due_date: 'tomorrow' }).value.due_date === '2026-11-08' && v({ title: 'a', due_date: 'Mon' }).value.due_date === '2026-11-09' && v({ title: 'a', due_date: 'Sat' }).value.due_date === TODAY && v({ title: 'a', due_date: '9 Nov' }).value.due_date === '2026-11-09' && v({ title: 'a', due_date: '1 Jan' }).value.due_date === '2027-01-01' && v({ title: 'a', due_date: 'today' }).value.due_date === TODAY);
+ok('words accepted: 9am / 3.30pm, high / !! / low, every week / fortnight', v({ title: 'a', remind_time: '9am' }).value.remind_time === '09:00' && v({ title: 'a', remind_time: '3.30pm' }).value.remind_time === '15:30' && v({ title: 'a', remind_time: '12am' }).value.remind_time === '00:00' && v({ title: 'a', priority: 'high' }).value.prio === 3 && v({ title: 'a', priority: '!!' }).value.prio === 2 && v({ title: 'a', priority: 'low' }).value.prio === 1 && v({ title: 'a', repeat: 'every week' }).value.recur === 'weekly' && v({ title: 'a', repeat: 'Fortnight' }).value.recur === 'fortnightly');
+ok('sub-task pipe escape: x\\|y stays one item', JSON.stringify(v({ title: 'a', subtasks: 'x\\|y|z' }).value.subtasks.map(function (i) { return i.t; })) === '["x|y","z"]');
+ok('id: valid uuid kept, junk refused, present lists the columns sent', v({ title: 'a', id: '0F8FAD5B-D9CB-469F-A165-70867728950E' }).value.id === '0f8fad5b-d9cb-469f-a165-70867728950e' && v({ title: 'a', id: 'zz' }).errors.length === 1 && v({ title: 'a', notes: '' }).value.present.join() === 'title,notes' && v({ title: 'a' }).value.id === null);
 ok('reminder with no date starts today', v({ title: 'a', remind_time: '10:00' }).value.due_date === TODAY);
 ok('repeat values ok (any case), junk refused, no date -> today', v({ title: 'a', repeat: 'Weekly' }).value.recur === 'weekly' && v({ title: 'a', repeat: 'weekly' }).value.due_date === TODAY && v({ title: 'a', repeat: 'hourly' }).errors.length === 1);
-ok('priority 0-3 only', v({ title: 'a', priority: '3' }).value.prio === 3 && ['4', '-1', 'high', '1.5'].every(function (p) { return v({ title: 'a', priority: p }).errors.length === 1; }));
+ok('priority 0-3 only', v({ title: 'a', priority: '3' }).value.prio === 3 && ['4', '-1', 'banana', '1.5'].every(function (p) { return v({ title: 'a', priority: p }).errors.length === 1; }));
 ok('yes/no flags', v({ title: 'a', quick: 'Yes' }).value.quick === true && v({ title: 'a', quick: 'n' }).value.quick === false && v({ title: 'a', quick: 'maybe' }).errors.length === 1 && v({ title: 'a', must_today: 'TRUE' }).value.must === true);
 ok('must_today with no date -> today; later date refused; earlier ok', v({ title: 'a', must_today: 'yes' }).value.due_date === TODAY && v({ title: 'a', must_today: 'yes', due_date: '2026-11-20' }).errors.length === 1 && v({ title: 'a', must_today: 'yes', due_date: '2026-11-01' }).errors.length === 0);
 ok('several faults all reported for one row', v({ title: '', due_date: 'x', priority: '9' }).errors.length === 3);
@@ -30,6 +34,7 @@ function fakeRpc(name, args) {
   if (args.p_token !== 'goodtoken') { var e = new Error('no'); e.code = '28000'; throw e; }
   if (name === 'todo_add') { if (fail && rows.length >= 2) throw new Error('db down'); var r = { id: 'n' + rows.length, title: args.p_title, args: args }; rows.push(r); return r; }
   if (name === 'todo_update') { patches.push(args); return {}; }
+  if (name === 'todo_list') return [{ id: '0f8fad5b-d9cb-469f-a165-70867728950e' }];
   if (name === 'todo_import_log') { if (failLog) throw new Error('log down'); var bt = imports.filter(function (x) { return x.id === args.p_batch; })[0]; if (bt) bt.ids = bt.ids.concat(args.p_ids); else imports.push({ id: args.p_batch, name: args.p_name, ids: args.p_ids.slice(), undone: false }); return { ok: true }; }
   if (name === 'todo_import_csv_set') { var cs = imports.filter(function (x) { return x.id === args.p_batch; })[0]; if (cs && !cs.csv) cs.csv = args.p_csv; return { ok: true }; }
   if (name === 'todo_import_csv_get') { var cg = imports.filter(function (x) { return x.id === args.p_id; })[0]; if (!cg) { var e3 = new Error('no such import'); e3.code = 'P0002'; throw e3; } return { name: cg.name, csv: cg.csv || null }; }
@@ -80,6 +85,11 @@ function call(method, query, body) {
   ok('unknown import: 404', u3.status === 404);
   var u4 = await call('POST', { import_undo: 'nope' }, { go: 1 });
   ok('bad id: 400', u4.status === 400);
+  var EX = '0f8fad5b-d9cb-469f-a165-70867728950e', pn = patches.length, rn = rows.length;
+  r = await call('POST', { bulk: '1' }, { rows: [{ row: 2, id: '00000000-0000-4000-8000-000000000000', title: 'ghost' }], dry: true });
+  ok('id of a task that does not exist: row refused', r.status === 400 && /no task with that id/.test(r.json.errors[0].messages.join()), JSON.stringify(r.json.errors));
+  r = await call('POST', { bulk: '1' }, { rows: [{ row: 2, id: EX, title: 'Renamed', priority: 'high', subtasks: 'a|[x] b' }] });
+  ok('row with an id updates that task: only the sent columns, nothing added, not logged', r.status === 201 && r.json.added === 0 && r.json.updated === 1 && rows.length === rn && patches.length === pn + 1 && patches[pn].p_id === EX && patches[pn].p_patch.title === 'Renamed' && patches[pn].p_patch.prio === 3 && patches[pn].p_patch.items.length === 2 && patches[pn].p_patch.items[1].d === true && !('notes' in patches[pn].p_patch) && !('category' in patches[pn].p_patch) && r.json.logged === false, JSON.stringify([r.json, patches[pn]]));
   failLog = true;
   var rl = await call('POST', { bulk: '1' }, { rows: [{ title: 'z' }], batch: '33333333-3333-4333-8333-333333333333' });
   ok('history log failing never fails the import (logged:false)', rl.status === 201 && rl.json.added === 1 && rl.json.logged === false, JSON.stringify(rl.json));

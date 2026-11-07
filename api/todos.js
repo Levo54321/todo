@@ -7,7 +7,7 @@
 //                                      Shortcuts, the ?open=latest check) always gets the full list.
 // POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id?, pp_backlog? }
 // POST   /api/todos?bulk=1          -> CSV import (desktop). body { rows: [ {row?, title, list, category, due_date, remind_time, repeat, priority, quick, must_today, notes, subtasks} ... up to 100 ], dry? }
-//                                      dry:true only checks the rows. Reply { ok, dry, count, errors:[{row, messages:[...]}], added, cal }. Rules: api/_bulk.js, docs/import/.
+//                                      A row with an `id` (an existing task) UPDATES that task using only the columns present; updates are not undone by Undo. Rows may also use words (tomorrow, Mon, 9 Nov, 9am, high, every week); write \| for a pipe inside a sub-task. dry:true only checks the rows. Reply { ok, dry, count, errors:[{row, messages:[...]}], added, cal }. Rules: api/_bulk.js, docs/import/.
 //                                      A real run first checks every row and adds nothing if any row is wrong (400 with the same errors).
 //                                      Every reply also carries preview:[{row, errors, value:{title,list,category,due_date,remind_time,recur,prio,quick,must,notes,subtasks:[{t,d}]}}] (the rows as the app understood them).
 //                                      A real run may send batch:<uuid> (same id for every chunk of one file) and name:<file name>; the ids it added are logged under that batch so it can be undone.
@@ -271,8 +271,15 @@ async function bulkImport(token, b, today, res) {
   var rows = Array.isArray(b.rows) ? b.rows : null, i, r, out = [], errors = [], vals = [], n, preview = [];
   if (!rows || !rows.length) return send(res, 400, { error: 'no rows' });
   if (rows.length > bulk.MAX_ROWS) return send(res, 400, { error: 'too many rows (max ' + bulk.MAX_ROWS + ' at a time)' });
+  var haveIds = {}, anyId = false;
+  for (i = 0; i < rows.length; i++) if (rows[i] && typeof rows[i].id === 'string' && rows[i].id) { anyId = true; break; }
+  if (anyId) { // rows that carry an id update that task, so the id must exist
+    try { var all0 = await rpc('todo_list', { p_token: token }); for (i = 0; i < (all0 || []).length; i++) haveIds[String(all0[i].id).toLowerCase()] = true; }
+    catch (le) { console.error('bulk ids', le.message); return send(res, 500, { error: 'could not check the task ids' }); }
+  }
   for (i = 0; i < rows.length; i++) {
     r = bulk.validateRow(rows[i], today);
+    if (r.value.id && !haveIds[r.value.id]) r.errors.push('no task with that id (was it deleted?)');
     n = rows[i] && typeof rows[i].row === 'number' ? rows[i].row : i + 2;
     if (r.errors.length) errors.push({ row: n, messages: r.errors });
     preview.push({ row: n, errors: r.errors, value: r.value });
@@ -281,11 +288,20 @@ async function bulkImport(token, b, today, res) {
   if (errors.length) return send(res, 400, { ok: false, dry: b.dry === true, count: rows.length, errors: errors, added: 0, preview: preview });
   if (b.dry === true) return send(res, 200, { ok: true, dry: true, count: rows.length, errors: [], added: 0, preview: preview });
 
-  var added = 0, anyRemind = false, newIds = [], logged = false;
+  var added = 0, updated = 0, anyRemind = false, newIds = [], logged = false;
   try {
     for (i = 0; i < vals.length; i++) {
       var v = vals[i], cat = v.category;
       if (cat && v.list === 'work') cat = await canonProject(token, cat);
+      if (v.id) { // update an existing task: only the columns that were in the file; updates are not part of the import's Undo
+        var up = {}, pr = v.present, M = { title: 'title', list: 'list', category: 'category', due_date: 'due_date', remind_time: 'remind_time', repeat: 'recur', priority: 'prio', quick: 'quick', must_today: 'must', notes: 'notes', subtasks: 'items' };
+        for (var pi = 0; pi < pr.length; pi++) up[M[pr[pi]]] = pr[pi] === 'category' ? cat : pr[pi] === 'subtasks' ? v.subtasks : v[M[pr[pi]]]; // patch keys match the validated value's keys except items/subtasks
+        if (pr.indexOf('due_date') < 0 && v.due_date && (pr.indexOf('repeat') >= 0 || pr.indexOf('remind_time') >= 0 || pr.indexOf('must_today') >= 0)) up.due_date = v.due_date;
+        await rpc('todo_update', { p_token: token, p_id: v.id, p_patch: up });
+        updated++;
+        if (v.remind_time || up.due_date) anyRemind = true;
+        continue;
+      }
       var args = { p_token: token, p_title: v.title, p_due: v.due_date, p_category: cat, p_recur: v.recur, p_session: SESSION.test(v.title), p_remind: v.remind_time, p_list: v.list }, row;
       if (v.prio || v.quick || v.must) {
         try {
@@ -308,11 +324,11 @@ async function bulkImport(token, b, today, res) {
   } catch (e) {
     console.error('bulk import', e.message);
     await logBatch(token, b, newIds);
-    return send(res, 500, { ok: false, error: 'stopped after ' + added + ' of ' + vals.length + ' rows', added: added, count: vals.length, errors: [] });
+    return send(res, 500, { ok: false, error: 'stopped after ' + (added + updated) + ' of ' + vals.length + ' rows', added: added, updated: updated, count: vals.length, errors: [] });
   }
   logged = await logBatch(token, b, newIds);
   var cal = anyRemind ? await calHook(token) : null;
-  return send(res, 201, { ok: true, dry: false, count: vals.length, errors: [], added: added, cal: cal, logged: logged });
+  return send(res, 201, { ok: true, dry: false, count: vals.length, errors: [], added: added, updated: updated, cal: cal, logged: logged });
 }
 
 module.exports = async function handler(req, res) {

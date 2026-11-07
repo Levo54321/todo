@@ -180,7 +180,7 @@ change the header in the endpoint file and regenerate._
 //                                      Shortcuts, the ?open=latest check) always gets the full list.
 // POST   /api/todos                 -> body { text } (quick add, with shorthand) or { title, due_date, category, pproject_id?, pp_backlog? }
 // POST   /api/todos?bulk=1          -> CSV import (desktop). body { rows: [ {row?, title, list, category, due_date, remind_time, repeat, priority, quick, must_today, notes, subtasks} ... up to 100 ], dry? }
-//                                      dry:true only checks the rows. Reply { ok, dry, count, errors:[{row, messages:[...]}], added, cal }. Rules: api/_bulk.js, docs/import/.
+//                                      A row with an `id` (an existing task) UPDATES that task using only the columns present; updates are not undone by Undo. Rows may also use words (tomorrow, Mon, 9 Nov, 9am, high, every week); write \| for a pipe inside a sub-task. dry:true only checks the rows. Reply { ok, dry, count, errors:[{row, messages:[...]}], added, cal }. Rules: api/_bulk.js, docs/import/.
 //                                      A real run first checks every row and adds nothing if any row is wrong (400 with the same errors).
 //                                      Every reply also carries preview:[{row, errors, value:{title,list,category,due_date,remind_time,recur,prio,quick,must,notes,subtasks:[{t,d}]}}] (the rows as the app understood them).
 //                                      A real run may send batch:<uuid> (same id for every chunk of one file) and name:<file name>; the ids it added are logged under that batch so it can be undone.

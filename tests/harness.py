@@ -36,6 +36,7 @@ class H:
         self.calls = []
         self.same = 0  # how many GET /api/todos?v= were answered "same" (unchanged)
         self.imports = []  # CSV import history (todo_imports)
+        self.proj_posts = []  # names POSTed to /api/projects (import creating new projects)
         self.fail_bulk = False  # make the real (non-dry) CSV import answer 500
         self.fail_delete = False  # make DELETE /api/todos answer 500 (the task stays on the server)
         self.errors = []
@@ -69,20 +70,29 @@ class H:
                 import subprocess
                 js = "var b=require('./api/_bulk.js'),i=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(JSON.stringify(i.rows.map(function(r,k){var v=b.validateRow(r,i.today);return {row:typeof r.row==='number'?r.row:k+2,errors:v.errors,value:v.value}})))"
                 out = json.loads(subprocess.run(['node', '-e', js], input=json.dumps({'rows': body.get('rows') or [], 'today': TODAY}), capture_output=True, text=True, cwd=REPO).stdout)
+                for o in out:
+                    if o['value'].get('id') and not self.find(o['value']['id']): o['errors'].append('no task with that id (was it deleted?)')
                 errs = [{'row': o['row'], 'messages': o['errors']} for o in out if o['errors']]
                 prev = [{'row': o['row'], 'errors': o['errors'], 'value': o['value']} for o in out]
                 if errs: return 400, {'ok': False, 'dry': body.get('dry') is True, 'count': len(out), 'errors': errs, 'added': 0, 'preview': prev}
                 if body.get('dry') is True: return 200, {'ok': True, 'dry': True, 'count': len(out), 'errors': [], 'added': 0, 'preview': prev}
                 if self.fail_bulk: return 500, {'ok': False, 'error': 'stopped', 'added': 0}
-                new_ids = []
+                new_ids = []; upd = 0
+                M = {'title': 'title', 'list': 'list', 'category': 'category', 'due_date': 'due_date', 'remind_time': 'remind_time', 'repeat': 'recur', 'priority': 'prio', 'quick': 'quick', 'must_today': 'must', 'notes': 'notes', 'subtasks': 'items'}
                 for o in out:
-                    v = o['value']; t = task(v['title'], list=v['list'], category=v['category'], due_date=v['due_date'], remind_time=v['remind_time'], recur=v['recur'], prio=v['prio'], quick=v['quick'], must=v['must'], notes=v['notes'] or None, items=v['subtasks'])
+                    v = o['value']
+                    if v.get('id'):  # mirrors bulkImport: update only the columns present in the row
+                        tt = self.find(v['id'])
+                        for c in v['present']: tt[M[c]] = v['subtasks'] if c == 'subtasks' else v[M[c]]
+                        upd += 1; continue
+                    t = task(v['title'], list=v['list'], category=v['category'], due_date=v['due_date'], remind_time=v['remind_time'], recur=v['recur'], prio=v['prio'], quick=v['quick'], must=v['must'], notes=v['notes'] or None, items=v['subtasks'])
                     self.todos.append(t); new_ids.append(t['id'])
                 if body.get('batch'):  # mirrors todo_import_log: same batch id extends the same import
                     b = [x for x in self.imports if x['id'] == body['batch']]
-                    if b: b[0]['ids'] += new_ids; b[0]['n'] += len(new_ids)
+                    if not new_ids: pass
+                    elif b: b[0]['ids'] += new_ids; b[0]['n'] += len(new_ids)
                     else: self.imports.append({'id': body['batch'], 'name': body.get('name') or '', 'n': len(new_ids), 'ids': list(new_ids), 'created_at': NOW, 'undone_at': None, 'undone_n': None, 'csv': body.get('csv')})
-                return 201, {'ok': True, 'dry': False, 'count': len(out), 'errors': [], 'added': len(out), 'cal': None, 'logged': True}
+                return 201, {'ok': True, 'dry': False, 'count': len(out), 'errors': [], 'added': len(out) - upd, 'updated': upd, 'cal': None, 'logged': True}
             if method == 'POST':
                 title = body.get('text') or body.get('title')
                 t = task(title, list='work' if (re.search(r'\swork$', title or '') or body.get('list') == 'work') else 'personal')
@@ -212,7 +222,8 @@ class H:
             t = self.find(q['id'][0]); t['paused'] = bool(body.get('paused'));
             t['paused_at'] = NOW if t['paused'] else None; return 200, {'todo': t}
         if path == '/api/projects':
-            return 200, {'projects': [{'id': 'p1', 'name': 'Alpha', 'prio': 2, 'status': 'active'}, {'id': 'p2', 'name': 'Beta', 'prio': 1, 'status': 'active'}]}
+            if method == 'POST' and body.get('name'): self.proj_posts.append(body['name'])
+            return 200, {'projects': [{'id': 'p1', 'name': 'Alpha', 'prio': 2, 'status': 'active'}, {'id': 'p2', 'name': 'Beta', 'prio': 1, 'status': 'active'}] + [{'id': 'px%d' % i, 'name': n, 'prio': 0, 'status': 'active'} for i, n in enumerate(self.proj_posts)]}
         if path == '/api/settings': return 200, {'settings': {}}
         if path == '/api/history': return 200, {'history': [{'c': '2026-10-20T09:00:00Z', 'd': '2026-10-25T09:00:00Z', 'cat': 'home', 'l': 'personal', 't': 'Old'}]}
         if path == '/api/budget': return 200, {'config': {'bills': [{'n': 'Vercel Pro', 'a': 16, 'd': 3}]}, 'entries': []}

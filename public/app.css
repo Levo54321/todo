@@ -444,16 +444,35 @@ html.work #projBtn{display:inline-block}
 .impchip.q,.impchip.m{background-color:var(--accent);color:var(--onaccent);font-weight:600}
 .impwarn{margin-top:8px;padding:8px 12px;border-radius:var(--r1);background:var(--warnbg);color:var(--warnink);font-size:var(--fs-sm)}
 .impinfo{margin:8px 0;font-size:12px;color:var(--muted);line-height:1.5}
-.impscroll{max-height:380px;overflow:auto;-webkit-overflow-scrolling:touch;padding:2px}
 .impcard{margin-bottom:8px;padding:10px 12px;border:1px solid var(--rule);border-left:4px solid var(--rule);border-radius:var(--r2);background:var(--paper)}
 .impcard.work{border-left-color:var(--accent)}.impcard.bad{border-left-color:var(--warn);background:var(--warnbg)}
-.imptop{display:-webkit-flex;display:flex;gap:8px;-webkit-align-items:baseline;align-items:baseline;margin-bottom:6px}
+.imptop{display:-webkit-flex;display:flex;gap:8px;-webkit-align-items:center;align-items:center;margin-bottom:6px}
 .implnum{-webkit-flex:none;flex:none;font-size:12px;color:var(--muted)}
 .impttl{font-size:var(--fs-md);font-weight:600;color:var(--ink);word-break:break-word}
 .impnotes{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.45;word-break:break-word}
 .impsubs{margin-top:6px;font-size:12px;color:var(--ink);line-height:1.45;word-break:break-word}
 .impbad{margin-top:6px;font-size:var(--fs-sm);color:var(--warnink);font-weight:600}
 .imperr{margin:12px 0;padding:12px;border-radius:var(--r2);background:var(--warnbg);color:var(--warnink);font-size:var(--fs-sm);line-height:1.5}
+/* import review cards: edit in place, one page scroll only (no inner scroller) */
+.impopen{-webkit-flex:1;flex:1;min-width:0;min-height:44px;display:-webkit-flex;display:flex;gap:8px;-webkit-align-items:baseline;align-items:baseline;padding:0;border:0;background:none;text-align:left;color:inherit;font:inherit;-webkit-appearance:none;outline:none}
+.impx{-webkit-flex:none;flex:none;width:44px;height:44px;border:0;border-radius:var(--r2);background:none;color:var(--muted);font-size:24px;line-height:1;-webkit-appearance:none;outline:none}
+.impcard.skipped{opacity:.55}.impcard.open{border-color:var(--accent)}
+.impchip.u{background-color:var(--accent);color:var(--onaccent);font-weight:600}
+.impgo.top{margin:6px 0 10px}.impgobtn:disabled{opacity:.5}
+.impdup,.impdupbar{margin-top:8px;padding:8px 12px;border-radius:var(--r1);background:var(--warnbg);color:var(--warnink);font-size:var(--fs-sm);line-height:1.45}
+.impdupbar{margin:6px 0 10px}.impdup .seg,.impdupbar .seg{display:block;margin:6px 0 0}
+.impdup .seg button,.impdupbar .seg button{min-width:0;padding:0 12px}
+.impproj select{display:block;margin-top:6px}
+.impedit{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;gap:8px 12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--rule)}
+.impfld{-webkit-flex:1 1 200px;flex:1 1 200px;min-width:0;display:block;font-size:12px;color:var(--muted)}
+.impfld.wide{-webkit-flex-basis:100%;flex-basis:100%}
+.impfld span{display:block;margin-bottom:4px}
+.impin{display:block;width:100%;box-sizing:border-box;min-height:44px;padding:8px 10px;border:1px solid var(--rule);border-radius:var(--r2);background:var(--bg);color:var(--ink);font:16px/1.4 inherit;-webkit-appearance:none;outline:none}
+textarea.impin{min-height:0;resize:vertical}
+.impchecks label{display:inline-block;min-height:44px;margin-right:16px;font-size:var(--fs-sm);color:var(--ink)}
+.impedit .improw{-webkit-flex-basis:100%;flex-basis:100%}
+.imph.impsub{margin-top:16px}
+
 .impgo{margin-top:14px}.impgobtn{display:block;width:100%;margin-left:0;font-size:var(--fs-md)}
 .impdone{margin:12px 0;padding:12px;border-radius:var(--r2);background:var(--accentbg);color:var(--accent);font-weight:600}
 .imphist{border:1px solid var(--rule);border-radius:var(--r2);overflow:hidden;background:var(--paper)}

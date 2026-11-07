@@ -32,7 +32,7 @@ def run(h):
     t = p.inner_text('#tabBody')
     chk('bad file: errors listed with line number', 'Line 3' in t and 'title is required' in t and 'priority must be 0, 1, 2 or 3' in t and 'due_date' in t, t[:400])
     chk('bad file: unknown column reported', 'colour' in t)
-    chk('bad file: no Add button, nothing sent for real', p.query_selector('#impGo') is None and not [c for c in bulk() if not c[3].get('dry')] and len(h.todos) == n0)
+    chk('bad file: nothing sent for real yet; the good row can still be added, the bad one is skipped', 'will be skipped' in t and 'Add 1 task' in p.inner_text('#impGoTop') and not [c for c in bulk() if not c[3].get('dry')] and len(h.todos) == n0)
 
     # a good file
     p.set_input_files('#impFile', write(GOOD, 'good.csv')); p.wait_for_timeout(600)
@@ -123,6 +123,51 @@ def run(h):
     a_ = [x for x in h.todos[nP:] if x['title'] == 'Plan the review step']
     chk('paste: task added with sub-tasks (one done) and multi-line notes', a_ and [i['t'] for i in a_[0]['items']] == ['Draft checklist', 'Agree owner', 'Send to team'] and a_[0]['items'][1]['d'] is True and '- India doctors' in (a_[0]['notes'] or ''), a_[:1])
     chk('paste: listed in history as "Pasted CSV"', 'Pasted CSV' in p.inner_text('#impHist'))
+    p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
+
+    # v1063: duplicates, editing cards, new-project flag, export + update by id, one scroll area, skip bad rows
+    p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(300)
+    n2 = len(h.todos)
+    DUP = 'title,list,category,priority\nPlan the review step,work,Alpha,2\nBrand new one,work,Gamma project,1\n,personal,,\n'
+    p.click('#impModePaste'); p.fill('#impPaste', DUP); p.click('#impCheck'); p.wait_for_timeout(700)
+    chk('duplicate: flagged, skipped by default, bar offers Skip/Update/Add', 'already have' in p.inner_text('#tabBody') and p.query_selector('[data-imp=dupall]') is not None and 'Add 1 task' in p.inner_text('#impGoTop'), p.inner_text('#impGoTop'))
+    chk('new project flagged with a picker (Gamma project), Alpha is known so not flagged', p.query_selector('#impPS1') is not None and p.query_selector('#impPS0') is None, p.inner_text('#impNewProj') if p.query_selector('#impNewProj') else '')
+    chk('card list is not an inner scroller (one scroll area only)', p.evaluate("(function(){var e=document.getElementById('impPreview');var o=getComputedStyle(e).overflowY;return o==='visible'&&e.scrollHeight<=e.clientHeight+1})()"))
+    p.click('#impCard1 .impopen'); p.wait_for_timeout(200)
+    chk('tap a card opens its editor', p.query_selector('#impE_title_1') is not None)
+    p.select_option('#impE_priority_1', '3'); p.fill('#impE_notes_1', 'edited note'); p.click('[data-imp=save][data-i="1"]'); p.wait_for_timeout(600)
+    cd = p.inner_text('#impCard1')
+    chk('edit saved: card shows !!! (3) and the note, re-checked by the server', '!!! (3)' in cd and 'edited note' in cd and p.query_selector('#impE_title_1') is None, cd[:200])
+    p.click('#impCard2 [data-imp=del]'); p.wait_for_timeout(200)
+    chk('bad card removed with the x', p.query_selector('#impCard2') is None and 'with problems' not in p.inner_text('#tabBody'))
+    p.select_option('#impPS1', 'Beta'); p.wait_for_timeout(200)
+    chk('matching an existing project clears the flag and sets the category', p.query_selector('#impPS1') is None and 'Beta' in p.inner_text('#impCard1'))
+    p.click('[data-imp=dupall][data-v=update]'); p.wait_for_timeout(200)
+    chk('Update them all relabels the button', p.inner_text('#impGoTop').strip() == 'Add 1 task and update 1 task', p.inner_text('#impGoTop'))
+    before = {x['title']: dict(x) for x in h.todos}
+    p.click('#impGo'); p.wait_for_timeout(900)
+    chk('1 added, 1 updated (existing task changed, not duplicated)', len(h.todos) == n2 + 1 and 'Added 1 task and updated 1 task' in p.inner_text('#impDone'), p.inner_text('#tabBody')[:200])
+    up = [x for x in h.todos if x['title'] == 'Plan the review step']
+    chk('update touched only the columns in the file (category, priority) and kept sub-tasks/notes', len(up) == 1 and up[0]['category'] == 'Alpha' and up[0]['prio'] == 2 and len(up[0]['items']) == 3 and '- India doctors' in (up[0]['notes'] or ''), up[:1])
+    chk('new project was not created when an existing one was picked', not h.proj_posts, h.proj_posts)
+    # new project is created when kept
+    p.click('#impModePaste'); p.fill('#impPaste', 'title,list,category\nGamma task,work,Gamma project\n'); p.click('#impCheck'); p.wait_for_timeout(600)
+    p.click('#impGo'); p.wait_for_timeout(800)
+    chk('keeping the new project name creates it', h.proj_posts == ['Gamma project'], h.proj_posts)
+    # export + update by id
+    p.click('#impExpDl') if False else None
+    with p.expect_download() as dlx: p.click('#impExpDl')
+    ex = open(dlx.value.path(), encoding='utf-8', newline='').read().split('\r\n')
+    chk('export has the 11 columns plus id and one line per open task', ex[0] == 'title,list,category,due_date,remind_time,repeat,priority,quick,must_today,notes,subtasks,id' and len([l for l in ex if l]) - 1 == len([x for x in h.todos if not x.get('done')]), ex[0])
+    chk('export file is named by date', dlx.value.suggested_filename.startswith('luc-todo-open-tasks-'), dlx.value.suggested_filename)
+    gid = [x for x in h.todos if x['title'] == 'Gamma task'][0]['id']
+    p.click('#impModePaste'); p.fill('#impPaste', 'title,priority,id\nGamma task improved,3,%s\nGhost,1,00000000-0000-4000-8000-000000000000\n' % gid); p.click('#impCheck'); p.wait_for_timeout(700)
+    t = p.inner_text('#tabBody')
+    chk('id column: updates shown, unknown id reported', 'updates existing task' in t and 'no task with that id' in t and 'id' in p.inner_text('#impMap'), t[:300])
+    p.click('#impGo'); p.wait_for_timeout(800)
+    g = [x for x in h.todos if x['id'] == gid][0]
+    chk('update by id: title and priority changed, category kept', g['title'] == 'Gamma task improved' and g['prio'] == 3 and g['category'] == 'Gamma project', g)
+    chk('update by id: no new task added', len([x for x in h.todos if x['title'].startswith('Gamma task')]) == 1)
     p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
 
     # not offered on phones/tablets
