@@ -14,7 +14,7 @@
 .bdh{display:inline-block;margin:0 6px 4px 0;padding:1px 9px;border-radius:10px;background:var(--chip);font-size:var(--fs-xs);color:var(--muted)}
 .bdh.bad{background:var(--alertbg);color:var(--alert);font-weight:700}
 .bdh.ok{color:var(--ok)}
-.bdlist{max-height:calc(100vh - 290px);overflow-y:auto;-webkit-overflow-scrolling:touch}
+.bdlist{max-height:calc(100vh - 290px);overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 .bdrow{border-top:1px solid var(--rule);border-bottom:0}
 .bdrow .tick{width:44px;height:48px}
 .bdrow .tick:before{left:8px;top:11px;width:24px;height:24px}

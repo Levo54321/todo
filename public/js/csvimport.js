@@ -21,8 +21,8 @@
     recur: 'repeat', recurrence: 'repeat', repeats: 'repeat', frequency: 'repeat', prio: 'priority', quick_task: 'quick', must: 'must_today', must_do_today: 'must_today',
     note: 'notes', details: 'notes', description: 'notes', comment: 'notes', comments: 'notes',
     task_id: 'id', uuid: 'id', subtask: 'subtasks', sub_tasks: 'subtasks', sub_task: 'subtasks', steps: 'subtasks', checklist: 'subtasks', items: 'subtasks' };
-  var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false, show: null }, exp = { note: '' }, projects = null, cache = null;
-  function fresh() { return { scan: '', phase: 'idle', file: '', batch: '', rows: [], items: [], ignored: [], mapping: [], msg: '', added: 0, updated: 0, skipped: 0, bad: 0, dn: [], dnDone: 0 }; }
+  var st = null, body = null, mode = canFile ? 'file' : 'paste', pasteText = '', pasteBox = false, pasteHint = '', hist = { list: null, unavailable: false, confirm: '', note: '', busy: false, show: null, open: false }, exp = { note: '', open: false }, projects = null, cache = null;
+  function fresh() { return { scan: '', phase: 'idle', file: '', batch: '', rows: [], items: [], ignored: [], mapping: [], msg: '', added: 0, updated: 0, skipped: 0, bad: 0, dn: [], dnDone: 0, confirmDiscard: false, cols: false }; }
   st = fresh();
   st = fresh();
   function uuid() {
@@ -216,7 +216,7 @@
     }
     send = adds.concat(upds); // new tasks first: the first request carries the CSV copy kept in Previous imports
     if (!send.length) {
-      if (dnCount()) { st.added = 0; st.updated = 0; st.skipped = nSkip; st.bad = nBad; st.msg = ''; st.dnDone = doneApply(); st.phase = 'done'; if (st.scan) scanDone(st.scan); App.mutated(); paint(); }
+      if (dnCount()) { st.added = 0; st.updated = 0; st.skipped = nSkip; st.bad = nBad; st.msg = ''; st.dnDone = doneApply(); st.phase = 'done'; hist.open = true; if (st.scan) scanDone(st.scan); App.mutated(); paint(); }
       return;
     }
     for (i = 0; i < send.length; i += CHUNK) parts.push(send.slice(i, i + CHUNK));
@@ -229,7 +229,7 @@
         if (s === 201 && d && d.ok) { st.added += d.added || 0; st.updated += d.updated || 0; at++; go(); }
         else {
           st.added += (d && d.added) || 0; st.updated += (d && d.updated) || 0;
-          st.phase = 'failed'; st.msg = 'Stopped part-way: ' + st.added + ' added and ' + st.updated + ' updated of ' + send.length + '. Use Undo in "Previous imports" below to remove the added ones (updates are not undone), then fix the file and import again.';
+          st.phase = 'failed'; hist.open = true; st.msg = 'Stopped part-way: ' + st.added + ' added and ' + st.updated + ' updated of ' + send.length + '. Use Undo in "Previous imports" below to remove the added ones (updates are not undone), then fix the file and import again.';
           finish(); paint();
         }
       });
@@ -341,7 +341,7 @@
   var FIELD_KEY = { title: 'title', list: 'list', category: 'category', due_date: 'due_date', remind_time: 'remind_time', repeat: 'recur', priority: 'prio', quick: 'quick', must_today: 'must', notes: 'notes', subtasks: 'subtasks' };
   function chip(cls, txt) { return '<span class="impchip ' + cls + '">' + esc(txt) + '</span>'; }
   function mappingHTML() {
-    var h = '<div class="imph">Columns</div><div class="impmap" id="impMap">', i, m, found = {}, f, c, blank = [], empty = [];
+    var h = '<div class="impmap" id="impMap">', i, m, found = {}, f, c, blank = [], empty = [];
     for (i = 0; i < st.mapping.length; i++) { m = st.mapping[i]; found[m.field] = m; }
     h += '<div class="impchips">';
     for (i = 0; i < COLS.length; i++) {
@@ -351,7 +351,6 @@
     }
     if (found.id) h += '<span class="impchip ok">✓ <b>id</b> ← “' + esc(found.id.header) + '” <span class="impsoft">(rows with an id update that task)</span></span>';
     h += '</div>';
-    for (i = 0; i < st.ignored.length; i++) h += '<div class="impwarn">⚠ Column “' + esc(st.ignored[i]) + '” is not recognised: <b>its data will NOT be imported</b></div>';
     for (i = 1; i < COLS.length; i++) {
       f = COLS[i]; if (!found[f] || f === 'list') continue;
       var any = false, k = FIELD_KEY[f], pi;
@@ -444,8 +443,12 @@
     if (it.open) h += editorHTML(it, i);
     return h + '</div>';
   }
+  function tog(act, label, open) { return '<button type="button" class="imptog" data-imp="' + act + '" aria-expanded="' + (open ? 'true' : 'false') + '"><span>' + esc(label) + '</span><i>' + (open ? '▾' : '▸') + '</i></button>'; }
   function previewHTML() {
-    var h = mappingHTML(), i, shown = Math.min(st.items.length, 200);
+    var h = '', i, shown = Math.min(st.items.length, 200);
+    for (i = 0; i < st.ignored.length; i++) h += '<div class="impwarn">⚠ Column “' + esc(st.ignored[i]) + '” is not recognised: <b>its data will NOT be imported</b></div>'; // always visible: this data is lost
+    h += tog('cols', 'Columns read (' + st.mapping.length + ')', st.cols);
+    if (st.cols) h += mappingHTML();
     h += '<div class="imph">Review: what will be added</div><div id="impPreview">';
     for (i = 0; i < shown; i++) h += cardHTML(st.items[i], i);
     h += '</div>';
@@ -454,7 +457,8 @@
   }
 
   function histHTML() {
-    var h = '<div class="imph">Previous imports</div>', i, x, list = hist.list;
+    var i, x, list = hist.list, h = tog('histtog', 'Previous imports' + (list && list.length ? ' (' + list.length + ')' : ''), hist.open);
+    if (!hist.open) return h;
     if (hist.note) h += '<div class="impinfo" id="impHistNote">' + esc(hist.note) + '</div>';
     h += panelHTML('hist');
     if (list === null) return h + '<div class="impinfo">Loading…</div>';
@@ -476,22 +480,40 @@
   }
 
   function sourceHTML() {
-    var h = '<div class="seg impseg">' + (canFile ? '<button type="button" id="impModeFile" data-imp="mfile" class="' + (mode === 'file' ? 'on' : '') + '">Upload file</button>' : '') +
-      '<button type="button" id="impModePaste" data-imp="mpaste" class="' + (mode === 'paste' ? 'on' : '') + '">Paste CSV</button></div>';
-    if (mode === 'file') {
-      h += '<div class="impdrop"><div class="impdropt">Choose a <b>.csv</b> file from this computer</div>' +
-        '<label class="btn primary impfilebtn" for="impFile">Choose CSV file</label><input type="file" id="impFile" class="impfile" accept=".csv,text/csv"></div>';
-    } else {
-      h += '<textarea id="impPaste" class="impta" rows="7" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Paste the CSV text here, header line first:\ntitle,list,category,due_date,...">' + esc(pasteText) + '</textarea>' +
-        '<div class="improw"><button class="btn primary" id="impCheck" data-imp="check" type="button">Review pasted CSV</button>' +
-        '<button class="btn" id="impExample" data-imp="example" type="button">Use the example</button>' +
-        '<button class="btn" data-imp="clear" type="button">Clear</button></div>';
+    var h = '<div class="impsrc2">' +
+      (canFile ? '<label class="btn primary impfilebtn" for="impFile">Choose CSV file</label><input type="file" id="impFile" class="impfile" accept=".csv,text/csv">' : '') +
+      '<button type="button" class="btn" id="impModePaste" data-imp="mpaste">Paste CSV</button>' +
+      (!touchy ? '<button class="btn" id="impTpl" type="button">Download template</button>' : '') + '</div>';
+    if (pasteBox) {
+      h += '<div class="impinfo" id="impPasteHint">' + esc(pasteHint) + '</div>' +
+        '<textarea id="impPaste" class="impta" rows="5" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Paste the CSV here, header line first">' + esc(pasteText) + '</textarea>' +
+        '<div class="improw"><button class="btn primary" id="impCheck" data-imp="check" type="button">Review pasted CSV</button><button class="btn" data-imp="clear" type="button">Cancel</button></div>';
     }
-    if (!touchy) h += '<div class="improw"><button class="btn" id="impTpl" type="button">Download template</button></div>';
-    h += '<div class="imph impsub">Improve tasks you already have</div><div class="impinfo">Export your open tasks (each has an id). Have them corrected or improved, then import the file back: tasks with an id are <b>updated</b> instead of added again. Updates cannot be undone, so keep the export.</div>' +
+    return h + '<div class="impsoft impcols">Columns: ' + esc(COLS.join(', ')) + '. Only <b>title</b> is required; sub-tasks go in one cell separated by <b>|</b>.</div>';
+  }
+  function expHTML() {
+    var h = tog('exptog', 'Update tasks you already have', exp.open);
+    if (!exp.open) return h;
+    h += '<div class="impinfo">Export your open tasks (each has an id). Have them corrected or improved, then import the file back: tasks with an id are <b>updated</b> instead of added again. Updates cannot be undone, so keep the export.</div>' +
       '<div class="improw"><button class="btn" id="impExpCopy" data-imp="expcopy" type="button">Copy my open tasks</button><button class="btn" id="impExpDl" data-imp="expdl" type="button">Download my open tasks</button></div>';
     if (exp.note) h += '<div class="impinfo" id="impExpNote">' + esc(exp.note) + '</div>';
     return h + panelHTML('exp');
+  }
+  // Paste CSV reads the clipboard straight away (v1071). Browsers that cannot (iPad 2) or that refuse the permission get a small paste box instead.
+  function pasteClip() {
+    var c = window.navigator && window.navigator.clipboard;
+    pasteHint = 'This browser would not let the page read the clipboard. Paste the CSV here instead:';
+    if (!(c && c.readText)) { pasteBox = true; st.msg = ''; paint(); return; }
+    c.readText().then(function (txt) {
+      if (!txt || !/\S/.test(txt)) { st.msg = 'The clipboard is empty. Copy the CSV first, then tap Paste CSV.'; paint(); return; }
+      start(txt, 'Pasted CSV');
+    }, function () { pasteBox = true; st.msg = ''; paint(); });
+  }
+  function reviewHead() {
+    var h = '<div class="imprev"><div class="imprevt"><b>' + esc(st.file || 'Import') + '</b><span class="impsoft">under review: nothing is added yet</span></div>';
+    if (st.confirmDiscard) h += '<div class="imprevc" id="impDiscardAsk"><span>Discard this import?' + (st.scan ? ' The photo scan is removed too.' : '') + '</span><button class="btn danger" type="button" data-imp="discardyes">Yes, discard</button><button class="btn" type="button" data-imp="discardno">Keep</button></div>';
+    else h += '<button class="btn" type="button" id="impDiscard" data-imp="discard">Discard</button>';
+    return h + '</div>';
   }
   /* ---------- crossed-out / ticked / highlighted lines mark matching open tasks done (v1069) ---------- */
   var STOP = { a: 1, an: 1, the: 1, to: 1, 'for': 1, 'with': 1, re: 1, and: 1, of: 1, on: 1, 'in': 1, my: 1, at: 1, by: 1, up: 1, out: 1 };
@@ -571,20 +593,19 @@
 
   function paint() {
     if (!body) return;
-    var h = '<div class="imp"><div class="impintro">Add many tasks at once from a CSV. Columns: <span class="impsoft">' + esc(COLS.join(', ')) + '</span>. Only <b>title</b> is required. Sub-tasks go in one cell separated by <b>|</b>.</div>', i, t;
-    if (st.phase === 'idle' || st.phase === 'ready' || st.phase === 'done' || st.phase === 'failed') h += '<div class="impcardbox">' + sourceHTML() + '</div>';
+    var h = '<div class="imp">', i, t, rev = st.phase === 'ready' || st.phase === 'dnonly', idle = st.phase === 'idle' || st.phase === 'done' || st.phase === 'failed';
+    if (rev) pasteBox = false;
+    if (idle) h += '<div class="impintro">Add many tasks at once from a CSV file or from your clipboard.</div><div class="impcardbox">' + sourceHTML() + '</div>';
+    if (rev) h += reviewHead();
     if (st.msg) h += '<div class="imperr" id="impMsg">' + esc(st.msg) + '</div>';
     if (st.phase === 'checking') h += '<div class="impinfo" id="impBusy">Checking ' + esc(st.file) + '…</div>';
     if (st.phase === 'importing') h += '<div class="impinfo" id="impBusy">Adding tasks…</div>';
     if (st.phase === 'dnonly') h += doneHTML(true);
     if (st.phase === 'ready') {
       t = tally();
-      h += '<div class="impstats" id="impSum"><div class="impstat"><b>' + st.items.length + '</b><span>' + (st.items.length === 1 ? 'task' : 'tasks') + ' found</span></div>' +
-        '<div class="impstat"><b>' + st.mapping.length + '</b><span>columns read</span></div>' +
-        '<div class="impstat' + (t.bad || st.ignored.length ? ' warn' : '') + '"><b>' + (t.bad + st.ignored.length) + '</b><span>' + (t.bad + st.ignored.length === 1 ? 'problem' : 'problems') + '</span></div>' +
-        (t.dups ? '<div class="impstat warn"><b>' + t.dups + '</b><span>already in your list</span></div>' : '') + '</div>';
-      h += '<div class="impsrc">' + esc(st.file) + '</div>';
-      h += '<div class="impgo top"><button class="btn primary impgobtn" id="impGoTop" data-imp="go" type="button"' + (t.add + t.upd + dnCount() ? '' : ' disabled') + '>' + esc(goLabel(t)) + '</button></div>';
+      var np = t.bad + st.ignored.length;
+      h += '<div class="impsum' + (np ? ' warn' : '') + '" id="impSum"><b>' + plural(st.items.length, 'task') + '</b> found · ' + plural(st.mapping.length, 'column') + ' read · ' + plural(np, 'problem') + (t.dups ? ' · ' + t.dups + ' already in your list' : '') + '</div>';
+      if (st.items.length > 3) h += '<div class="impgo top"><button class="btn primary impgobtn" id="impGoTop" data-imp="go" type="button"' + (t.add + t.upd + dnCount() ? '' : ' disabled') + '>' + esc(goLabel(t)) + '</button></div>';
       if (t.dups) h += '<div class="impdupbar"><span><b>' + plural(t.dups, 'task') + '</b> look like tasks you already have (skipped unless you change it):</span><div class="seg impseg"><button type="button" data-imp="dupall" data-v="skip">Skip all</button><button type="button" data-imp="dupall" data-v="update">Update them all</button><button type="button" data-imp="dupall" data-v="add">Add all anyway</button></div></div>';
       if (t.bad) h += '<div class="imperr" id="impErrs"><b>' + plural(t.bad, 'task') + ' with problems will be skipped.</b> Tap a card to fix it, or remove it. The rest import normally.</div>';
       if (t.names.length) h += '<div class="impinfo" id="impNewProj">New Work project' + (t.names.length === 1 ? '' : 's') + ' to be created: <b>' + esc(t.names.join(', ')) + '</b>. Pick an existing one on the card instead if it is a typo.</div>';
@@ -595,7 +616,8 @@
       h += '<div class="impinfo">Importing the same file twice adds every task twice unless you skip or update the matches. Added tasks can be undone below; updates cannot.</div>';
     }
     if (st.phase === 'done') h += '<div class="impdone" id="impDone">✓ ' + doneMsg() + (st.skipped ? ' Skipped ' + st.skipped + ' you already had.' : '') + (st.bad ? ' Left out ' + plural(st.bad, 'task') + ' with problems.' : '') + ' Close Settings to see them' + (st.added ? ', or undo below.' : '.') + '</div>';
-    h += histHTML() + '</div>';
+    if (idle) h += expHTML() + histHTML();
+    h += '</div>';
     var keep = document.getElementById('impPaste'); if (keep) pasteText = keep.value;
     body.innerHTML = h;
     var f = document.getElementById('impFile'), tp = document.getElementById('impTpl');
@@ -652,10 +674,14 @@
     else if (a === 'expcopy') copyData(exportData(cache || (App.todos && App.todos()) || []), 'exp'); // synchronous: iOS only copies inside the tap
     else if (a === 'expdl') saveData(exportData(cache || (App.todos && App.todos()) || []), 'exp');
     else if (a === 'closecsv') { hist.show = null; paint(); }
-    else if (a === 'mfile') { mode = 'file'; paint(); }
-    else if (a === 'mpaste') { mode = 'paste'; paint(); }
-    else if (a === 'example') { pasteText = TEMPLATE; paint(); }
-    else if (a === 'clear') { pasteText = ''; st = fresh(); paint(); }
+    else if (a === 'mpaste') pasteClip();
+    else if (a === 'clear') { pasteText = ''; pasteBox = false; st = fresh(); paint(); }
+    else if (a === 'histtog') { hist.open = !hist.open; paint(); }
+    else if (a === 'exptog') { exp.open = !exp.open; paint(); }
+    else if (a === 'cols') { st.cols = !st.cols; paint(); }
+    else if (a === 'discard') { st.confirmDiscard = true; paint(); }
+    else if (a === 'discardno') { st.confirmDiscard = false; paint(); }
+    else if (a === 'discardyes') { var sid = st.scan; st = fresh(); pasteText = ''; pasteBox = false; if (sid) scanDone(sid); paint(); }
     else if (a === 'check') start(pasteText, 'Pasted CSV');
     else if (a === 'go') run();
     else if (a === 'open' && st.items[i]) { st.items[i].open = !st.items[i].open; st.items[i].draft = st.items[i].open ? draftOf(st.items[i].p.value) : null; paint(); }

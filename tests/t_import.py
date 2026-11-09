@@ -16,6 +16,18 @@ def write(txt, name):
 def run(h):
     p = h.page; R = []
     def chk(name, cond, info=''): R.append(('Import: ' + name, bool(cond), info))
+    def mapt():  # the Columns panel is collapsed until its toggle is tapped
+        if not p.query_selector('#impMap'): p.click('[data-imp=cols]')
+        return p.inner_text('#impMap') + '\n' + ' '.join(x.inner_text() for x in p.query_selector_all('.impwarn'))  # panel plus the always-visible unrecognised-column warnings
+    def pick(f):  # a review in progress hides the source buttons: discard it first, like a user would
+        if not p.query_selector('#impFile'):
+            p.click('#impDiscard'); p.click('[data-imp=discardyes]'); p.wait_for_timeout(150)
+        p.set_input_files('#impFile', f)
+    def hist_t():  # Previous imports is collapsed until its toggle is tapped
+        if not p.query_selector('[data-imp=histtog]'):  # a review in progress hides history: discard it
+            p.click('#impDiscard'); p.click('[data-imp=discardyes]'); p.wait_for_timeout(150)
+        if not p.query_selector('#impHist'): p.click('[data-imp=histtog]'); p.wait_for_timeout(150)
+        return p.inner_text('#impHist')
     def bulk(): return [c for c in h.calls if c[0] == 'POST' and c[1] == '/api/todos' and 'bulk' in c[2]]
 
     h.allow.append('400')  # the dry run of a faulty file is answered 400 on purpose
@@ -29,18 +41,18 @@ def run(h):
 
     # a file with faults: nothing is added, lines are named, unknown column reported
     n0 = len(h.todos)
-    p.set_input_files('#impFile', write(BAD, 'bad.csv')); p.wait_for_timeout(600)
+    pick(write(BAD, 'bad.csv')); p.wait_for_timeout(600)
     t = p.inner_text('#tabBody')
     chk('bad file: errors listed with line number', 'Line 3' in t and 'title is required' in t and 'priority must be 0, 1, 2 or 3' in t and 'due_date' in t, t[:400])
     chk('bad file: unknown column reported', 'colour' in t)
-    chk('bad file: nothing sent for real yet; the good row can still be added, the bad one is skipped', 'will be skipped' in t and 'Add 1 task' in p.inner_text('#impGoTop') and not [c for c in bulk() if not c[3].get('dry')] and len(h.todos) == n0)
+    chk('bad file: nothing sent for real yet; the good row can still be added, the bad one is skipped', 'will be skipped' in t and 'Add 1 task' in p.inner_text('#impGo') and not [c for c in bulk() if not c[3].get('dry')] and len(h.todos) == n0)
 
     # a good file
-    p.set_input_files('#impFile', write(GOOD, 'good.csv')); p.wait_for_timeout(600)
+    pick(write(GOOD, 'good.csv')); p.wait_for_timeout(600)
     t = p.inner_text('#tabBody')
     chk('good file: 3 tasks found (blank line skipped, quoted comma/newline kept)', '3 tasks found' in ' '.join(p.inner_text('#impSum').split()) and p.query_selector('#impGo') is not None, t[:200])
     chk('dry run was sent first', bulk() and bulk()[-1][3].get('dry') is True)
-    pv = p.inner_text('#impPreview'); mp = p.inner_text('#impMap')
+    pv = p.inner_text('#impPreview'); mp = mapt()
     chk('preview panel shows the rows as understood (UK date -> weekday date, time, priority marks, yes)', 'Tue 24 Nov 2026' in pv and '09:30' in pv and '!! (2)' in pv and 'quick' in pv and 'Health' in pv and 'Fri 27 Nov 2026' in pv, pv[:400])
     chk('preview: tasks not yet added', len(h.todos) == n0)
     chk('mapping panel: every column found, none ignored', mp.count('←') == 10 and 'NOT be imported' not in mp, mp)
@@ -62,21 +74,21 @@ def run(h):
     # a file like the one an LLM got wrong: extra "Row" + "Other details" columns, "Due Date" header
     p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(300)
     GEM = 'Row,Title,List,Category,Due Date,Other details\n1,Request EXPORTS schema access,work,Google Health Request,2026-11-09,quick\n2,India gaps,work,Google Health Request,2026-11-09,\n'
-    p.set_input_files('#impFile', write(GEM, 'gemini.csv')); p.wait_for_timeout(600)
-    mp = p.inner_text('#impMap'); pv = p.inner_text('#impPreview')
+    pick(write(GEM, 'gemini.csv')); p.wait_for_timeout(600)
+    mp = mapt(); pv = p.inner_text('#impPreview')
     chk('LLM-style file: unrecognised columns are called out, data will not be imported', 'Other details' in mp and 'NOT be imported' in mp and 'Row' in mp, mp)
     chk('LLM-style file: Title, List, Category, Due Date still mapped and previewed', 'Mon 9 Nov 2026' in pv and 'Google Health Request' in pv and mp.count('←') == 4, pv[:300])
     chk('LLM-style file: fields not in the file are listed as left blank', 'Not in the file (left blank):' in mp and 'priority' in mp.split('left blank):')[1])
     ALI = 'Task,Project,Due,Details\nAlias one,Proj X,2026-12-01,some note\n'
-    p.set_input_files('#impFile', write(ALI, 'alias.csv')); p.wait_for_timeout(600)
-    mp = p.inner_text('#impMap')
+    pick(write(ALI, 'alias.csv')); p.wait_for_timeout(600)
+    mp = mapt()
     chk('alternative column names are mapped and labelled (Task, Project, Due, Details)', mp.count('read as') == 4 and 'NOT be imported' not in mp, mp)
     p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
 
     # previous imports + undo
     n_before_undo = len(h.todos)
     p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(500)
-    hs = p.inner_text('#impHist')
+    hs = hist_t()
     chk('history lists the import with its file name and counts', 'good.csv' in hs and '3 tasks added' in hs and '3 still in your lists' in hs, hs)
     with p.expect_download() as dl2: p.click('button[data-imp=dl]')
     cp = open(dl2.value.path(), encoding='utf-8', newline='').read()
@@ -88,12 +100,12 @@ def run(h):
     chk('when the browser refuses to copy a text box with the CSV is shown', p.query_selector('#impCsvBox') is not None and 'Call the dentist' in p.input_value('#impCsvBox'))
     p.click('button[data-imp=closecsv]'); p.wait_for_timeout(150)
     p.click('button[data-imp=ask]'); p.wait_for_timeout(200)
-    chk('undo asks first, with the number of tasks', 'Remove 3 tasks?' in p.inner_text('#impHist'))
+    chk('undo asks first, with the number of tasks', 'Remove 3 tasks?' in hist_t())
     p.click('button[data-imp=no]'); p.wait_for_timeout(200)
-    chk('Keep cancels: nothing removed', len(h.todos) == n_before_undo and 'Remove' not in p.inner_text('#impHist'))
+    chk('Keep cancels: nothing removed', len(h.todos) == n_before_undo and 'Remove' not in hist_t())
     p.click('button[data-imp=ask]'); p.click('button[data-imp=yes]'); p.wait_for_timeout(600)
     chk('undo removes exactly the 3 imported tasks', len(h.todos) == n_before_undo - 3 and not [t for t in h.todos if t['title'] in ('Call the dentist', 'Send weekly report', 'Quote "this"')], len(h.todos))
-    hs = p.inner_text('#impHist')
+    hs = hist_t()
     chk('history shows it as undone, no Undo button left', 'undone (3 tasks removed)' in hs and p.query_selector('button[data-imp=ask]') is None, hs)
     chk('undo message shown', 'Undone: 3 tasks removed' in p.inner_text('#impHistNote'))
     p.click('[data-act=setcancel]'); p.wait_for_timeout(600)
@@ -101,10 +113,10 @@ def run(h):
     p.click('#nSettings'); p.wait_for_timeout(200); p.click('.tab[data-val=import]'); p.wait_for_timeout(300)
 
     # no title column / empty / semicolon separated
-    p.set_input_files('#impFile', write('foo,bar\nx,2026-01-01\n', 'nohead.csv')); p.wait_for_timeout(300)
+    pick(write('foo,bar\nx,2026-01-01\n', 'nohead.csv')); p.wait_for_timeout(300)
     chk('no title column: clear message, nothing sent', 'no "title" column' in p.inner_text('#tabBody'), p.inner_text('#tabBody')[:300])
     n1 = len(h.todos)
-    p.set_input_files('#impFile', write('title;due_date\nSemi one;2026-12-01\n', 'semi.csv')); p.wait_for_timeout(500)
+    pick(write('title;due_date\nSemi one;2026-12-01\n', 'semi.csv')); p.wait_for_timeout(500)
     chk('semicolon separator accepted', '1 task found' in ' '.join(p.inner_text('#impSum').split()))
     h.fail_bulk = True; h.allow.append('500')
     p.click('#impGo'); p.wait_for_timeout(600); h.fail_bulk = False
@@ -123,7 +135,7 @@ def run(h):
     p.click('#impGo'); p.wait_for_timeout(700)
     a_ = [x for x in h.todos[nP:] if x['title'] == 'Plan the review step']
     chk('paste: task added with sub-tasks (one done) and multi-line notes', a_ and [i['t'] for i in a_[0]['items']] == ['Draft checklist', 'Agree owner', 'Send to team'] and a_[0]['items'][1]['d'] is True and '- India doctors' in (a_[0]['notes'] or ''), a_[:1])
-    chk('paste: listed in history as "Pasted CSV"', 'Pasted CSV' in p.inner_text('#impHist'))
+    chk('paste: listed in history as "Pasted CSV"', 'Pasted CSV' in hist_t())
     p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
 
     # v1063: duplicates, editing cards, new-project flag, export + update by id, one scroll area, skip bad rows
@@ -131,7 +143,7 @@ def run(h):
     n2 = len(h.todos)
     DUP = 'title,list,category,priority\nPlan the review step,work,Alpha,2\nBrand new one,work,Gamma project,1\n,personal,,\n'
     p.click('#impModePaste'); p.fill('#impPaste', DUP); p.click('#impCheck'); p.wait_for_timeout(700)
-    chk('duplicate: flagged, skipped by default, bar offers Skip/Update/Add', 'already have' in p.inner_text('#tabBody') and p.query_selector('[data-imp=dupall]') is not None and 'Add 1 task' in p.inner_text('#impGoTop'), p.inner_text('#impGoTop'))
+    chk('duplicate: flagged, skipped by default, bar offers Skip/Update/Add', 'already have' in p.inner_text('#tabBody') and p.query_selector('[data-imp=dupall]') is not None and 'Add 1 task' in p.inner_text('#impGo'), p.inner_text('#impGo'))
     chk('new project flagged with a picker (Gamma project), Alpha is known so not flagged', p.query_selector('#impPS1') is not None and p.query_selector('#impPS0') is None, p.inner_text('#impNewProj') if p.query_selector('#impNewProj') else '')
     chk('card list is not an inner scroller (one scroll area only)', p.evaluate("(function(){var e=document.getElementById('impPreview');var o=getComputedStyle(e).overflowY;return o==='visible'&&e.scrollHeight<=e.clientHeight+1})()"))
     p.click('#impCard1 .impopen'); p.wait_for_timeout(200)
@@ -147,7 +159,7 @@ def run(h):
     chk('matching an existing project clears the flag and sets the category', p.query_selector('#impPS1') is None and 'Beta' in p.inner_text('#impCard1'))
     p.click('[data-imp=act][data-i="0"][data-v=update]'); p.click('#impCard0 .impopen'); p.wait_for_timeout(200)
     p.fill('#impE_title_0', 'Plan the review step edited'); p.click('[data-imp=save][data-i="0"]'); p.wait_for_timeout(600)
-    chk('Update chosen, then the title edited (no longer matches): still an update, button label right', p.inner_text('#impGoTop').strip() == 'Add 1 task and update 1 task', p.inner_text('#impGoTop'))
+    chk('Update chosen, then the title edited (no longer matches): still an update, button label right', p.inner_text('#impGo').strip() == 'Add 1 task and update 1 task', p.inner_text('#impGo'))
     before = {x['title']: dict(x) for x in h.todos}
     p.click('#impGo'); p.wait_for_timeout(900)
     chk('Go works after editing an Update card: 1 added, 1 renamed (not duplicated)', len(h.todos) == n2 + 1 and 'Added 1 task and updated 1 task' in p.inner_text('#impDone'), p.inner_text('#tabBody')[:200])
@@ -159,7 +171,7 @@ def run(h):
     p.click('#impGo'); p.wait_for_timeout(800)
     chk('keeping the new project name creates it', h.proj_posts == ['Gamma project'], h.proj_posts)
     # export + update by id
-    p.click('#impExpDl') if False else None
+    if not p.query_selector('#impExpDl'): p.click('[data-imp=exptog]')
     with p.expect_download() as dlx: p.click('#impExpDl')
     ex = open(dlx.value.path(), encoding='utf-8', newline='').read().split('\r\n')
     chk('export has the 11 columns plus id and one line per open task', ex[0] == 'title,list,category,due_date,remind_time,repeat,priority,quick,must_today,notes,subtasks,id' and len([l for l in ex if l]) - 1 == len([x for x in h.todos if not x.get('done')]), ex[0])
@@ -167,11 +179,33 @@ def run(h):
     gid = [x for x in h.todos if x['title'] == 'Gamma task'][0]['id']
     p.click('#impModePaste'); p.fill('#impPaste', 'title,priority,id\nGamma task improved,3,%s\nGhost,1,00000000-0000-4000-8000-000000000000\n' % gid); p.click('#impCheck'); p.wait_for_timeout(700)
     t = p.inner_text('#tabBody')
-    chk('id column: updates shown, unknown id reported', 'updates existing task' in t and 'no task with that id' in t and 'id' in p.inner_text('#impMap'), t[:300])
+    chk('id column: updates shown, unknown id reported', 'updates existing task' in t and 'no task with that id' in t and 'id' in mapt(), t[:300])
     p.click('#impGo'); p.wait_for_timeout(800)
     g = [x for x in h.todos if x['id'] == gid][0]
     chk('update by id: title and priority changed, category kept', g['title'] == 'Gamma task improved' and g['prio'] == 3 and g['category'] == 'Gamma project', g)
     chk('update by id: no new task added', len([x for x in h.todos if x['title'].startswith('Gamma task')]) == 1)
+    p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
+
+    # v1071: Paste CSV reads the clipboard directly (no text box), Discard asks first, long screens are collapsed
+    p.click('#nSettings'); p.wait_for_timeout(300); p.click('.tab[data-val=import]'); p.wait_for_timeout(300)
+    if p.query_selector('#impDiscard'): p.click('#impDiscard'); p.click('[data-imp=discardyes]'); p.wait_for_timeout(150)
+    p.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:{readText:function(){return Promise.resolve('title,list\\nFrom the clipboard,work\\n')}}})")
+    if p.query_selector('#impExpDl'): p.click('[data-imp=exptog]')
+    chk('idle screen: no text box, Paste CSV is a normal (not primary) button', p.query_selector('#impPaste') is None and 'primary' not in (p.get_attribute('#impModePaste', 'class') or ''))
+    chk('idle screen: update-existing is collapsed, history has its own toggle', p.query_selector('[data-imp=histtog]') is not None and p.query_selector('#impExpDl') is None, p.inner_text('#tabBody')[:400])
+    p.click('#impModePaste'); p.wait_for_timeout(600)
+    chk('Paste CSV: clipboard read straight into the review, still no text box', p.query_selector('#impPaste') is None and 'From the clipboard' in p.inner_text('#impPreview') and '1 task found' in ' '.join(p.inner_text('#impSum').split()))
+    chk('review screen: one Add button, no duplicate on a short list', p.query_selector('#impGoTop') is None and p.query_selector('#impGo') is not None)
+    n0 = len(bulk())
+    p.click('#impDiscard'); p.wait_for_timeout(150)
+    chk('Discard asks first', 'Discard this import?' in p.inner_text('#impDiscardAsk') and p.query_selector('#impPreview') is not None)
+    p.click('[data-imp=discardno]'); p.wait_for_timeout(150)
+    chk('Keep leaves the review as it was', p.query_selector('#impPreview') is not None and p.query_selector('#impDiscardAsk') is None)
+    p.click('#impDiscard'); p.click('[data-imp=discardyes]'); p.wait_for_timeout(200)
+    chk('Yes, discard wipes the review and adds nothing', p.query_selector('#impPreview') is None and p.query_selector('#impModePaste') is not None and not [x for x in h.todos if x['title'] == 'From the clipboard'])
+    p.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:{readText:function(){return Promise.reject(new Error('denied'))}}})")
+    p.click('#impModePaste'); p.wait_for_timeout(400)
+    chk('clipboard refused: the small paste box appears with an explanation', p.query_selector('#impPaste') is not None and 'would not let the page read the clipboard' in p.inner_text('#impPasteHint'))
     p.click('[data-act=setcancel]'); p.wait_for_timeout(200)
 
     # not offered on phones/tablets
@@ -197,7 +231,8 @@ def run(h):
         pg = ctx.new_page(); pg.goto('http://todo.test/'); pg.wait_for_timeout(900)
         pg.evaluate("document.querySelector('[data-act=settings]').click()"); pg.wait_for_timeout(300)
         pg.click('.tab[data-val=import]'); pg.wait_for_timeout(300)
-        chk('%s: Import tab opens with Paste and no file picker or template download' % label, pg.query_selector('#impPaste') is not None and pg.query_selector('#impFile') is None and pg.query_selector('#impTpl') is None)
+        chk('%s: Import tab opens with a Paste CSV button, no text box, no file picker or template download' % label, pg.query_selector('#impModePaste') is not None and pg.query_selector('#impPaste') is None and pg.query_selector('#impFile') is None and pg.query_selector('#impTpl') is None)
+        pg.click('#impModePaste'); pg.wait_for_timeout(300)  # no clipboard access here (http origin): the small fallback box appears
         chk('%s: no horizontal overflow, paste box fits the screen' % label, not pg.evaluate("document.documentElement.scrollWidth > window.innerWidth") and pg.evaluate("document.getElementById('impPaste').getBoundingClientRect().right <= window.innerWidth"))
         pg.fill('#impPaste', 'title,list,category,due_date,notes\nOverflow check,work,A very long project name for a phone screen,2026-11-09,some notes\n'); pg.click('#impCheck'); pg.wait_for_timeout(900)
         pg.click('#impCard0 .impopen'); pg.wait_for_timeout(300)

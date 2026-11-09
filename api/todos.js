@@ -538,9 +538,14 @@ module.exports = async function handler(req, res) {
       var updated = await rpc('todo_update', { p_token: token, p_id: id, p_patch: patch });
       var calKeys = ['done', 'title', 'due_date', 'remind_time', 'recur', 'recur_until', 'category'], calRel = false;
       for (var ck = 0; ck < calKeys.length; ck++) if (calKeys[ck] in patch) calRel = true;
+      // details shown in the event (v1071): only worth a calendar round trip when the task is a live timed one
+      var detKeys = ['notes', 'items', 'prio', 'quick', 'must'], detRel = false;
+      for (var dk = 0; dk < detKeys.length; dk++) if (detKeys[dk] in patch) detRel = true;
+      if (detRel && updated && updated.remind_time && !updated.done) calRel = true;
       var patchCal = calRel ? await calHook(token) : null;
       var gKeys = ['done', 'title', 'due_date', 'remind_time', 'list'], gRel = false;
       for (var gk = 0; gk < gKeys.length; gk++) if (gKeys[gk] in patch) gRel = true;
+      if (detRel && updated && updated.remind_time && !updated.done) gRel = true;
       var patchG = gRel ? await gcalHook(token, id, false) : null;
       return send(res, 200, { todo: updated, cal: patchCal, gcal: patchG });
     }

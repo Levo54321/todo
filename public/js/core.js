@@ -669,12 +669,18 @@
   }
 
   /* ---------- actions ---------- */
-  var toastTimer;
-  function toast(msg) {
+  var toastTimer, toastFn = null;
+  function toast(msg, undo) { // undo (optional): a function; the toast then carries an Undo button for a few seconds
     var t = $('toast');
-    t.textContent = msg; t.className = 'show';
+    toastFn = typeof undo === 'function' ? undo : null;
+    if (toastFn) { t.innerHTML = esc(msg) + ' <button type="button" class="tundo" data-act="toastundo">Undo</button>'; t.className = 'show act'; }
+    else { t.textContent = msg; t.className = 'show'; }
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.className = ''; }, 2200);
+    toastTimer = setTimeout(function () { t.className = ''; toastFn = null; }, toastFn ? 6000 : 2200);
+  }
+  function toastUndo() {
+    var f = toastFn; toastFn = null; clearTimeout(toastTimer); $('toast').className = '';
+    if (f) f();
   }
 
   function whenToDate(w) {
@@ -716,7 +722,7 @@
     });
   }
 
-  function doTick(id) {
+  function doTick(id, quiet) {
     var t = find(id); if (!t) return;
     var row = $('i-' + id), newDone = !t.done;
     if (row && newDone) row.className += ' completing';
@@ -726,6 +732,7 @@
       t.done = newDone; t.done_at = newDone ? new Date().toISOString() : null; render();
     }, newDone ? 450 : 0);
     patchTodo(id, { done: newDone }, before);
+    if (newDone && !quiet) toast('Task done', function () { var u = find(id); if (u && u.done) doTick(id, true); }); // accidental tap: Undo reopens it (the database removes a repeat's new copy)
   }
 
   function doLow(id, on) {
@@ -843,7 +850,7 @@
     var t = find(id); if (!t) return;
     editing = { id: id, list: t.list || 'personal', due: t.due_date || null, cat: t.category || null, pp: t.pproject_id || null, bl: !!(t.pproject_id && t.pp_backlog), recur: t.recur || null, low: !!t.low, until: t.recur_until || null, untilOn: !!t.recur_until, time: timeOf(t) || null, focus: isFocus(t), prio: t.prio || 0, quick: !!t.quick, must: isMust(t), blocked: !!t.blocked, unblock: t.unblock_action || '', paused: isPaused(t), pausedOn: t.paused_on || '', more: !!(t.recur || t.low || (t.items && t.items.length && !t.is_session)) };
     $('eTitle').value = t.title;
-    $('eNotes').value = t.notes || ''; notesPreview();
+    $('eNotes').value = t.notes || ''; notesEditing = false; notesPreview();
     $('eUnblock').value = editing.paused ? editing.pausedOn : editing.unblock;
     renderSheet();
     $('sheet').style.display = 'flex';
@@ -1365,11 +1372,14 @@
     close();
     return out;
   }
+  // Notes show as ONE box: the formatted view with an Edit button, or the typing box while editing (empty notes: typing box).
+  var notesEditing = false, notesTimer;
   function notesPreview() {
-    var el = $('eNotesMd'); if (!el) return;
-    var v = $('eNotes').value, has = /(\*\*|^\s*[-*•]\s|^\s*\d+[.)]\s|^#{1,4}\s|`|\]\(https?:)/m.test(v);
-    el.style.display = has ? 'block' : 'none';
-    if (has) el.innerHTML = mdHTML(v);
+    var el = $('eNotesMd'), ta = $('eNotes'); if (!el || !ta) return;
+    var v = ta.value.replace(/^\s+|\s+$/g, ''), view = !notesEditing && v;
+    ta.style.display = view ? 'none' : '';
+    el.style.display = view ? 'block' : 'none';
+    if (view) el.innerHTML = mdHTML(v) + '<button type="button" class="chip notesedit" data-act="notesedit">Edit</button>';
   }
   function openSettings() {
     settingsTab = 'general';
@@ -1600,6 +1610,8 @@
     }
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
     if (act === 'tick') doTick(id);
+    else if (act === 'toastundo') toastUndo();
+    else if (act === 'notesedit') { notesEditing = true; notesPreview(); try { $('eNotes').focus(); } catch (x) {} }
     else if (act === 'edit') openSheet(id);
     else if (act === 'sortday') sortDay();
     else if (act === 'pushrest') pushRest();
@@ -1740,7 +1752,7 @@
   App.localISO = localISO; App.parseTS = parseTS; App.nowMs = nowMs; App.isFocus = isFocus; App.inMode = inMode;
   App.DOWL = DOWL; App.DOWS = DOWS; App.MONS = MONS; App.MONL = MONL;
   App.todos = function () { return todos; };
-  App.completeTask = function (id) { var t = find(id); if (t && !t.done) doTick(id); }; // marks an open task done (scan review)
+  App.completeTask = function (id) { var t = find(id); if (t && !t.done) doTick(id, true); }; // marks an open task done (scan review): no Undo toast per task
   App.mode = function () { return mode; };
   App.token = function () { return token; };
   App.whenToken = whenToken; App.getProjects = getProjects;
@@ -1749,7 +1761,11 @@
   App.ask = ask;
   App.reload = function () { forceLoad(); };
   App.md = mdHTML;
-  (function () { var n = document.getElementById('eNotes'); if (n) n.oninput = notesPreview; })();
+  (function () {
+    var n = document.getElementById('eNotes'); if (!n) return;
+    n.onfocus = function () { clearTimeout(notesTimer); notesEditing = true; };
+    n.onblur = function () { clearTimeout(notesTimer); notesTimer = setTimeout(function () { notesEditing = false; notesPreview(); }, 250); }; // a moment's grace so a tap on Save still lands
+  })();
   App.reloadWhenSettingsClose = function () { reloadOnClose = true; };
   // Projects board <-> Work list
   App.isPaused = isPaused;

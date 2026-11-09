@@ -59,10 +59,30 @@ def run(h):
     inp.click(); inp.fill('Brand new board task v1070'); pg.keyboard.press('Enter'); pg.wait_for_timeout(1200)
     chk('board: new task appears without switching page', 'Brand new board task v1070' in pg.inner_text('#boardPane'))
     chk('board: cursor back in that column Add box, now empty', pg.evaluate("(function(p){var a=document.activeElement;return !!a&&a.className==='bdin'&&a.value===''&&a.form.getAttribute('data-pid')===p;})(%s)" % json.dumps(pid)))
+    # v1071: Undo after completing a task, and notes shown as one box with an Edit button
+    pg.click('#nWork'); pg.wait_for_timeout(500)
+    tk = pg.query_selector('[data-act=tick]')
+    if tk:
+        tid = tk.get_attribute('data-id'); tk.click(); pg.wait_for_timeout(900)
+        chk('Undo: completing a task shows a toast with Undo', pg.query_selector('#toast .tundo') is not None and 'Task done' in pg.inner_text('#toast'))
+        pg.click('#toast .tundo'); pg.wait_for_timeout(900)
+        chk('Undo: the task is open again', pg.evaluate("App.todos().filter(function(t){return t.id===%s})[0].done" % json.dumps(tid)) is False)
+        chk('Undo: toast is gone after tapping it', 'show' not in (pg.get_attribute('#toast', 'class') or ''))
+        pg.click('[data-act=edit][data-id="%s"]' % tid) if pg.query_selector('[data-act=edit][data-id="%s"]' % tid) else pg.evaluate("document.querySelector('[data-act=edit]').click()")
+        pg.wait_for_timeout(400)
+        chk('Notes: empty notes show only the typing box', pg.is_visible('#eNotes') and not pg.is_visible('#eNotesMd'))
+        pg.fill('#eNotes', '**bold** note\n* item one'); pg.click('#eTitle'); pg.wait_for_timeout(500)
+        chk('Notes: after typing, only the formatted view remains, with Edit', not pg.is_visible('#eNotes') and pg.is_visible('#eNotesMd') and pg.query_selector('#eNotesMd .notesedit') is not None and '<b>bold</b>' in pg.inner_html('#eNotesMd'))
+        pg.click('#eNotesMd .notesedit'); pg.wait_for_timeout(300)
+        chk('Notes: Edit brings the typing box back (and hides the formatted one)', pg.is_visible('#eNotes') and not pg.is_visible('#eNotesMd') and '**bold**' in pg.input_value('#eNotes'))
+        pg.click('[data-act=cancel]') if pg.query_selector('[data-act=cancel]') else None
+    else:
+        chk('Undo/notes: a task was available to test', False)
     ov = pg.evaluate("""(function(){var heads=document.querySelectorAll('#boardPane .bdhead'),bad=0,n=0,i,nm,pl;
       for(i=0;i<heads.length;i++){nm=heads[i].querySelector('.bdname');pl=heads[i].querySelector('.bdp');if(!nm||!pl)continue;n++;
         nm.textContent='A very long project name that must wrap onto lines';
-        if(nm.getBoundingClientRect().right>pl.getBoundingClientRect().left+1)bad++;}
+        var rg=document.createRange();rg.selectNodeContents(nm);
+        if(rg.getBoundingClientRect().right>pl.getBoundingClientRect().left+1)bad++;}  // the TEXT, not the box (the box shrinks while nowrap text spills out)
       return [n,bad];})()""")
     chk('board: long project titles never run under the priority pill', ov[0] > 0 and ov[1] == 0, ov)
     ctx.close()

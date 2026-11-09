@@ -63,6 +63,26 @@ var VTZ = ['BEGIN:VTIMEZONE', 'TZID:Europe/London',
   'BEGIN:STANDARD', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0000', 'TZNAME:GMT', 'DTSTART:19701025T020000', 'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU', 'END:STANDARD',
   'END:VTIMEZONE'];
 
+// Everything useful about a task as plain text for a calendar event description (Apple and Google Work).
+function detailText(t) {
+  var L = [], items = Array.isArray(t.items) ? t.items : [], meta = [], i, it;
+  if (t.notes && String(t.notes).trim()) L.push(String(t.notes).trim());
+  if (items.length) {
+    if (L.length) L.push('');
+    L.push('Sub-tasks:');
+    for (i = 0; i < items.length; i++) { it = items[i] || {}; if (it.t) L.push((it.d ? '\u2611 ' : '\u2610 ') + it.t); }
+  }
+  if (t.category) meta.push('Project: ' + t.category);
+  if (t.prio) meta.push('Priority: ' + new Array(+t.prio + 1).join('!'));
+  if (t.quick) meta.push('Quick win');
+  if (t.must) meta.push('Must do today');
+  if (t.recur) meta.push('Repeats ' + t.recur);
+  if (meta.length) { if (L.length) L.push(''); L.push(meta.join(' \u00b7 ')); }
+  if (L.length) L.push('');
+  L.push('From your to-do list');
+  return L.join('\n').slice(0, 6000);
+}
+
 function eventLines(t, today, nowStamp) {
   var date = t.due_date || today, time = String(t.remind_time).slice(0, 5);
   var rrule = t.recur && RRULES[t.recur] ? RRULES[t.recur] : null;
@@ -83,7 +103,7 @@ function eventLines(t, today, nowStamp) {
   }
   L.push('SUMMARY:' + esc('☐ ' + t.title));
   if (t.category) L.push('CATEGORIES:' + esc(t.category));
-  L.push('DESCRIPTION:' + esc('To-do from your desk list' + (t.recur ? ' (repeats ' + t.recur + ')' : '')));
+  L.push('DESCRIPTION:' + esc(detailText(t)));
   L.push('TRANSP:TRANSPARENT');
   L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(t.title), 'TRIGGER:PT0M', 'END:VALARM');
   L.push('END:VEVENT');
@@ -163,6 +183,7 @@ module.exports = async function handler(req, res) {
 };
 module.exports.londonToUTC = londonToUTC;
 module.exports.eventLines = eventLines;
+module.exports.detailText = detailText;
 module.exports.cal = cal;
 module.exports.billEvents = billEvents;
 module.exports.RRULES = RRULES;

@@ -227,6 +227,7 @@ async function syncTask(token, id, gone) {
     summary: pub ? String(t.title).slice(0, 200) : 'Busy', visibility: pub ? 'public' : 'private', transparency: 'opaque', status: 'confirmed',
     start: { dateTime: t.due_date + 'T' + time + ':00', timeZone: TZ },
     end: { dateTime: wallPlus(t.due_date, time, m.dur || 30), timeZone: TZ },
+    description: require('./ics.js').detailText(t), // notes, sub-tasks, project, priority (private events show details only to Luc)
     extendedProperties: { private: { todoId: id } }
   };
   var ins = body; ins.id = eid;

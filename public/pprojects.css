@@ -8,7 +8,7 @@
 .ppsum{color:var(--muted);font-size:13px;margin:0 0 8px}
 .bdcol.ppcolf{width:auto;min-width:0}
 .bdcol.ppcolf .bdname{font-size:17px;white-space:nowrap;-webkit-flex:none;flex:none}
-.bdcol .bdname{white-space:nowrap}
+#ppPane .bdcol .bdname{white-space:nowrap}
 .ppdot.paused{background:transparent;border:2px solid var(--muted);width:8px;height:8px}
 .pplrow{display:-webkit-flex;display:flex;margin-bottom:6px}
 .pplrow .setinput{-webkit-flex:1;flex:1;min-width:0}

@@ -315,6 +315,8 @@ body[data-view=board] .seg.projsw,body[data-view=pprojects] .seg.projsw{display:
 #gate .msg{min-height:20px;margin-top:var(--s3);font-size:var(--fs-sm);color:var(--alert)}
 #toast{position:fixed;left:50%;bottom:26px;z-index:70;max-width:90%;padding:10px 18px;border-radius:20px;background:var(--ink);color:var(--bg);font-size:var(--fs-sm);opacity:0;pointer-events:none;-webkit-transform:translateX(-50%);transform:translateX(-50%);transition:opacity .25s}
 #toast.show{opacity:.95}
+#toast.act{pointer-events:auto}
+#toast .tundo{min-height:44px;margin:-10px -12px -10px 6px;padding:0 14px;border:0;border-radius:20px;background:transparent;color:var(--bg);font:700 var(--fs-sm)/1 var(--sans);text-decoration:underline;-webkit-appearance:none;outline:none}
 
 /* ---------- Work projects manager (list rows) ---------- */
 #projBtn{display:none}
@@ -458,6 +460,16 @@ html.work #projBtn{display:inline-block}
 .impx{-webkit-flex:none;flex:none;width:44px;height:44px;border:0;border-radius:var(--r2);background:none;color:var(--muted);font-size:24px;line-height:1;-webkit-appearance:none;outline:none}
 .impcard.skipped{opacity:.55}.impcard.open{border-color:var(--accent)}
 .impchip.u{background-color:var(--accent);color:var(--onaccent);font-weight:600}
+.impsrc2{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap}
+.impsrc2 .btn{margin:0 8px 8px 0}
+.impcols{margin-top:2px;line-height:1.5}
+.imptog{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;width:100%;min-height:44px;margin:6px 0 0;padding:0 2px;border:0;border-top:1px solid var(--rule);background:none;color:var(--ink);font:600 var(--fs-sm)/1.2 var(--sans);text-align:left;-webkit-appearance:none;outline:none}
+.imptog i{font-style:normal;color:var(--muted)}
+.imprev{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:0 0 10px}
+.imprevt{-webkit-flex:1;flex:1;min-width:0;margin-right:10px}.imprevt b{display:block;font-size:var(--fs-md);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imprevc{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-flex-wrap:wrap;flex-wrap:wrap;width:100%;margin-top:8px;font-size:var(--fs-sm)}
+.imprevc span{margin-right:10px}.imprevc .btn{margin:4px 8px 0 0}
+.impsum{margin:0 0 8px;font-size:var(--fs-sm);color:var(--muted)}.impsum b{color:var(--ink)}.impsum.warn{color:var(--warnink)}
 .impgo.top{margin:6px 0 10px}.impgobtn:disabled{opacity:.5}
 .impdup,.impdupbar{margin-top:8px;padding:8px 12px;border-radius:var(--r1);background:var(--warnbg);color:var(--warnink);font-size:var(--fs-sm);line-height:1.45}
 .scanbar{margin:0 var(--s4) var(--s2);padding:var(--s3) var(--s4);border-radius:var(--r2);background:var(--accentbg);color:var(--ink)}
@@ -478,8 +490,8 @@ html.work #projBtn{display:inline-block}
 .imphrow:last-child{border-bottom:0}.imphrow.undone{opacity:.6}
 .imphinfo{-webkit-flex:1;flex:1;min-width:160px;font-size:var(--fs-sm)}.imphinfo b{display:block;word-break:break-all}
 .imphact{-webkit-flex:none;flex:none;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;gap:8px}.imphact .btn{margin-left:0}
-.notesmd{margin-top:8px;padding:8px 12px;border-radius:var(--r1);background:var(--bg);border:1px solid var(--rule);font-size:var(--fs-sm);line-height:1.5}
-.notesmd p{margin:0 0 4px}.notesmd ul,.notesmd ol{margin:0 0 4px;padding-left:20px}.notesmd .mdh{font-weight:700;margin:4px 0}.notesmd code{background:var(--chip);padding:0 4px;border-radius:4px}.notesmd a{color:var(--accent)}
+.notesmd{margin-top:0;padding:8px 12px;border-radius:var(--r1);background:var(--bg);border:1px solid var(--rule);font-size:var(--fs-sm);line-height:1.5}
+.notesmd .notesedit{display:block;margin:2px 0 -8px auto}.notesmd p{margin:0 0 4px}.notesmd ul,.notesmd ol{margin:0 0 4px;padding-left:20px}.notesmd .mdh{font-weight:700;margin:4px 0}.notesmd code{background:var(--chip);padding:0 4px;border-radius:4px}.notesmd a{color:var(--accent)}
 .impcsvpanel{margin:8px 0 12px}.imphcopy{margin-left:auto}.imphrow .imphact .btn{margin-left:0}
 .impbulk .chip{margin:4px 4px 0 0}
 .impbulkrow{display:-webkit-box;display:-webkit-flex;display:flex;margin-top:8px}
