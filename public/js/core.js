@@ -850,7 +850,7 @@
     var t = find(id); if (!t) return;
     editing = { id: id, list: t.list || 'personal', due: t.due_date || null, cat: t.category || null, pp: t.pproject_id || null, bl: !!(t.pproject_id && t.pp_backlog), recur: t.recur || null, low: !!t.low, until: t.recur_until || null, untilOn: !!t.recur_until, time: timeOf(t) || null, focus: isFocus(t), prio: t.prio || 0, quick: !!t.quick, must: isMust(t), blocked: !!t.blocked, unblock: t.unblock_action || '', paused: isPaused(t), pausedOn: t.paused_on || '', more: !!(t.recur || t.low || (t.items && t.items.length && !t.is_session)) };
     $('eTitle').value = t.title;
-    $('eNotes').value = t.notes || ''; notesEditing = false; notesPreview();
+    $('eNotes').value = t.notes || ''; notesEditing = false; notesLoad();
     $('eUnblock').value = editing.paused ? editing.pausedOn : editing.unblock;
     renderSheet();
     $('sheet').style.display = 'flex';
@@ -898,6 +898,7 @@
     }
     if (editing.blocked !== !!t.blocked) { patch.blocked = editing.blocked; before.blocked = !!t.blocked; n++; }
     if (editing.blocked && editing.unblock !== (t.unblock_action || '')) { patch.unblock_action = editing.unblock || null; before.unblock_action = t.unblock_action || null; n++; }
+    notesSync();
     var nt = $('eNotes').value.replace(/^\s+|\s+$/g, '').slice(0, 2000);
     if (nt !== (t.notes || '')) { patch.notes = nt || null; before.notes = t.notes || null; n++; }
     var id = editing.id, pzOn = editing.pausedOn, pzWant = editing.list === 'work' && !!editing.paused;
@@ -1374,8 +1375,118 @@
   }
   // Notes show as ONE box: the formatted view with an Edit button, or the typing box while editing (empty notes: typing box).
   var notesEditing = false, notesTimer;
+  // Rich notes: used only where the browser is modern; the iPad 2 keeps the markdown box + Edit button.
+  function richOn() { return !App.plainNotes && !!(window.fetch && window.Promise && document.execCommand && document.body && 'contentEditable' in document.body); }
+  function htmlToMd(root) {
+    var lines = [], buf = '';
+    function inl(n) {
+      var tag, s = '', c, h;
+      if (n.nodeType === 3) return n.nodeValue.replace(/\u00a0/g, ' ');
+      if (n.nodeType !== 1) return '';
+      tag = n.nodeName.toLowerCase();
+      if (tag === 'br') return '\n';
+      if (tag === 'ul' || tag === 'ol') return '';
+      for (c = n.firstChild; c; c = c.nextSibling) s += inl(c);
+      if (!/\S/.test(s)) return s;
+      if (tag === 'b' || tag === 'strong') return '**' + s.replace(/^\s+|\s+$/g, '') + '**';
+      if (tag === 'i' || tag === 'em') return '*' + s.replace(/^\s+|\s+$/g, '') + '*';
+      if (tag === 'code') return '`' + s + '`';
+      if (tag === 'a') { h = n.getAttribute('href') || ''; if (/^https?:\/\//.test(h)) return '[' + s + '](' + h + ')'; }
+      return s;
+    }
+    function flush() {
+      if (buf === '') return;
+      if (buf === '\n') lines.push(''); else lines = lines.concat(buf.replace(/\n$/, '').split('\n'));
+      buf = '';
+    }
+    function list(ul, ind) {
+      var k = 0, li, c, own, ord = ul.nodeName.toLowerCase() === 'ol';
+      for (li = ul.firstChild; li; li = li.nextSibling) {
+        if (li.nodeType !== 1) continue;
+        k++; own = '';
+        for (c = li.firstChild; c; c = c.nextSibling) own += inl(c);
+        lines.push(ind + (ord ? k + '. ' : '- ') + own.replace(/\n+$/, '').replace(/\n/g, ' ').replace(/^\s+|\s+$/g, ''));
+        for (c = li.firstChild; c; c = c.nextSibling) if (c.nodeType === 1 && /^(ul|ol)$/i.test(c.nodeName)) list(c, ind + '  ');
+      }
+    }
+    function blk(n) {
+      var c, tag;
+      for (c = n.firstChild; c; c = c.nextSibling) {
+        tag = c.nodeType === 1 ? c.nodeName.toLowerCase() : '';
+        if (tag === 'ul' || tag === 'ol') { flush(); list(c, ''); lines.push(''); }
+        else if (/^h[1-6]$/.test(tag)) { flush(); lines.push('## ' + inl(c).replace(/\n/g, ' ').replace(/^\s+|\s+$/g, '')); }
+        else if (tag === 'div' || tag === 'p' || tag === 'blockquote' || tag === 'pre') { flush(); blk(c); flush(); }
+        else buf += inl(c);
+      }
+    }
+    blk(root); flush();
+    return lines.join('\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
+  }
+  function notesLoad() {
+    var rich = $('eNotesRich'), tools = $('eNotesTools'), v = $('eNotes').value.replace(/^\s+|\s+$/g, '');
+    if (!rich || !tools) { notesPreview(); return; }
+    if (richOn()) {
+      $('eNotes').style.display = 'none'; $('eNotesMd').style.display = 'none';
+      rich.style.display = 'block'; tools.style.display = 'block';
+      rich.innerHTML = v ? mdHTML(v).replace(/<div class="mdh">/g, '<h3>').replace(/<\/div>/g, '</h3>') : '';
+      notesState();
+    } else { rich.style.display = 'none'; tools.style.display = 'none'; notesPreview(); }
+  }
+  function notesSync() {
+    var rich = $('eNotesRich'); if (!rich || rich.style.display === 'none') return;
+    if (!/\S/.test(rich.textContent || '') && !rich.getElementsByTagName('li').length) rich.innerHTML = '';
+    $('eNotes').value = htmlToMd(rich);
+  }
+  function notesState() {
+    var b = $('eNotesTools') ? $('eNotesTools').getElementsByTagName('button') : [], i, c, on;
+    for (i = 0; i < b.length; i++) {
+      c = b[i].getAttribute('data-cmd'); on = false;
+      try {
+        if (c === 'bold') on = document.queryCommandState('bold');
+        else if (c === 'ul') on = document.queryCommandState('insertUnorderedList');
+        else if (c === 'ol') on = document.queryCommandState('insertOrderedList');
+        else if (c === 'head') on = /h[1-6]/i.test(document.queryCommandValue('formatBlock') || '');
+      } catch (x) {}
+      b[i].className = on ? 'rtb on' : 'rtb';
+    }
+  }
+  function notesCmd(c) {
+    var rich = $('eNotesRich'); if (!rich) return;
+    rich.focus();
+    try {
+      if (c === 'bold') document.execCommand('bold', false, null);
+      else if (c === 'ul') document.execCommand('insertUnorderedList', false, null);
+      else if (c === 'ol') document.execCommand('insertOrderedList', false, null);
+      else if (c === 'head') document.execCommand('formatBlock', false, /h[1-6]/i.test(document.queryCommandValue('formatBlock') || '') ? 'div' : 'h3');
+    } catch (x) {}
+    notesSync(); notesState();
+  }
+  (function () {
+    var rich = document.getElementById('eNotesRich'), tools = document.getElementById('eNotesTools'), ranAt = 0;
+    if (!rich || !tools) return;
+    function press(e) {
+      var t = e.target, now = new Date().getTime();
+      while (t && t !== tools && t.nodeName !== 'BUTTON') t = t.parentNode;
+      if (!t || t === tools) return;
+      if (e.preventDefault) e.preventDefault(); // keeps the text selection and keyboard
+      if (e.type === 'mousedown' && now - ranAt < 700) return; if (e.type === 'touchend') ranAt = now;
+      notesCmd(t.getAttribute('data-cmd'));
+    }
+    tools.onmousedown = press; tools.ontouchend = press;
+    rich.oninput = notesSync;
+    rich.onkeyup = rich.onmouseup = rich.ontouchend = notesState;
+    rich.onpaste = function (e) {
+      var d = e.clipboardData || window.clipboardData, txt;
+      if (!d) return;
+      txt = d.getData('text/plain') || d.getData('Text');
+      e.preventDefault();
+      if (txt) { document.execCommand('insertText', false, txt); notesSync(); }
+    };
+  })();
+  App.htmlToMd = htmlToMd;
   function notesPreview() {
     var el = $('eNotesMd'), ta = $('eNotes'); if (!el || !ta) return;
+    if ($('eNotesRich') && $('eNotesRich').style.display !== 'none') return;
     var v = ta.value.replace(/^\s+|\s+$/g, ''), view = !notesEditing && v;
     ta.style.display = view ? 'none' : '';
     el.style.display = view ? 'block' : 'none';

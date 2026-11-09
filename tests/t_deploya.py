@@ -68,6 +68,7 @@ def run(h):
         pg.click('#toast .tundo'); pg.wait_for_timeout(900)
         chk('Undo: the task is open again', pg.evaluate("App.todos().filter(function(t){return t.id===%s})[0].done" % json.dumps(tid)) is False)
         chk('Undo: toast is gone after tapping it', 'show' not in (pg.get_attribute('#toast', 'class') or ''))
+        pg.evaluate('App.plainNotes=true')
         pg.click('[data-act=edit][data-id="%s"]' % tid) if pg.query_selector('[data-act=edit][data-id="%s"]' % tid) else pg.evaluate("document.querySelector('[data-act=edit]').click()")
         pg.wait_for_timeout(400)
         chk('Notes: empty notes show only the typing box', pg.is_visible('#eNotes') and not pg.is_visible('#eNotesMd'))
@@ -76,6 +77,18 @@ def run(h):
         pg.click('#eNotesMd .notesedit'); pg.wait_for_timeout(300)
         chk('Notes: Edit brings the typing box back (and hides the formatted one)', pg.is_visible('#eNotes') and not pg.is_visible('#eNotesMd') and '**bold**' in pg.input_value('#eNotes'))
         pg.click('[data-act=cancel]') if pg.query_selector('[data-act=cancel]') else None
+        pg.wait_for_timeout(300)
+        pg.evaluate('App.plainNotes=false')
+        pg.evaluate("document.querySelector('[data-act=edit]').click()"); pg.wait_for_timeout(400)
+        chk('Rich notes: toolbar and single editable box show (no markdown box)', pg.is_visible('#eNotesRich') and pg.is_visible('#eNotesTools') and not pg.is_visible('#eNotes') and not pg.is_visible('#eNotesMd'))
+        pg.click('#eNotesRich'); pg.keyboard.type('Hello '); pg.click('#eNotesTools [data-cmd=bold]'); pg.keyboard.type('world'); pg.click('#eNotesTools [data-cmd=bold]')
+        pg.keyboard.press('Enter'); pg.click('#eNotesTools [data-cmd=ul]'); pg.keyboard.type('one'); pg.keyboard.press('Enter'); pg.keyboard.type('two'); pg.wait_for_timeout(200)
+        md = pg.input_value('#eNotes') if False else pg.evaluate("document.getElementById('eNotes').value")
+        chk('Rich notes: typing becomes markdown (%r)' % md, md.startswith('Hello **world**') and '- one' in md and '- two' in md)
+        rt = pg.evaluate("(function(){var d=document.createElement('div');d.innerHTML='<h3>Title</h3><div>a <i>b</i> <a href=\"https://x.io\">l</a></div><ol><li>x</li><li>y</li></ol>';return App.htmlToMd(d)})()")
+        chk('Rich notes: heading, italic, link, numbered list convert (%r)' % rt, rt == '## Title\na *b* [l](https://x.io)\n1. x\n2. y')
+        pg.click('[data-act=cancel]') if pg.query_selector('[data-act=cancel]') else None
+        pg.evaluate('App.plainNotes=true')
     else:
         chk('Undo/notes: a task was available to test', False)
     ov = pg.evaluate("""(function(){var heads=document.querySelectorAll('#boardPane .bdhead'),bad=0,n=0,i,nm,pl;
