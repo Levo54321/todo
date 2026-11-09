@@ -293,15 +293,17 @@
     return h + '</div>';
   }
 
+  var refocus = null;
   function paint() {
     var pane = $('boardPane'); if (!pane || drag) return;
-    var act = document.activeElement;
-    if (act && act.className === 'bdin' && pane.contains(act)) return; // don't wipe what is being typed
+    var act = document.activeElement, keep = refocus; refocus = null;
+    if (!keep && act && act.className === 'bdin' && pane.contains(act)) return; // don't wipe what is being typed (not right after an add)
     var cols = pane.querySelector('.bdcols'), left = cols ? cols.scrollLeft : 0, tops = [], bodies, i, h = tabBar();
     if (cols) { bodies = cols.querySelectorAll('.bdlist'); for (i = 0; i < bodies.length; i++) tops.push(bodies[i].scrollTop); }
     h += tab === 'ins' ? insHTML() : boardHTML();
     if (!App.setHTML(pane, h)) return; // nothing changed: write no scroll positions (iOS 9 flicker)
     cols = pane.querySelector('.bdcols');
+    if (keep) { var fs = pane.querySelectorAll('form.bdadd'), fi; for (fi = 0; fi < fs.length; fi++) if (fs[fi].getAttribute('data-pid') === keep) { try { fs[fi].querySelector('.bdin').focus(); } catch (x) {} } }
     if (cols && tab === 'board') {
       cols.scrollLeft = left;
       bodies = cols.querySelectorAll('.bdlist');
@@ -537,6 +539,7 @@
     App.api('POST', '', { title: title, category: name, list: 'work' }, function (s, d) {
       if (s === 201 && d && d.todo) {
         App.todos().push(d.todo); App.mutated(); App.toast('Added to ' + name);
+        refocus = pid; // redraw now even though the Add box still has focus, then put the cursor back for the next task
       } else { inp.value = title; App.toast('Could not add, try again'); }
       App.render();
     });

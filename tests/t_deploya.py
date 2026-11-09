@@ -54,6 +54,17 @@ def run(h):
     pg.evaluate('App.reload()'); pg.wait_for_timeout(1500)
     pg.evaluate('App.reload()'); pg.wait_for_timeout(1500)
     chk('Work board: no scroll writes when nothing changed', pg.evaluate('window.__w') == 0, pg.evaluate('window.__w'))
+    # v1070: a task added from a column's Add box shows at once (box still focused); long titles wrap instead of sitting under the pill
+    inp = pg.query_selector('#boardPane form.bdadd .bdin'); pid = inp.evaluate("e => e.form.getAttribute('data-pid')")
+    inp.click(); inp.fill('Brand new board task v1070'); pg.keyboard.press('Enter'); pg.wait_for_timeout(1200)
+    chk('board: new task appears without switching page', 'Brand new board task v1070' in pg.inner_text('#boardPane'))
+    chk('board: cursor back in that column Add box, now empty', pg.evaluate("(function(p){var a=document.activeElement;return !!a&&a.className==='bdin'&&a.value===''&&a.form.getAttribute('data-pid')===p;})(%s)" % json.dumps(pid)))
+    ov = pg.evaluate("""(function(){var heads=document.querySelectorAll('#boardPane .bdhead'),bad=0,n=0,i,nm,pl;
+      for(i=0;i<heads.length;i++){nm=heads[i].querySelector('.bdname');pl=heads[i].querySelector('.bdp');if(!nm||!pl)continue;n++;
+        nm.textContent='A very long project name that must wrap onto lines';
+        if(nm.getBoundingClientRect().right>pl.getBoundingClientRect().left+1)bad++;}
+      return [n,bad];})()""")
+    chk('board: long project titles never run under the priority pill', ov[0] > 0 and ov[1] == 0, ov)
     ctx.close()
 
     # board error state + retry

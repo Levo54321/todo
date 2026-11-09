@@ -103,7 +103,8 @@ class H:
                 title = body.get('text') or body.get('title')
                 t = task(title, list='work' if (re.search(r'\swork$', title or '') or body.get('list') == 'work') else 'personal')
                 if body.get('pproject_id') and t['list'] == 'personal': t['pproject_id'] = body['pproject_id']; t['pp_backlog'] = body.get('pp_backlog') is True
-                self.todos.append(t); return 200, {'todo': t}
+                if body.get('category'): t['category'] = body['category']
+                self.todos.append(t); return (201 if body.get('title') else 200), {'todo': t}  # real server: 201 (board add sends title+category)
             if method == 'PATCH':
                 t = self.find(q['id'][0]);
                 if not t: return 404, {'error': 'not found'}
