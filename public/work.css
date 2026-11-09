@@ -8,8 +8,8 @@
 .bdhead{white-space:normal;display:-webkit-flex;display:flex;-webkit-align-items:baseline;align-items:baseline;width:100%;text-align:left;border:0;background:none;color:var(--ink);padding:10px 0 4px;-webkit-appearance:none;outline:none}
 .bdhead.static{cursor:default}
 .bdname{-webkit-flex:1;flex:1;min-width:0;white-space:normal;font:700 18px/1.25 var(--sans);letter-spacing:-.2px;word-wrap:break-word;overflow-wrap:break-word}
-.bdn{flex:none;margin-left:8px;font-size:13px;color:var(--muted);white-space:nowrap}
-.bdcaret{flex:none;margin-left:8px;color:var(--muted);font-size:14px}
+.bdn{-webkit-flex:none;flex:none;-webkit-align-self:flex-start;align-self:flex-start;margin-top:5px;margin-left:8px;font-size:13px;color:var(--muted);white-space:nowrap}
+.bdcaret{-webkit-flex:none;flex:none;-webkit-align-self:flex-start;align-self:flex-start;margin-top:4px;margin-left:8px;color:var(--muted);font-size:14px}
 .bdhealth{min-height:24px;margin:0 0 6px}
 .bdh{display:inline-block;margin:0 6px 4px 0;padding:1px 9px;border-radius:10px;background:var(--chip);font-size:var(--fs-xs);color:var(--muted)}
 .bdh.bad{background:var(--alertbg);color:var(--alert);font-weight:700}
@@ -49,7 +49,7 @@
 .pctl .pdone{margin:0 0 0 auto;padding:5px 12px;font-size:14px}
 .prow2.arch .pctl{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center}
 /* board: priority + on-hold */
-.bdp{display:inline-block;margin-left:8px;padding:0 8px;border-radius:10px;font-size:var(--fs-xs);font-weight:700;border:1px solid var(--muted);color:var(--muted);white-space:nowrap;vertical-align:middle}
+.bdp{display:inline-block;-webkit-flex:none;flex:none;-webkit-align-self:flex-start;align-self:flex-start;height:22px;line-height:20px;box-sizing:border-box;margin-top:3px;margin-left:8px;padding:0 8px;border-radius:10px;font-size:var(--fs-xs);font-weight:700;border:1px solid var(--muted);color:var(--muted);white-space:nowrap;vertical-align:middle}
 .bdp.bdp3{background:var(--alertbg);border-color:transparent;color:var(--alert)}
 .bdp.bdp2{border-color:var(--accent);color:var(--accent)}
 .bdcol.hold{opacity:.72;border-style:dashed}
