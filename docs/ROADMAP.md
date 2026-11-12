@@ -29,6 +29,16 @@ Tabled (needs work from Luc, only when he asks): C1 token rotation, the `?t=` re
 
 **Deploys H and I (v1056, v1057) UI redesign** built 1 Nov 2026: Batch A (design system, lists, editor, nav) and Batch B (Work board, My projects, shared views). Not individually reworked: Budget/Insights internals, screensaver, gate (they pick up the new tokens and controls only). Next candidates: P3 density option, Work board JS heights (8a), a lighter project card, real-device pass.
 
+## Jarvis voice-assistant API (12 Nov 2026, server only)
+Done: `GET /api/todos?jarvis=1` (compact list + `q` + `id`), `GET ?activity=1`, `x-source` write log for POST/PATCH/DELETE (`db/setup25.sql`, `api/_jarvis.js`, `tests/todos_node.js`). Details: ARCHITECTURE section 5, header of `api/todos.js`.
+Follow-ups Luc has not asked for yet (propose, do not build unasked):
+1. **Undo**: `POST /api/todos?activity_undo=<id>` that PATCHes the logged `before` values back (or re-creates a deleted task), and logs the undo. Today the log shows what to send and Luc undoes by hand with a PATCH.
+2. **Exact project names on PATCH**: canonicalise `category` for Work tasks (as POST and import do) at least for `x-source` calls. Luc's side looks names up first, so this is not needed yet.
+3. **On-hold Personal Projects**: leave their tasks out of `?jarvis=1` (needs the `pproj_list` statuses), or flag them.
+4. **Log more calls**: `POST ?bulk=1`, the plan save and `/api/pause` are not written to the log.
+5. **A "complete by words" helper** (`POST ?jarvis=1` with words and an action) so the assistant needs one call instead of find + PATCH; only if two calls prove clumsy.
+6. **One source of truth for ordering/matching**: the copies in `_jarvis.js` can drift from `core.js`/`csvimport.js`; a shared test fixture or generating one from the other would stop that.
+
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
 2. **Real-device pass** on iPad 2 and iPhone 13 for Pause, Blocked, board drag/number reorder, Insights and the Google work-calendar prompt.

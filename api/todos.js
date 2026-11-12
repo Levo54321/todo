@@ -24,9 +24,43 @@
 // pp_backlog: true keeps a project task on its project page only (Backlog), out of the Personal list.
 // DELETE /api/todos?id=<uuid>
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
+//
+// Voice assistant (Jarvis, server only, db/setup25.sql; code in api/_jarvis.js). None of this touches the plain GET, ?v= or the fingerprint.
+// GET    /api/todos?jarvis=1[&list=personal|work][&due=today|overdue|week|none][&project=<name>][&limit=25][&include=done,backlog]
+//                                   -> { today, now, total, shown, tasks:[...] }: a trimmed list for a small model, in the app's own order (Order, below). Each task:
+//                                      { id, title, list, category, due_date, remind_time "HH:MM", prio 0-3, quick, must, blocked, paused, focus, low, recur,
+//                                        notes (first 80 characters), notes_len (full length), items {n, done}, overdue, done }. category is the project on the Work list. Empty values are null/false, never left out.
+//                                      Finished tasks (the database only returns the last 7 days of them) and Personal Project backlog tasks (pp_backlog) are left out unless include=done / include=backlog.
+//                                      due: today = due today; overdue = due before today, and not paused or blocked (Work only); week = due from today to 6 days ahead; none = no due date.
+//                                      project = the exact project/category name, any capitalisation. limit 1-100. 400 for a bad list, due, or id.
+// GET    /api/todos?jarvis=1&q=<words>[&list][&due][&project][&include][&limit=5]
+//                                   -> { today, now, q, total, shown, tasks:[... each with score 0-1] } the best matches, best first (limit 1-20). Same filters as above. Words are matched to the title
+//                                      (counts fully), the project/category (0.6) and the notes (0.4); a word matches when it is the same, one letter out (5+ letters) or the start of the other. Score under 0.5 is dropped.
+//                                      Spoken filler (the, my, task, please...) is ignored; 400 if no usable word is left. Ties go to the closer title, then open before finished, then newest.
+// GET    /api/todos?jarvis=1&id=<uuid> -> { today, now, task } one task in full: everything above plus the whole notes text, items (the sub-tasks, [{t, d}]) with items_summary {n, done},
+//                                      recur_until, series_id, successor_id (the next copy of a repeating task), is_session, unblock_action, blocked_at, paused_on, paused_at, done_at, pproject_id, pp_backlog, plan_date, plan_order, created_at. 404 if unknown (or finished more than 7 days ago).
+// GET    /api/todos?activity=1[&source=jarvis][&id=<uuid>][&limit=20]
+//                                   -> { activity:[{id, at, source, action add|update|delete, todo_id, title, before, after}] } newest first (limit 1-100; id = one task's history). before/after hold only the fields that changed
+//                                      (for add: after is the new task, before null; for delete: before is the task, after null). Kept 90 days. { activity:[], unavailable:true } if db/setup25.sql has not been run.
+// Write log: a POST (add), PATCH or DELETE on /api/todos that carries the header  x-source: <word>  (letters, digits, - and _, up to 20 characters; anything else is ignored and not logged) is recorded in todo_activity.
+//   The reply then also has logged:true|false. A failed log never fails the change. Calls without the header are not logged and cost nothing extra. POST ?bulk, ?scan, plan and import-undo are not logged.
+//   PATCH and DELETE first read the task's current values (the same todo_list call), so a tagged call costs one extra database read. A task finished over 7 days ago is not in that list:
+//   a PATCH of it is logged with before/after null, a DELETE of it is not logged (logged:false).
+// Order (jarvis=1): the app's order, section by section: today's focus (starred), overdue, due today, later (by date), no date (newest first), blocked, waiting on someone, non-urgent, done.
+//   Work, inside a section: time of day, must-do-today, priority (!!! first), project priority (On hold last), quick wins, due date, created; each project's hand-made board order and today's Daily Preview order are kept.
+//   Personal: no priority; time of day, then created (overdue and later sections go by due date first). When both lists are returned, Personal comes before Work inside a section.
+//   Not copied: tasks of on-hold Personal Projects (the app greys them out of counts) are listed like any other.
+// What "reprioritise" can change:
+//   Work: prio 0-3 (the biggest lever), quick, must (only counts when the task is due today or earlier; clearing the date or moving it later clears it), blocked, due_date/remind_time, project (category),
+//         focus, and the position in today's order (POST {plan:[ids], list, date}) or a project's board order (PATCH /api/projects?id {order:[ids]}). Paused is set with POST /api/pause, not PATCH.
+//   Personal: prio, quick and must are stored but the app ignores them (no chips, not used for order); blocked and paused are Work-only (the database clears blocked on a Personal task). What does order a Personal list:
+//         focus (PATCH focus:true; today only, at most 3 per list - a 4th gives 409 "focus full"; the star lasts until midnight, puts the task at the top, counts as due now and takes an overdue task out of Overdue; setting it clears low),
+//         due_date and remind_time (sections by date; within a day, timed tasks first by clock time), low (low:true on a task with NO due date parks it as "non-urgent": last, out of the counts, parked reminders and Insights;
+//         giving it a due date or focus clears low; with a due date low does nothing), today's plan order (POST {plan}), and category (a label only).
 
 var crypto = require('crypto');
 var bulk = require('./_bulk.js');
+var jarvis = require('./_jarvis.js');
 
 var SB_URL = process.env.SUPABASE_URL;
 var SB_KEY = process.env.SUPABASE_KEY;
@@ -260,6 +294,29 @@ async function gcalHook(token, id, gone) {
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var ISO = /^\d{4}-\d{2}-\d{2}$/;
 var HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// ---- write log for tagged calls (header x-source; see api/_jarvis.js and db/setup25.sql) ----
+// The task as it is now (from the same todo_list call), so a PATCH/DELETE can record "before". null if it is not in the list (e.g. finished over 7 days ago).
+async function oldRow(token, id) {
+  try {
+    var all = await rpc('todo_list', { p_token: token }), i;
+    for (i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+  } catch (e) { /* the change itself reports a bad token or an outage */ }
+  return null;
+}
+// Best effort: a failed log (or db/setup25.sql not run yet) never fails the change. Returns true if the row was written.
+async function logAct(token, source, action, id, title, before, after) {
+  try {
+    await Promise.race([
+      rpc('todo_activity_log', { p_token: token, p_source: source, p_action: action, p_todo_id: id || null, p_title: String(title || '').slice(0, 500), p_before: before === undefined ? null : before, p_after: after === undefined ? null : after }),
+      new Promise(function (_, rej) { setTimeout(function () { rej(new Error('activity log timed out')); }, 4000); })
+    ]);
+    return true;
+  } catch (e) {
+    if (e.code !== 'PGRST202') console.error('activity log', e.code || '', e.message);
+    return false;
+  }
+}
 var RECURS = ['daily', 'weekdays', 'weekly', 'fortnightly', 'monthly', 'yearly'];
 
 // Remember which tasks an import added, so it can be undone. Best effort: the import itself never fails because of this.
@@ -391,6 +448,21 @@ module.exports = async function handler(req, res) {
       catch (se) { if (se.code === 'PGRST202') return send(res, 200, { scan: null, unavailable: true }); throw se; } // database not updated yet (setup23.sql)
     }
 
+    if (req.method === 'GET' && query.activity) { // write log of tagged calls (x-source), newest first
+      var asrc = null, aid = null, alim = parseInt(query.limit, 10);
+      if (query.source !== undefined && query.source !== '') { asrc = String(query.source); if (!/^[A-Za-z0-9_-]{1,20}$/.test(asrc)) return send(res, 400, { error: 'bad source' }); }
+      if (query.id !== undefined && query.id !== '') { aid = String(query.id); if (!UUID.test(aid)) return send(res, 400, { error: 'bad id' }); }
+      try { return send(res, 200, { activity: (await rpc('todo_activity_list', { p_token: token, p_source: asrc, p_limit: isFinite(alim) ? alim : 20, p_todo_id: aid })) || [] }); }
+      catch (ae) { if (ae.code === 'PGRST202') return send(res, 200, { activity: [], unavailable: true }); throw ae; } // database not updated yet (setup25.sql)
+    }
+
+    if (req.method === 'GET' && query.jarvis && query.jarvis !== '0') { // compact list / find by words / one task, for the voice assistant (api/_jarvis.js)
+      var jrows = await rpc('todo_list', { p_token: token });
+      var jproj = (query.id === undefined && query.q === undefined) ? await projectList(token) : []; // project priority and board order feed the order
+      try { var jr = jarvis.read(jrows, query, jproj, today, new Date().toISOString()); return send(res, jr.status, jr.body); }
+      catch (je) { if (je.status === 400) return send(res, 400, { error: je.message }); throw je; }
+    }
+
     if (req.method === 'GET') {
       var list = await rpc('todo_list', { p_token: token }), fp = fingerprint(list), nowIso = new Date().toISOString();
       if (typeof query.v === 'string' && query.v === fp) return send(res, 200, { same: true, today: today, now: nowIso });
@@ -470,6 +542,8 @@ module.exports = async function handler(req, res) {
       }
       var addCal = remind ? await calHook(token) : null;
       var out = { todo: row, cal: addCal };
+      var asrcPost = jarvis.sourceOf(req); // x-source: this add is recorded in the write log
+      if (asrcPost) out.logged = await logAct(token, asrcPost, 'add', row && row.id, (row && row.title) || title, null, jarvis.snapshot(row));
       if (listName === 'work' && !category) { // the Shortcut uses this to offer a project picker
         out.needs_project = true;
         out.project_prompt = 'yes'; // plain text, easier for a Shortcut to test than a true/false
@@ -535,7 +609,13 @@ module.exports = async function handler(req, res) {
         patch.pproject_id = pb.pproject_id;
       }
       if (typeof pb.pp_backlog === 'boolean') patch.pp_backlog = pb.pp_backlog;
+      var psrc = jarvis.sourceOf(req), pold = psrc ? await oldRow(token, id) : null; // x-source: read the task first so the log can show before and after
       var updated = await rpc('todo_update', { p_token: token, p_id: id, p_patch: patch });
+      var plog = null;
+      if (psrc) {
+        var pd = pold ? jarvis.diff(pold, updated) : { before: null, after: null };
+        plog = await logAct(token, psrc, 'update', id, (updated && updated.title) || (pold && pold.title) || '', pd.before, pd.after);
+      }
       var calKeys = ['done', 'title', 'due_date', 'remind_time', 'recur', 'recur_until', 'category'], calRel = false;
       for (var ck = 0; ck < calKeys.length; ck++) if (calKeys[ck] in patch) calRel = true;
       // details shown in the event (v1071): only worth a calendar round trip when the task is a live timed one
@@ -547,7 +627,7 @@ module.exports = async function handler(req, res) {
       for (var gk = 0; gk < gKeys.length; gk++) if (gKeys[gk] in patch) gRel = true;
       if (detRel && updated && updated.remind_time && !updated.done) gRel = true;
       var patchG = gRel ? await gcalHook(token, id, false) : null;
-      return send(res, 200, { todo: updated, cal: patchCal, gcal: patchG });
+      return send(res, 200, psrc ? { todo: updated, cal: patchCal, gcal: patchG, logged: plog } : { todo: updated, cal: patchCal, gcal: patchG });
     }
 
     if (req.method === 'DELETE') {
@@ -559,10 +639,12 @@ module.exports = async function handler(req, res) {
         for (var di = 0; di < all.length; di++) if (all[di].id === did) cur = all[di];
         if (cur && cur.recur && !cur.done && !cur.successor_id) await rpc('todo_update', { p_token: token, p_id: did, p_patch: { done: true } });
       }
+      var dsrc = jarvis.sourceOf(req), dold = dsrc ? await oldRow(token, did) : null; // x-source: keep the task's values so a mis-heard delete can be put back
       await gcalHook(token, did, true);
       await rpc('todo_delete', { p_token: token, p_id: did });
+      var dlog = dsrc ? (dold ? await logAct(token, dsrc, 'delete', did, dold.title, jarvis.snapshot(dold), null) : false) : null; // not logged if the task was not in the list (finished over 7 days ago)
       var delCal = await calHook(token);
-      return send(res, 200, { ok: true, cal: delCal });
+      return send(res, 200, dsrc ? { ok: true, cal: delCal, logged: dlog } : { ok: true, cal: delCal });
     }
 
     res.setHeader('Allow', 'GET, POST, PATCH, DELETE');

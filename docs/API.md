@@ -9,6 +9,18 @@ change the header in the endpoint file and regenerate._
 // One row = one task. Column names and rules are documented in docs/import/ (schema + column guide) and enforced here only.
 ```
 
+## api/_jarvis.js
+```
+// api/_jarvis.js — helpers for the voice-assistant ("Jarvis") branches of /api/todos. No network, no database: pure
+// functions that take the task list todo_list returned. Used by GET /api/todos?jarvis=1 (compact list, find by words,
+// single task) and by the x-source write log. The contract is the header comment of api/todos.js.
+//
+// Ordering is a server-side copy of the app's own (public/js/core.js: groups(), autoCmp, planCmp, projSlots, byDue,
+// byTimeThenCreated). If the app's ordering changes, change it here too (CLAUDE.md, Jarvis amendment).
+// Word matching is a copy of toks/lev1/likeness in public/js/csvimport.js (browser-only, so it cannot be required),
+// plus a prefix rule and a few spoken filler words in STOP. Keep the two in step when matching changes.
+```
+
 ## api/_scan.js
 ```
 // Scan helper (not an endpoint: the leading _ keeps it out of Vercel's 12-function limit). Used by POST /api/todos?scan=1.
@@ -205,4 +217,37 @@ change the header in the endpoint file and regenerate._
 // pp_backlog: true keeps a project task on its project page only (Backlog), out of the Personal list.
 // DELETE /api/todos?id=<uuid>
 // Auth: header "x-todo-token: <token>" (or ?t=<token> as a fallback).
+//
+// Voice assistant (Jarvis, server only, db/setup25.sql; code in api/_jarvis.js). None of this touches the plain GET, ?v= or the fingerprint.
+// GET    /api/todos?jarvis=1[&list=personal|work][&due=today|overdue|week|none][&project=<name>][&limit=25][&include=done,backlog]
+//                                   -> { today, now, total, shown, tasks:[...] }: a trimmed list for a small model, in the app's own order (Order, below). Each task:
+//                                      { id, title, list, category, due_date, remind_time "HH:MM", prio 0-3, quick, must, blocked, paused, focus, low, recur,
+//                                        notes (first 80 characters), notes_len (full length), items {n, done}, overdue, done }. category is the project on the Work list. Empty values are null/false, never left out.
+//                                      Finished tasks (the database only returns the last 7 days of them) and Personal Project backlog tasks (pp_backlog) are left out unless include=done / include=backlog.
+//                                      due: today = due today; overdue = due before today, and not paused or blocked (Work only); week = due from today to 6 days ahead; none = no due date.
+//                                      project = the exact project/category name, any capitalisation. limit 1-100. 400 for a bad list, due, or id.
+// GET    /api/todos?jarvis=1&q=<words>[&list][&due][&project][&include][&limit=5]
+//                                   -> { today, now, q, total, shown, tasks:[... each with score 0-1] } the best matches, best first (limit 1-20). Same filters as above. Words are matched to the title
+//                                      (counts fully), the project/category (0.6) and the notes (0.4); a word matches when it is the same, one letter out (5+ letters) or the start of the other. Score under 0.5 is dropped.
+//                                      Spoken filler (the, my, task, please...) is ignored; 400 if no usable word is left. Ties go to the closer title, then open before finished, then newest.
+// GET    /api/todos?jarvis=1&id=<uuid> -> { today, now, task } one task in full: everything above plus the whole notes text, items (the sub-tasks, [{t, d}]) with items_summary {n, done},
+//                                      recur_until, series_id, successor_id (the next copy of a repeating task), is_session, unblock_action, blocked_at, paused_on, paused_at, done_at, pproject_id, pp_backlog, plan_date, plan_order, created_at. 404 if unknown (or finished more than 7 days ago).
+// GET    /api/todos?activity=1[&source=jarvis][&id=<uuid>][&limit=20]
+//                                   -> { activity:[{id, at, source, action add|update|delete, todo_id, title, before, after}] } newest first (limit 1-100; id = one task's history). before/after hold only the fields that changed
+//                                      (for add: after is the new task, before null; for delete: before is the task, after null). Kept 90 days. { activity:[], unavailable:true } if db/setup25.sql has not been run.
+// Write log: a POST (add), PATCH or DELETE on /api/todos that carries the header  x-source: <word>  (letters, digits, - and _, up to 20 characters; anything else is ignored and not logged) is recorded in todo_activity.
+//   The reply then also has logged:true|false. A failed log never fails the change. Calls without the header are not logged and cost nothing extra. POST ?bulk, ?scan, plan and import-undo are not logged.
+//   PATCH and DELETE first read the task's current values (the same todo_list call), so a tagged call costs one extra database read. A task finished over 7 days ago is not in that list:
+//   a PATCH of it is logged with before/after null, a DELETE of it is not logged (logged:false).
+// Order (jarvis=1): the app's order, section by section: today's focus (starred), overdue, due today, later (by date), no date (newest first), blocked, waiting on someone, non-urgent, done.
+//   Work, inside a section: time of day, must-do-today, priority (!!! first), project priority (On hold last), quick wins, due date, created; each project's hand-made board order and today's Daily Preview order are kept.
+//   Personal: no priority; time of day, then created (overdue and later sections go by due date first). When both lists are returned, Personal comes before Work inside a section.
+//   Not copied: tasks of on-hold Personal Projects (the app greys them out of counts) are listed like any other.
+// What "reprioritise" can change:
+//   Work: prio 0-3 (the biggest lever), quick, must (only counts when the task is due today or earlier; clearing the date or moving it later clears it), blocked, due_date/remind_time, project (category),
+//         focus, and the position in today's order (POST {plan:[ids], list, date}) or a project's board order (PATCH /api/projects?id {order:[ids]}). Paused is set with POST /api/pause, not PATCH.
+//   Personal: prio, quick and must are stored but the app ignores them (no chips, not used for order); blocked and paused are Work-only (the database clears blocked on a Personal task). What does order a Personal list:
+//         focus (PATCH focus:true; today only, at most 3 per list - a 4th gives 409 "focus full"; the star lasts until midnight, puts the task at the top, counts as due now and takes an overdue task out of Overdue; setting it clears low),
+//         due_date and remind_time (sections by date; within a day, timed tasks first by clock time), low (low:true on a task with NO due date parks it as "non-urgent": last, out of the counts, parked reminders and Insights;
+//         giving it a due date or focus clears low; with a due date low does nothing), today's plan order (POST {plan}), and category (a label only).
 ```
