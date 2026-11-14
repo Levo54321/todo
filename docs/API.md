@@ -45,8 +45,17 @@ change the header in the endpoint file and regenerate._
 //                                    Shortcut (Share sheet). The link is taken from url or from text; the rest of text becomes
 //                                    the role ("Role at Company" and "Role - Company" are split). A LinkedIn job link is cleaned
 //                                    to its short form so the same job is not saved twice. source = linkedin | adzuna | share.
+//   GET   ?jobs=stats            -> { stats:{ summary:{total,applied,heard,rate,offers,closed,active}, funnel:[{name,color,kind,count}],
+//                                    weeks:[{start,n}] (last 8, Monday start, by applied_on), time:[{name,color,days,n}] (average days
+//                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
+//                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
+//   To-do links (v1075): next_on (+ optional next_at HH:MM) makes ONE Personal to-do "Job: <next step> · <role> at <company>" (category
+//   "Job hunt", due next_on, reminder next_at); changing or clearing the next step updates or removes it, and moving the job to a stage of
+//   kind lost removes it. Entering a stage that has follow_days (kind active) makes a to-do "Follow up: <role> at <company>" due that many
+//   days later; leaving the stage removes the old one. The to-dos are made by the API (calling todo_add/todo_update/todo_delete); a failure
+//   there never fails the save. Replies carry tasks:{next:'created'|'updated'|'removed', follow:'created'|'removed'} when something changed.
 // mode: remote | hybrid | onsite | '' ; url must be http(s); dates YYYY-MM-DD or '' (clears). Text fields are cut to their
-// column sizes (company 120, role 160, location 120, salary 60, contact 120, cv_variant 80, notes 4000, next_step 120).
+// column sizes (company 120, role 160, location 120, salary 60, contact 120, cv_variant 80, notes 4000, next_step 120); next_at HH:MM or ''.
 ```
 
 ## api/_scan.js

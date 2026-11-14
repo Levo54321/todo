@@ -5,6 +5,8 @@
   var $ = App.$, esc = App.esc, store = App.store;
   var API = '/api/pprojects';
   var stages = [], jobs = [], loaded = false, loading = false, err = '', fetchedAt = 0, pend = 0;
+  var view = store.get('jobsView') === 'stats' ? 'stats' : 'board';  // board | stats (Analytics)
+  var stats = null, statsAt = 0, statsLoading = false, statsErr = '';
   var cur = store.get('jobsCur') || '';       // phone: the stage whose cards are showing
   var sh = null;                              // open sheet: {kind:'job', id, stage, mode, events, delArm} or {kind:'stages', draft, pal}
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -37,6 +39,57 @@
     }, API);
   }
 
+  function fetchStats(force) {
+    if (statsLoading || (!force && stats && Date.now() - statsAt < 10000)) return;
+    statsLoading = true;
+    App.api('GET', '?jobs=stats', null, function (s, d) {
+      statsLoading = false; statsAt = Date.now();
+      if (s === 200 && d && d.stats) { stats = d.stats; statsErr = ''; } else if (!stats) statsErr = failText(s);
+      paint();
+    }, API);
+  }
+  function dirty() { statsAt = 0; }   // a change was saved: the numbers are out of date
+
+  /* ---------- analytics ---------- */
+  var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  function pct(n) { return n === null || n === undefined ? '–' : n + '%'; }
+  function card(title, note, body) { return '<section class="jbcard2"><h3>' + title + '</h3>' + (note ? '<p>' + note + '</p>' : '') + body + '</section>'; }
+  function statsHTML() {
+    if (statsErr && !stats) return '<div class="jbmsg">' + esc(statsErr) + '<br><button class="btn primary" data-jb="sretry">Try again</button></div>';
+    if (!stats) return '<div class="jbmsg">Crunching your numbers…</div>';
+    var sm = stats.summary, h = '', i, f, max, w, wmax, t, tmax, so, prev, conv, nm;
+    if (!sm.total) return '<div class="jbmsg">Add a few jobs and your numbers will appear here.</div>';
+    h += '<div class="jbkpis jbkpis2"><div class="jbkpi"><b>' + sm.applied + '</b><span>Applied</span></div><div class="jbkpi"><b>' + sm.heard + '</b><span>Heard back</span></div>' +
+      '<div class="jbkpi"><b>' + pct(sm.rate) + '</b><span>Response rate</span></div><div class="jbkpi"><b>' + sm.offers + '</b><span>Offers</span></div></div><div class="jbcards">';
+    max = 1; for (i = 0; i < stats.funnel.length; i++) if (stats.funnel[i].count > max) max = stats.funnel[i].count;
+    f = ''; prev = null;
+    for (i = 0; i < stats.funnel.length; i++) {
+      conv = prev && prev.count ? Math.round(stats.funnel[i].count / prev.count * 100) + '% of ' + prev.name : '';
+      f += '<div class="jbfr"><div class="jbfl"><span>' + esc(stats.funnel[i].name) + '</span><b>' + stats.funnel[i].count + '</b></div><div class="jbtrack"><i class="jbc-' + esc(stats.funnel[i].color) + '" style="width:' + Math.max(2, Math.round(stats.funnel[i].count / max * 100)) + '%"></i></div>' + (conv ? '<small>' + esc(conv) + '</small>' : '') + '</div>';
+      prev = stats.funnel[i];
+    }
+    h += card('Pipeline funnel', 'Jobs that got at least this far.' + (stats.lost ? ' ' + stats.lost + ' closed along the way.' : ''), f);
+    wmax = 1; for (i = 0; i < stats.weeks.length; i++) if (stats.weeks[i].n > wmax) wmax = stats.weeks[i].n;
+    w = '<div class="jbwk">';
+    for (i = 0; i < stats.weeks.length; i++) w += '<div class="jbwc"><b>' + (stats.weeks[i].n || '') + '</b><div class="jbwbar"><i style="height:' + (stats.weeks[i].n ? Math.max(6, Math.round(stats.weeks[i].n / wmax * 100)) : 2) + '%"></i></div><span>' + esc(sd(stats.weeks[i].start)) + '</span></div>';
+    w += '</div>';
+    h += card('Applications per week', 'Last 8 weeks, weeks start on Monday.', w);
+    if (stats.time.length) {
+      tmax = 0.1; for (i = 0; i < stats.time.length; i++) if (stats.time[i].days > tmax) tmax = stats.time[i].days;
+      t = '';
+      for (i = 0; i < stats.time.length; i++) t += '<div class="jbfr"><div class="jbfl"><span>' + esc(stats.time[i].name) + '</span><b>' + stats.time[i].days + ' days</b></div><div class="jbtrack"><i class="jbc-' + esc(stats.time[i].color) + '" style="width:' + Math.max(2, Math.round(stats.time[i].days / tmax * 100)) + '%"></i></div></div>';
+      h += card('Average time in each stage', 'Counts jobs still sitting in a stage up to today.', t);
+    }
+    so = '<table class="jbtbl"><tr><th>Source</th><th>Jobs</th><th>Applied</th><th>Heard</th><th>Rate</th></tr>';
+    for (i = 0; i < stats.sources.length; i++) { nm = SRC[stats.sources[i].source] || stats.sources[i].source; so += '<tr><td>' + esc(nm) + '</td><td>' + stats.sources[i].total + '</td><td>' + stats.sources[i].applied + '</td><td>' + stats.sources[i].heard + '</td><td>' + pct(stats.sources[i].rate) + '</td></tr>'; }
+    so += '</table>';
+    h += card('Where your best leads come from', '', so);
+    return h + '</div><p class="jbfoot">Heard back means an applied job that reached the third stage or later (Screening onwards by default). Reordering or renaming stages changes how this reads.</p>';
+  }
+  function segHTML() {
+    return '<div class="jbseg"><button class="' + (view === 'board' ? 'on' : '') + '" data-jb="view" data-v="board">Board</button><button class="' + (view === 'stats' ? 'on' : '') + '" data-jb="view" data-v="stats">Analytics</button></div>';
+  }
+
   /* ---------- board ---------- */
   function counts() {
     var today = App.today(), soon = App.addDays(today, 7), c = { saved: 0, prog: 0, due: 0, won: 0 }, i, j, s, first = stages.length ? stages[0].id : '';
@@ -64,8 +117,9 @@
     if (err && !loaded) return '<div class="jbmsg">' + esc(err) + '<br><button class="btn primary" data-jb="retry">Try again</button></div>';
     if (!loaded) return '<div class="jbmsg">Loading your jobs…</div>';
     var c = counts(), h = '', tabs = '', cols = '', i, k, s, list, n, on, cards;
+    if (view === 'stats') return segHTML() + statsHTML();
     if (!stageOf(cur) && stages.length) cur = stages[0].id;
-    h += '<div class="jbbar"><div class="jbkpis">' +
+    h += segHTML() + '<div class="jbbar"><div class="jbkpis">' +
       '<div class="jbkpi"><b>' + c.saved + '</b><span>Saved</span></div><div class="jbkpi"><b>' + c.prog + '</b><span>In progress</span></div>' +
       '<div class="jbkpi"><b>' + c.due + '</b><span>Next steps, 7 days</span></div><div class="jbkpi"><b>' + c.won + '</b><span>Offers</span></div></div>' +
       '<div class="jbacts"><button class="btn" data-jb="stages">Stages</button><button class="btn primary" data-jb="add">+ Add job</button></div></div>';
@@ -126,7 +180,7 @@
   function openJob(id, stageId) {
     var j = id ? jobOf(id) : null;
     if (id && !j) return;
-    j = j || { company: '', role: '', url: '', location: '', mode: '', salary: '', next_step: '', next_on: '', contact: '', cv_variant: '', notes: '', source: 'manual' };
+    j = j || { company: '', role: '', url: '', location: '', mode: '', salary: '', next_step: '', next_on: '', next_at: '', contact: '', cv_variant: '', notes: '', source: 'manual' };
     sh = { kind: 'job', id: id || '', stage: id ? j.stage_id : (stageId || (stages[0] && stages[0].id) || ''), mode: j.mode || '', events: id ? [] : null, delArm: 0 };
     var init = (j.company || j.role || '+').charAt(0).toUpperCase();
     openSheet('<div class="jbsh1"><span class="jblogo big jbc-' + esc(colorOf(sh.stage)) + '">' + esc(init) + '</span><div class="jbsht"><b>' + esc(id ? (j.role || 'Untitled role') : 'New job') + '</b><span>' + esc(id ? (j.company || '') : 'Add what you know, the rest can wait') + '</span></div>' +
@@ -135,7 +189,7 @@
       '<div class="jbfs">' + field('jbCompany', 'Company', j.company) + field('jbRole', 'Role', j.role, { max: 160 }) +
       field('jbUrl', 'Link to the posting', j.url, { type: 'url', max: 1000, cap: 'none' }) + field('jbLoc', 'Location', j.location) + field('jbSalary', 'Salary', j.salary, { max: 60 }) + '</div>' +
       '<div class="jblab">Working pattern</div><div class="jbchips" id="jbModes">' + modeHTML() + '</div>' +
-      '<div class="jblab">Next step</div><div class="jbfs">' + field('jbNext', 'What', j.next_step, { cap: 'sentences' }) + '<label class="jbf"><span>When</span><input id="jbNextOn" type="date" value="' + esc(j.next_on || '') + '"></label></div>' +
+      '<div class="jblab">Next step</div><div class="jbfs">' + field('jbNext', 'What', j.next_step, { cap: 'sentences' }) + '<label class="jbf"><span>When</span><input id="jbNextOn" type="date" value="' + esc(j.next_on || '') + '"></label><label class="jbf"><span>Time (optional)</span><input id="jbNextAt" type="time" value="' + esc(j.next_at || '') + '"></label></div><div class="jbhint">Giving the next step a date adds it to your To-do list, and it moves or goes away when you change it here.</div>' +
       '<div class="jbfs">' + field('jbContact', 'Contact', j.contact) + field('jbCv', 'CV sent', j.cv_variant, { max: 80, cap: 'sentences' }) + '</div>' +
       '<label class="jbf"><span>Notes</span><textarea id="jbNotes" maxlength="4000" rows="5" autocapitalize="sentences">' + esc(j.notes || '') + '</textarea></label>' +
       (id ? '<div class="jbsrc">' + esc(SRC[j.source] || 'Added') + (j.created_at ? ' · ' + esc(sd(App.localISO(new Date(App.parseTS(j.created_at))))) : '') + '</div><div class="jblab">History</div><div id="jbHist"></div>' : '') +
@@ -146,14 +200,20 @@
       if (s === 200 && d && sh && sh.id === id) { sh.events = d.events || []; var el = $('jbHist'); if (el) el.innerHTML = histHTML(); }
     }, API);
   }
+  function taskNote(t, base) {
+    if (!t) return base;
+    if (t.next === 'created' || t.next === 'updated') return base + ' · to-do ' + (t.next === 'created' ? 'added' : 'updated');
+    if (t.next === 'removed') return base + ' · to-do removed';
+    return base;
+  }
   function saveJob() {
     var company = val('jbCompany').replace(/^\s+|\s+$/g, ''), role = val('jbRole').replace(/^\s+|\s+$/g, '');
     if (!company && !role) { App.toast('Add a company or a role first'); return; }
-    var body = { company: company, role: role, url: val('jbUrl').replace(/^\s+|\s+$/g, ''), location: val('jbLoc'), salary: val('jbSalary'), mode: sh.mode, next_step: val('jbNext'), next_on: val('jbNextOn'), contact: val('jbContact'), cv_variant: val('jbCv'), notes: val('jbNotes') };
+    var body = { company: company, role: role, url: val('jbUrl').replace(/^\s+|\s+$/g, ''), location: val('jbLoc'), salary: val('jbSalary'), mode: sh.mode, next_step: val('jbNext'), next_on: val('jbNextOn'), next_at: val('jbNextOn') ? val('jbNextAt') : '', contact: val('jbContact'), cv_variant: val('jbCv'), notes: val('jbNotes') };
     var id = sh.id;
     if (!id) body.stage_id = sh.stage;
     write(id ? 'PATCH' : 'POST', '?jobs=1' + (id ? '&id=' + encodeURIComponent(id) : ''), body, function (s, d) {
-      if ((s === 200 || s === 201) && d && d.job) { putJob(d.job); closeSheet(); paint(); App.toast(id ? 'Saved' : 'Job added'); setTimeout(fetchJobs, 300); }
+      if ((s === 200 || s === 201) && d && d.job) { putJob(d.job); closeSheet(); paint(); dirty(); App.toast(taskNote(d.tasks, id ? 'Saved' : 'Job added')); if (d.tasks && (d.tasks.next || d.tasks.follow)) App.reload(); setTimeout(fetchJobs, 300); }
       else App.toast(s === 400 ? 'Check the link and date' : 'Could not save, try again');
     });
   }
@@ -163,7 +223,8 @@
     if (!sh.id) return; // a new job takes its stage when it is added
     write('PATCH', '?jobs=1&id=' + encodeURIComponent(sh.id), { stage_id: sid }, function (s, d) {
       if (s === 200 && d && d.job) {
-        putJob(d.job); paint();
+        putJob(d.job); paint(); dirty();
+        if (d.tasks && (d.tasks.next || d.tasks.follow)) { App.reload(); if (d.tasks.follow === 'created') App.toast('Follow-up to-do added'); }
         if (sh && sh.id === d.job.id) { sh.events.unshift({ at: new Date().toISOString(), kind: 'stage', text: (stageOf(sid) || {}).name || '' }); var el = $('jbHist'); if (el) el.innerHTML = histHTML(); }
       } else { if (sh) { sh.stage = was; App.setHTML($('jbChips'), chipsHTML()); } App.toast('Could not move it, try again'); }
     });
@@ -174,7 +235,7 @@
     if (!sh.delArm) { sh.delArm = 1; if (b) b.innerHTML = 'Tap again to delete'; setTimeout(function () { if (sh && sh.delArm === 1 && b) { sh.delArm = 0; b.innerHTML = 'Delete'; } }, 4000); return; }
     var id = sh.id;
     write('DELETE', '?jobs=1&id=' + encodeURIComponent(id), null, function (s) {
-      if (s === 200) { for (var i = jobs.length - 1; i >= 0; i--) if (jobs[i].id === id) jobs.splice(i, 1); closeSheet(); paint(); App.toast('Deleted'); }
+      if (s === 200) { for (var i = jobs.length - 1; i >= 0; i--) if (jobs[i].id === id) jobs.splice(i, 1); closeSheet(); paint(); dirty(); App.reload(); App.toast('Deleted'); }
       else App.toast('Could not delete, try again');
     });
   }
@@ -220,7 +281,7 @@
       out.push({ id: sh.draft[i].id || '', name: sh.draft[i].name, color: sh.draft[i].color, kind: sh.draft[i].kind, follow_days: sh.draft[i].follow_days || null });
     }
     write('POST', '?jobs=stages', { stages: out }, function (s, d) {
-      if (s === 200 && d && d.stages) { stages = d.stages; jobs = d.jobs || []; if (!stageOf(cur)) cur = ''; closeSheet(); paint(); App.toast('Stages saved'); }
+      if (s === 200 && d && d.stages) { stages = d.stages; jobs = d.jobs || []; if (!stageOf(cur)) cur = ''; closeSheet(); paint(); dirty(); App.toast('Stages saved'); }
       else App.toast('Could not save the stages, try again');
     });
   }
@@ -279,6 +340,8 @@
     if (!act || !el) return;
     var sid = el.getAttribute('data-sid'), i = parseInt(el.getAttribute('data-i'), 10);
     if (act === 'retry') { err = ''; fetchJobs(); paint(); }
+    else if (act === 'sretry') { statsErr = ''; fetchStats(true); paint(); }
+    else if (act === 'view') { view = el.getAttribute('data-v') === 'stats' ? 'stats' : 'board'; store.set('jobsView', view); if (view === 'stats') fetchStats(true); paint(); }
     else if (act === 'tab') { cur = sid; store.set('jobsCur', sid); paint(); }
     else if (act === 'open') openJob(el.getAttribute('data-id'));
     else if (act === 'add') openJob('', '');
@@ -307,7 +370,7 @@
 
   App.register('jobs', {
     title: 'Jobs',
-    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); },
-    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); }); paint(); }
+    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); if (view === 'stats' && !sh && Date.now() - statsAt > 60000) fetchStats(); },
+    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); if (view === 'stats') fetchStats(); }); paint(); }
   });
 })();

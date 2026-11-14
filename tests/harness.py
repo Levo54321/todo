@@ -142,7 +142,7 @@ class H:
                         self.jevents.setdefault(jid, []).insert(0, {'at': '2026-11-14T10:00:00Z', 'kind': 'stage', 'text': [x for x in self.jstages if x['id'] == job['stage_id']][0]['name']})
                     return j
                 sid = job.get('stage_id') or self.jstages[0]['id']
-                j = {'id': 'job%d' % (len(self.jjobs) + 1), 'company': '', 'role': '', 'location': '', 'mode': '', 'salary': '', 'url': '', 'source': src, 'stage_id': sid, 'contact': '', 'cv_variant': '', 'notes': '', 'next_step': '', 'next_on': None, 'applied_on': None,
+                j = {'id': 'job%d' % (len(self.jjobs) + 1), 'company': '', 'role': '', 'location': '', 'mode': '', 'salary': '', 'url': '', 'source': src, 'stage_id': sid, 'contact': '', 'cv_variant': '', 'notes': '', 'next_step': '', 'next_on': None, 'next_at': '', 'applied_on': None,
                      'pos': min([x['pos'] for x in self.jjobs if x['stage_id'] == sid] + [1]) - 1, 'created_at': '2026-11-14T09:00:00Z', 'updated_at': '2026-11-14T09:00:00Z'}
                 for k, v in job.items():
                     if k in j and k != 'stage_id': j[k] = v if v != '' or k not in ('next_on', 'applied_on') else None
@@ -159,13 +159,22 @@ class H:
                 self.jstages = new; return 200, {'stages': new, 'jobs': order()}
             if what == 'quick':
                 return 201, {'job': put({'role': body.get('text', 'Saved job'), 'url': body.get('url', '')}, 'share')}
-            if method == 'GET':
+            if method == 'GET' and what != 'stats':
                 if self.fail_jobs: return 500, {'error': 'upstream error'}
                 if 'id' in q:
                     j = [x for x in self.jjobs if x['id'] == q['id'][0]][0]; return 200, {'job': j, 'events': self.jevents.get(j['id'], [])}
                 return 200, {'stages': self.jstages, 'jobs': order()}
-            if method == 'POST': return 201, {'job': put(body, 'manual')}
-            if method == 'PATCH': b = dict(body); b['id'] = q['id'][0]; return 200, {'job': put(b, 'manual')}
+            if what == 'stats':  # shape of api/_jobs.js computeStats (the maths is tested in tests/jobs_links_node.js)
+                n = len(self.jjobs); ap = len([j for j in self.jjobs if j.get('applied_on')])
+                return 200, {'stats': {'summary': {'total': n, 'applied': ap, 'heard': 1 if ap else 0, 'rate': 50 if ap else None, 'offers': 0, 'closed': 0, 'active': ap},
+                    'funnel': [{'name': 'Saved', 'color': 'sand', 'kind': 'active', 'count': n}, {'name': 'Applied', 'color': 'clay', 'kind': 'active', 'count': ap}, {'name': 'Screening', 'color': 'ochre', 'kind': 'active', 'count': 1 if ap else 0}],
+                    'weeks': [{'start': '2026-%02d-%02d' % (9 + i // 4, 7 + (i % 4) * 7), 'n': i % 3} for i in range(8)],
+                    'time': [{'name': 'Saved', 'color': 'sand', 'days': 3.5, 'n': n}, {'name': 'Applied', 'color': 'clay', 'days': 8.1, 'n': ap}],
+                    'sources': [{'source': 'manual', 'total': n, 'applied': ap, 'heard': 1 if ap else 0, 'rate': 50 if ap else None}], 'lost': 0, 'today': '2026-11-14'}}
+            def tk(b):  # the real API makes/updates a to-do when a next step has a date
+                return {'next': 'created'} if b.get('next_on') else {}
+            if method == 'POST': return 201, {'job': put(body, 'manual'), 'tasks': tk(body)}
+            if method == 'PATCH': b = dict(body); b['id'] = q['id'][0]; return 200, {'job': put(b, 'manual'), 'tasks': tk(b)}
             if method == 'DELETE': self.jjobs = [x for x in self.jjobs if x['id'] != q['id'][0]]; return 200, {'ok': True}
         if path == '/api/pprojects' and 'vault' in q:  # mirrors api/_vault.js (crypto itself is tested in tests/vault_node.js)
             V = self.vault; a = body.get('action')

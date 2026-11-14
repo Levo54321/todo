@@ -20,8 +20,17 @@
 //                                    Shortcut (Share sheet). The link is taken from url or from text; the rest of text becomes
 //                                    the role ("Role at Company" and "Role - Company" are split). A LinkedIn job link is cleaned
 //                                    to its short form so the same job is not saved twice. source = linkedin | adzuna | share.
+//   GET   ?jobs=stats            -> { stats:{ summary:{total,applied,heard,rate,offers,closed,active}, funnel:[{name,color,kind,count}],
+//                                    weeks:[{start,n}] (last 8, Monday start, by applied_on), time:[{name,color,days,n}] (average days
+//                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
+//                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
+//   To-do links (v1075): next_on (+ optional next_at HH:MM) makes ONE Personal to-do "Job: <next step> · <role> at <company>" (category
+//   "Job hunt", due next_on, reminder next_at); changing or clearing the next step updates or removes it, and moving the job to a stage of
+//   kind lost removes it. Entering a stage that has follow_days (kind active) makes a to-do "Follow up: <role> at <company>" due that many
+//   days later; leaving the stage removes the old one. The to-dos are made by the API (calling todo_add/todo_update/todo_delete); a failure
+//   there never fails the save. Replies carry tasks:{next:'created'|'updated'|'removed', follow:'created'|'removed'} when something changed.
 // mode: remote | hybrid | onsite | '' ; url must be http(s); dates YYYY-MM-DD or '' (clears). Text fields are cut to their
-// column sizes (company 120, role 160, location 120, salary 60, contact 120, cv_variant 80, notes 4000, next_step 120).
+// column sizes (company 120, role 160, location 120, salary 60, contact 120, cv_variant 80, notes 4000, next_step 120); next_at HH:MM or ''.
 var todos = require('./todos.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var TEXT = { company: 120, role: 160, location: 120, salary: 60, contact: 120, cv_variant: 80, notes: 4000, next_step: 120 };
@@ -57,6 +66,7 @@ function clean(b) {
   if ('mode' in b) out.mode = ['remote', 'hybrid', 'onsite'].indexOf(b.mode) >= 0 ? b.mode : '';
   if ('url' in b) out.url = cleanUrl(b.url);
   if ('next_on' in b) out.next_on = realDate(b.next_on) ? b.next_on : '';
+  if ('next_at' in b) out.next_at = typeof b.next_at === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(b.next_at.trim()) ? b.next_at.trim() : '';
   if ('applied_on' in b) out.applied_on = realDate(b.applied_on) ? b.applied_on : '';
   if ('stage_id' in b) out.stage_id = typeof b.stage_id === 'string' && UUID.test(b.stage_id) ? b.stage_id : '';
   return out;
@@ -93,6 +103,83 @@ function parseShare(b) {
   return { job: { role: (role || 'Saved job').slice(0, 160), company: company.slice(0, 120), url: url }, source: source };
 }
 
+
+/* ---------- to-do links ---------- */
+var TZ = 'Europe/London';
+function todayISO() { return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+function addDays(iso, n) { var d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function label(j) { var r = (j.role || '').trim(), c = (j.company || '').trim(); return (r && c ? r + ' at ' + c : r || c || 'job').slice(0, 120); }
+function nextTitle(j) { return ('Job: ' + ((j.next_step || '').trim() || 'Next step') + ' · ' + label(j)).slice(0, 200); }
+function tryRpc(name, args) { return todos.rpc(name, args).then(function (r) { return r; }, function () { return null; }); }
+async function addTask(token, title, due, remind) {
+  var r = await todos.rpc('todo_add', { p_token: token, p_title: title, p_due: due, p_category: 'Job hunt', p_recur: null, p_session: false, p_remind: remind || null, p_list: 'personal' });
+  return r && r.id ? r.id : null;
+}
+// keeps the linked to-dos in step with the job. `sent` = the keys the caller changed; `created` = a new job. Never throws.
+async function syncLinks(token, row, sent, created) {
+  var out = {}, nextId = row.next_todo || null, followId = row.follow_todo || null, st = null, moved, i, l;
+  try {
+    moved = created || ('stage_id' in sent && row.prev_stage !== undefined && row.stage_id !== row.prev_stage);
+    if (moved || row.next_on) { l = await todos.rpc('job_list', { p_token: token }); for (i = 0; i < ((l && l.stages) || []).length; i++) if (l.stages[i].id === row.stage_id) st = l.stages[i]; }
+    var kind = st ? st.kind : 'active';
+    var want = !!row.next_on && kind !== 'lost';
+    var rel = created || 'next_on' in sent || 'next_at' in sent || 'next_step' in sent || 'role' in sent || 'company' in sent;
+    if (want && !nextId) { nextId = await addTask(token, nextTitle(row), row.next_on, row.next_at); out.next = 'created'; }
+    else if (want && rel) {
+      var u = await tryRpc('todo_update', { p_token: token, p_id: nextId, p_patch: { title: nextTitle(row), due_date: row.next_on, remind_time: row.next_at || '' } });
+      if (!u) { nextId = await addTask(token, nextTitle(row), row.next_on, row.next_at); out.next = 'created'; } else out.next = 'updated';
+    } else if (!want && nextId) { await tryRpc('todo_delete', { p_token: token, p_id: nextId }); nextId = null; out.next = 'removed'; }
+    if (moved) {
+      if (followId) { await tryRpc('todo_delete', { p_token: token, p_id: followId }); followId = null; out.follow = 'removed'; }
+      if (st && st.kind === 'active' && st.follow_days) { followId = await addTask(token, ('Follow up: ' + label(row)).slice(0, 200), addDays(todayISO(), st.follow_days), null); out.follow = 'created'; }
+    }
+    if (nextId !== (row.next_todo || null) || followId !== (row.follow_todo || null)) await todos.rpc('job_link', { p_token: token, p_id: row.id, p_next: nextId, p_follow: followId });
+  } catch (e) { console.error('jobs link error', e.code, e.message); }
+  return out;
+}
+function publicRow(row) { var r = {}, k; for (k in row) if (Object.prototype.hasOwnProperty.call(row, k) && k !== 'prev_stage' && k !== 'next_todo' && k !== 'follow_todo') r[k] = row[k]; return r; }
+
+/* ---------- analytics ---------- */
+var HEARD_IDX = 2; // the 3rd stage onwards counts as "heard back" (Screening in the default pipeline)
+function computeStats(list, events, nowMs) {
+  var stages = (list && list.stages) || [], jobs = (list && list.jobs) || [], i, j, k, e, byName = {}, byId = {}, evs = {}, today = new Date(nowMs).toISOString().slice(0, 10);
+  for (i = 0; i < stages.length; i++) { if (!(stages[i].name in byName)) byName[stages[i].name] = i; byId[stages[i].id] = i; }
+  for (i = 0; i < (events || []).length; i++) { e = events[i]; (evs[e.job_id] = evs[e.job_id] || []).push(e); }
+  var funnel = [], reach = [], tin = [], srcs = {}, sum = { total: jobs.length, applied: 0, heard: 0, rate: null, offers: 0, closed: 0, active: 0 }, lost = 0;
+  for (i = 0; i < stages.length; i++) { reach.push(0); tin.push({ sum: 0, n: 0 }); }
+  var wk = [], mon = new Date(today + 'T00:00:00Z'), dow = (mon.getUTCDay() + 6) % 7;
+  mon.setUTCDate(mon.getUTCDate() - dow);
+  for (i = 7; i >= 0; i--) { var d0 = new Date(mon.getTime() - i * 7 * 86400000); wk.push({ start: d0.toISOString().slice(0, 10), n: 0 }); }
+  for (i = 0; i < jobs.length; i++) {
+    j = jobs[i]; var vis = {}, cur = byId[j.stage_id], list2 = (evs[j.id] || []).slice().sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; }), seq = [], nm, ix;
+    if (cur !== undefined) vis[cur] = true;
+    for (k = 0; k < list2.length; k++) {
+      nm = list2[k].kind === 'added' ? String(list2[k].text).split(' · ')[0] : list2[k].text; ix = byName[nm];
+      if (ix !== undefined) { vis[ix] = true; seq.push({ ix: ix, t: Date.parse(list2[k].at) }); }
+    }
+    var top = -1, heard = false, applied = !!j.applied_on;
+    for (k in vis) { ix = parseInt(k, 10); if (stages[ix].kind !== 'lost') { if (ix > top) top = ix; } }
+    for (k = 0; k <= top; k++) reach[k]++;
+    if (applied) { sum.applied++; if (top >= HEARD_IDX) { heard = true; sum.heard++; } }
+    var cs = cur !== undefined ? stages[cur] : null;
+    if (cs && cs.kind === 'won') sum.offers++; else if (cs && cs.kind === 'lost') { sum.closed++; lost++; } else if (cs && j.stage_id !== (stages[0] || {}).id) sum.active++;
+    for (k = 0; k < seq.length; k++) {
+      var end = k + 1 < seq.length ? seq[k + 1].t : (cs && cs.kind === 'active' ? nowMs : null);
+      if (end != null && stages[seq[k].ix].kind === 'active' && end >= seq[k].t) { tin[seq[k].ix].sum += (end - seq[k].t) / 86400000; tin[seq[k].ix].n++; }
+    }
+    if (j.applied_on) { for (k = wk.length - 1; k >= 0; k--) if (j.applied_on >= wk[k].start) { if (j.applied_on < new Date(Date.parse(wk[k].start) + 7 * 86400000).toISOString().slice(0, 10)) wk[k].n++; break; } }
+    var sname = j.source || 'manual', so = srcs[sname] = srcs[sname] || { source: sname, total: 0, applied: 0, heard: 0, rate: null };
+    so.total++; if (applied) so.applied++; if (heard) so.heard++;
+  }
+  for (i = 0; i < stages.length; i++) if (stages[i].kind !== 'lost') funnel.push({ name: stages[i].name, color: stages[i].color, kind: stages[i].kind, count: reach[i] });
+  var time = [];
+  for (i = 0; i < stages.length; i++) if (tin[i].n) time.push({ name: stages[i].name, color: stages[i].color, days: Math.round(tin[i].sum / tin[i].n * 10) / 10, n: tin[i].n });
+  var sl = []; for (k in srcs) if (Object.prototype.hasOwnProperty.call(srcs, k)) { srcs[k].rate = srcs[k].applied ? Math.round(srcs[k].heard / srcs[k].applied * 100) : null; sl.push(srcs[k]); }
+  sl.sort(function (a, b) { return b.total - a.total; });
+  sum.rate = sum.applied ? Math.round(sum.heard / sum.applied * 100) : null;
+  return { summary: sum, funnel: funnel, weeks: wk, time: time, sources: sl, lost: lost, today: today };
+}
+
 module.exports = async function handler(req, res) {
   var q = req.query || {}, token = req.headers['x-todo-token'] || q.t, what = String(q.jobs || '1'), m = req.method, id, b, job;
   if (!token) return send(res, 401, { error: 'missing token' });
@@ -104,7 +191,13 @@ module.exports = async function handler(req, res) {
         var all = await todos.rpc('job_list', { p_token: token }), i;
         for (i = 0; i < ((all && all.jobs) || []).length; i++) if (all.jobs[i].url === sh.job.url) return send(res, 200, { job: all.jobs[i], duplicate: true });
       }
-      return send(res, 201, { job: await todos.rpc('job_put', { p_token: token, p_job: sh.job, p_source: sh.source }) });
+      var qrow = await todos.rpc('job_put', { p_token: token, p_job: sh.job, p_source: sh.source }), qt = await syncLinks(token, qrow, sh.job, true);
+      return send(res, 201, { job: publicRow(qrow), tasks: qt });
+    }
+    if (what === 'stats') {
+      if (m !== 'GET') return send(res, 405, { error: 'method not allowed' });
+      var sl = await todos.rpc('job_list', { p_token: token }), sev = await todos.rpc('job_events_all', { p_token: token });
+      return send(res, 200, { stats: computeStats(sl, sev, Date.now()) });
     }
     if (what === 'stages') {
       if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
@@ -120,14 +213,21 @@ module.exports = async function handler(req, res) {
       return send(res, 200, await todos.rpc('job_list', { p_token: token }));
     }
     if (m === 'POST') {
-      return send(res, 201, { job: await todos.rpc('job_put', { p_token: token, p_job: clean(readBody(req)), p_source: 'manual' }) });
+      var cb = clean(readBody(req)), crow = await todos.rpc('job_put', { p_token: token, p_job: cb, p_source: 'manual' }), ct = await syncLinks(token, crow, cb, true);
+      return send(res, 201, { job: publicRow(crow), tasks: ct });
     }
     if (m === 'PATCH' || m === 'DELETE') {
       id = String(q.id || '');
       if (!UUID.test(id)) return send(res, 400, { error: 'bad id' });
-      if (m === 'DELETE') return send(res, 200, await todos.rpc('job_del', { p_token: token, p_id: id }));
+      if (m === 'DELETE') {
+        try { var old = await todos.rpc('job_get', { p_token: token, p_id: id }), oj = (old && old.job) || {}; // take its to-dos with it
+          if (oj.next_todo) await tryRpc('todo_delete', { p_token: token, p_id: oj.next_todo });
+          if (oj.follow_todo) await tryRpc('todo_delete', { p_token: token, p_id: oj.follow_todo }); } catch (de) { if (de.code === 'P0002' || de.code === '28000') throw de; }
+        return send(res, 200, await todos.rpc('job_del', { p_token: token, p_id: id }));
+      }
       b = readBody(req); job = clean(b); job.id = id;
-      return send(res, 200, { job: await todos.rpc('job_put', { p_token: token, p_job: job, p_source: 'manual' }) });
+      var prow = await todos.rpc('job_put', { p_token: token, p_job: job, p_source: 'manual' }), pt = await syncLinks(token, prow, job, false);
+      return send(res, 200, { job: publicRow(prow), tasks: pt });
     }
     return send(res, 405, { error: 'method not allowed' });
   } catch (e) {
@@ -139,4 +239,4 @@ module.exports = async function handler(req, res) {
     return send(res, 502, { error: 'upstream error' });
   }
 };
-module.exports._t = { clean: clean, cleanStages: cleanStages, parseShare: parseShare, realDate: realDate };
+module.exports._t = { computeStats: computeStats, clean: clean, cleanStages: cleanStages, parseShare: parseShare, realDate: realDate };

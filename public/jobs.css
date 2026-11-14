@@ -80,10 +80,41 @@ body[data-view=jobs] #rail{background:#100f0d}
 .jbsdel{-webkit-flex:0 0 auto;flex:0 0 auto;min-height:44px;margin:0;padding:0 6px;border:0;background:none;color:var(--alert);font-size:13px;-webkit-appearance:none}
 .jbpal{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:-2px 0 8px 44px}
 
+
+/* Board | Analytics switch, analytics cards */
+.jbseg{display:-webkit-inline-flex;display:inline-flex;margin:2px 0 4px -6px}
+.jbseg button{min-height:44px;margin:0;padding:0 14px;border:6px solid transparent;border-radius:22px;background-clip:padding-box;background-color:transparent;color:var(--muted);font-size:14px;font-weight:500;-webkit-appearance:none;outline:none}
+.jbseg button.on{background-color:var(--chip);color:var(--ink);font-weight:650}
+.jbkpis2{margin:6px 0 14px;-webkit-flex:none;flex:none}
+.jbkpis2 .jbkpi:last-child{margin-right:0}
+.jbcards{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:0 -7px}
+.jbcard2{-webkit-flex:1 1 300px;flex:1 1 300px;min-width:0;box-sizing:border-box;margin:0 7px 14px;padding:16px;border:1px solid var(--rule);border-radius:14px;background:var(--paper);box-shadow:var(--sh)}
+.jbcard2 h3{margin:0 0 2px;font-size:15px;font-weight:650;color:var(--ink)}
+.jbcard2 p{margin:0 0 12px;font-size:12px;line-height:16px;color:var(--muted)}
+.jbfr{margin-bottom:12px}.jbfr small{display:block;margin-top:3px;font-size:12px;color:var(--muted)}
+.jbfl{display:-webkit-flex;display:flex;-webkit-justify-content:space-between;justify-content:space-between;margin-bottom:5px;font-size:13px}
+.jbfl b{font-weight:650}
+.jbtrack{height:10px;border-radius:5px;background-color:var(--chip);overflow:hidden}
+.jbtrack i{display:block;height:100%;border-radius:5px;background-color:var(--sc)}
+.jbwk{display:-webkit-flex;display:flex;-webkit-align-items:flex-end;align-items:flex-end;height:150px}
+.jbwc{-webkit-flex:1;flex:1;min-width:0;height:100%;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;-webkit-align-items:center;align-items:center;text-align:center}
+.jbwc b{height:18px;font-size:12px;font-weight:650}
+.jbwbar{-webkit-flex:1;flex:1;width:100%;display:-webkit-flex;display:flex;-webkit-align-items:flex-end;align-items:flex-end;-webkit-justify-content:center;justify-content:center}
+.jbwbar i{display:block;width:62%;max-width:26px;border-radius:5px 5px 2px 2px;background-color:var(--accent)}
+.jbwc span{height:18px;margin-top:6px;font-size:11px;line-height:18px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.jbtbl{width:100%;border-collapse:collapse;font-size:13px}
+.jbtbl th{padding:0 0 8px;text-align:right;font-size:12px;font-weight:500;color:var(--muted)}
+.jbtbl td{padding:9px 0;border-top:1px solid var(--rule);text-align:right}
+.jbtbl th:first-child,.jbtbl td:first-child{text-align:left}
+.jbfoot{margin:2px 2px 24px;font-size:12px;line-height:17px;color:var(--muted)}
+.jbhint{margin:-2px 0 10px;font-size:12px;line-height:16px;color:var(--muted)}
+
 /* phones: one stage at a time, chips on top; the sheet fills the screen */
 @media (max-width:699px){
   .jbkpis{-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-flex:1 1 100%;flex:1 1 100%}
   .jbkpi{-webkit-flex:1 1 40%;flex:1 1 40%;margin-bottom:8px}
+  .jbkpis2 .jbkpi:nth-child(2n){margin-right:0}
+  .jbcard2{-webkit-flex:1 1 100%;flex:1 1 100%}
   .jbacts{width:100%;margin-bottom:6px}.jbacts .btn{-webkit-flex:1;flex:1;margin:0 8px 0 0}
   .jbtabs{display:-webkit-flex;display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;margin:0 -2px 8px;white-space:nowrap}
   .jbtab{-webkit-flex:0 0 auto;flex:0 0 auto;min-height:44px;margin:0 2px;padding:0 12px;border:6px solid transparent;border-radius:20px;background-clip:padding-box;background-color:var(--chip);color:var(--muted);font-size:14px;-webkit-appearance:none;outline:none}

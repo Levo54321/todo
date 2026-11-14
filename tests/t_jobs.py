@@ -103,6 +103,41 @@ def run(h):
     p.click('#jbDel'); wait(500)
     chk('second tap deletes', len([c for c in h.calls if c[0] == 'DELETE' and 'jobs' in c[2]]) == 1 and col_of('Eval Lead') == -1)
 
+    # to-do link: the sheet has an optional time and the save reports the to-do
+    p.click('.jbcard'); wait(300)
+    p.fill('#jbNextAt', '10:30'); p.click('[data-jb=save]'); wait(500)
+    patch = calls('PATCH')[-1][3]
+    chk('Save sends next_at with the date', patch.get('next_at') == '10:30' and patch.get('next_on') == '2026-10-20', patch)
+    chk('toast says a to-do was added', 'to-do added' in p.inner_text('body'), '')
+    chk('the To-do list is refreshed after a dated next step', len([c for c in h.calls if c[0] == 'GET' and c[1] == '/api/todos']) >= 2)
+    p.click('.jbcard'); wait(250)
+    p.fill('#jbNextOn', ''); p.click('[data-jb=save]'); wait(500)
+    patch = calls('PATCH')[-1][3]
+    chk('clearing the date sends an empty time too', patch.get('next_on') == '' and patch.get('next_at') == '', patch)
+    p.click('.jbcard'); wait(250); p.fill('#jbNextOn', '2026-10-20'); p.click('[data-jb=save]'); wait(400)
+
+    # analytics
+    p.click('[data-jb=view][data-v=stats]'); wait(600)
+    chk('Analytics replaces the board', p.query_selector('#jbStrip') is None and len(p.query_selector_all('.jbcard2')) == 4, len(p.query_selector_all('.jbcard2')))
+    chk('summary tiles', [e.inner_text().split('\n')[1] for e in p.query_selector_all('.jbkpis2 .jbkpi')] == ['Applied', 'Heard back', 'Response rate', 'Offers'])
+    chk('funnel bars drawn', len(p.query_selector_all('.jbtrack i')) >= 3)
+    chk('8 weekly bars', len(p.query_selector_all('.jbwc')) == 8)
+    chk('sources table', 'Added by hand' in p.inner_text('.jbtbl'))
+    chk('stats fetched once', len([c for c in h.calls if c[0] == 'GET' and 'jobs' in c[2] and c[2].get('jobs') == ['stats']]) >= 1)
+    chk('analytics: no sideways overflow at 1024', p.evaluate("document.documentElement.scrollWidth <= 1024 && document.body.scrollWidth <= 1024"))
+    n0 = len(h.calls); p.evaluate("App.views.jobs.render();App.views.jobs.render()"); wait(200)
+    chk('analytics: a background redraw writes nothing', len(h.calls) == n0 or all(c[2].get('jobs') != ['stats'] for c in h.calls[n0:]))
+    p.screenshot(path=os.path.join(OUT, 'jobs_analytics.png'))
+    p.set_viewport_size({'width': 390, 'height': 844}); wait(300)
+    chk('analytics phone: no sideways overflow', p.evaluate("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"))
+    chk('analytics phone: cards stack', len(set([int(e.bounding_box()['x']) for e in p.query_selector_all('.jbcard2')])) == 1)
+    small = p.evaluate("""(function(){var o=[],els=document.querySelectorAll('.jbseg button'),k,r;for(k=0;k<els.length;k++){r=els[k].getBoundingClientRect();if(r.height&&r.height<43.5)o.push(r.height)}return o})()""")
+    chk('analytics phone: switch buttons are 44px', not small, small)
+    p.screenshot(path=os.path.join(OUT, 'jobs_analytics_phone.png'))
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
+    p.click('[data-jb=view][data-v=board]'); wait(400)
+    chk('Board button returns to the pipeline', p.query_selector('#jbStrip') is not None)
+
     # sizes
     small = p.evaluate("""(function(){var o=[],q=['.jbacts .btn','.jbaddc'],i,els,k,r;for(i=0;i<q.length;i++){els=document.querySelectorAll(q[i]);for(k=0;k<els.length;k++){r=els[k].getBoundingClientRect();if(r.height&&r.height<43.5)o.push(q[i]+' '+r.height)}}return o})()""")
     chk('buttons are 44px tall', not small, small)
