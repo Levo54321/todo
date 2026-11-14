@@ -7,7 +7,7 @@
  * Set-up: see docs/jobs/SETUP.md. The access token is NOT in this file: it lives in Project Settings > Script properties as TODO_TOKEN.
  */
 var SITE = 'https://luc-todo.vercel.app';
-var SEARCH = '(from:jobalerts-noreply@linkedin.com OR from:jobs-listings@linkedin.com OR from:jobs-noreply@linkedin.com) newer_than:7d -label:jobs-sent';
+var SEARCH = 'from:linkedin.com newer_than:7d -label:jobs-sent';   // any LinkedIn sender; emails without job links are skipped below
 var LABEL = 'jobs-sent';
 var MAX_THREADS = 15;
 
@@ -15,17 +15,19 @@ function run() {
   var token = PropertiesService.getScriptProperties().getProperty('TODO_TOKEN');
   if (!token) throw new Error('Add the script property TODO_TOKEN first (Project Settings > Script properties).');
   var label = GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
-  var threads = GmailApp.search(SEARCH, 0, MAX_THREADS), added = 0, skipped = 0, sentOk = 0, failed = 0;
+  var threads = GmailApp.search(SEARCH, 0, MAX_THREADS), added = 0, skipped = 0, sentOk = 0, failed = 0, noLinks = 0;
+  Logger.log('LinkedIn emails found: ' + threads.length);
   for (var t = 0; t < threads.length; t++) {
     var msgs = threads[t].getMessages(), allOk = true;
     for (var m = 0; m < msgs.length; m++) {
       var res = send_(token, msgs[m]);
+      if (res.ok && res.none) noLinks++;
       if (res.ok) { added += res.added; skipped += res.skipped; sentOk++; } else { allOk = false; failed++; Logger.log('Not sent (' + res.code + '): ' + res.body); }
     }
     if (allOk) threads[t].addLabel(label);   // only tag it when luc-todo accepted every message, otherwise the next run tries again
     Utilities.sleep(800);
   }
-  Logger.log('Emails sent: ' + sentOk + ', failed: ' + failed + ', new postings: ' + added + ', already known: ' + skipped);
+  Logger.log('Emails sent: ' + sentOk + ' (of which without job links, skipped: ' + noLinks + '), failed: ' + failed + ', new postings: ' + added + ', already known: ' + skipped);
 }
 
 function send_(token, msg) {
@@ -34,8 +36,8 @@ function send_(token, msg) {
     var url = a[1].replace(/&amp;/g, '&');
     if (/linkedin\.com\/(comm\/)?jobs\/view\//i.test(url)) links.push({ url: url, text: a[2].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim() });
   }
-  var out = { ok: false, code: 0, body: '', added: 0, skipped: 0 };
-  if (!links.length) { out.ok = true; return out; }   // not a postings email (welcome, settings...): nothing to send
+  var out = { ok: false, none: false, code: 0, body: '', added: 0, skipped: 0 };
+  if (!links.length) { out.ok = true; out.none = true; return out; }   // not a postings email (welcome, settings...): nothing to send
   var r = UrlFetchApp.fetch(SITE + '/api/pprojects?jobs=email', {
     method: 'post', contentType: 'application/json', headers: { 'x-todo-token': token }, muteHttpExceptions: true,
     payload: JSON.stringify({ text: msg.getPlainBody().slice(0, 24000), links: links.slice(0, 60) })
