@@ -9,6 +9,15 @@ change the header in the endpoint file and regenerate._
 // One row = one task. Column names and rules are documented in docs/import/ (schema + column guide) and enforced here only.
 ```
 
+## api/_cvprofile.js
+```
+// Career profile (v1081): the CV facts Luc keeps in the app, in the same shape as the cv-designer skill's cv_data.json.
+// Not an endpoint: used by api/_jobs.js (route ?jobs=profile). Stored only in the database (career_profile), never in the repo.
+// clean() trims and caps every field and drops unknown top-level keys except the skill's own layout keys (extra_side, extra_main,
+// side_order, meta), which pass through untouched so a round trip to the skill loses nothing.
+// forGemini() is what Tailor my CV (v1082) may send to Gemini: roles, bullets, skills. NEVER name, contact details or references.
+```
+
 ## api/_jarvis.js
 ```
 // api/_jarvis.js — helpers for the voice-assistant ("Jarvis") branches of /api/todos. No network, no database: pure
@@ -87,6 +96,8 @@ change the header in the endpoint file and regenerate._
 //   POST/PATCH ?jobs=1 also accept apply_how (text up to 300: a link, email or form note), kept in details.apply_how
 //   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
+//   GET   ?jobs=profile          -> { profile:{...cv_data shape...}, updated_at }     POST ?jobs=profile {profile:{...}} -> same (cleaned and capped by _cvprofile.js; whole profile replaced).
+//                                    Career profile (v1081): Luc's CV facts, database only. Name/contact/references are never sent to Gemini (cvprofile.forGemini).
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
 //   GET   ?jobs=lead&id=<uuid>   -> { lead:{...,details}, detail_error }   one Discover posting in full; Reed postings get Reed's job details (full text, contract, closing date, apply link) fetched on first open and kept (v1078, setup30.sql)
 //   POST  ?jobs=enrich {id}      -> { details, cached? }   Gemini reads a saved job's description once: details.ai = {summary, requirements[], nice_to_have[], skills[]}; 503/502/504 if Gemini is down

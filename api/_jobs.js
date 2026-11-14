@@ -31,6 +31,8 @@
 //   POST/PATCH ?jobs=1 also accept apply_how (text up to 300: a link, email or form note), kept in details.apply_how
 //   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
+//   GET   ?jobs=profile          -> { profile:{...cv_data shape...}, updated_at }     POST ?jobs=profile {profile:{...}} -> same (cleaned and capped by _cvprofile.js; whole profile replaced).
+//                                    Career profile (v1081): Luc's CV facts, database only. Name/contact/references are never sent to Gemini (cvprofile.forGemini).
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
 //   GET   ?jobs=lead&id=<uuid>   -> { lead:{...,details}, detail_error }   one Discover posting in full; Reed postings get Reed's job details (full text, contract, closing date, apply link) fetched on first open and kept (v1078, setup30.sql)
 //   POST  ?jobs=enrich {id}      -> { details, cached? }   Gemini reads a saved job's description once: details.ai = {summary, requirements[], nice_to_have[], skills[]}; 503/502/504 if Gemini is down
@@ -51,6 +53,7 @@ var jobmail = require('./_jobmail.js');
 var jobfeed = require('./_jobfeed.js');
 var jobdetail = require('./_jobdetail.js');
 var joblearn = require('./_joblearn.js');
+var cvprofile = require('./_cvprofile.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var TEXT = { company: 120, role: 160, location: 120, salary: 60, contact: 120, cv_variant: 80, notes: 4000, next_step: 120 };
 var COLORS = ['sand', 'clay', 'ochre', 'sage', 'moss', 'stone', 'rose', 'slate'], KINDS = ['active', 'won', 'lost'];
@@ -256,6 +259,14 @@ module.exports = async function handler(req, res) {
       if (lb.action === 'save' && lr && lr.job && !lr.again) { var lt = await syncLinks(token, lr.job, {}, true); lr.job = publicRow(lr.job); lr.tasks = lt; }
       else if (lr && lr.job) lr.job = publicRow(lr.job);
       return send(res, 200, lr);
+    }
+    if (what === 'profile') {
+      if (m === 'GET') { var pg = await todos.rpc('career_get', { p_token: token }); return send(res, 200, { profile: pg.data || {}, updated_at: pg.updated_at }); }
+      if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      var pb = readBody(req), pc;
+      try { pc = cvprofile.clean(pb.profile); } catch (pe) { return send(res, pe.status || 400, { error: String(pe.message).slice(0, 200) }); }
+      var pp = await todos.rpc('career_put', { p_token: token, p_data: pc });
+      return send(res, 200, { profile: pp.data || {}, updated_at: pp.updated_at });
     }
     if (what === 'feedcfg') {
       if (m === 'GET') return send(res, 200, { cfg: await todos.rpc('job_feed_get', { p_token: token }) });

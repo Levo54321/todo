@@ -155,3 +155,11 @@ body[data-view=jobs] #rail{background:#100f0d}
 .jbsfoot .jbbtns{margin:0}
 .jbcard2 .btn.on,.jbsfoot .btn.on{background-color:rgba(255,255,255,.12)}
 .jblead{cursor:pointer}
+
+/* career profile (v1081) */
+.jbpc{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;min-height:56px;margin:0 2px 8px;padding:10px 14px;border:1px solid var(--rule);border-radius:12px;cursor:pointer}
+.jbpct{-webkit-flex:1;flex:1;min-width:0}.jbpct b{display:block;font-size:15px;font-weight:600;color:var(--ink)}.jbpct span{display:block;margin-top:2px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jbpcg{font-style:normal;font-size:13px;color:var(--accent);padding-left:12px}
+.jbph{margin:18px 2px 8px;font-size:14px;font-weight:650;color:var(--ink)}.jbph span{font-weight:400;color:var(--muted);margin-left:6px}
+.jbpnote{margin:4px 2px 12px;font-size:13px;line-height:1.45;color:var(--muted)}
+.jbpadd{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:4px 2px 8px}.jbpadd .btn{margin:0 8px 8px 0}

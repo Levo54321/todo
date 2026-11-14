@@ -5,7 +5,8 @@
   var $ = App.$, esc = App.esc, store = App.store;
   var API = '/api/pprojects';
   var stages = [], jobs = [], loaded = false, loading = false, err = '', fetchedAt = 0, pend = 0;
-  var view = store.get('jobsView') === 'stats' ? 'stats' : store.get('jobsView') === 'discover' ? 'discover' : 'board';  // board | discover | stats (Analytics)
+  function normView(v) { return v === 'stats' || v === 'discover' || v === 'profile' ? v : 'board'; }
+  var view = normView(store.get('jobsView'));  // board | discover | stats (Analytics) | profile (career profile)
   var leads = [], leadsLoaded = false, leadsAt = 0, leadsLoading = false, newLeads = 0, leadsErr = '';
   var stats = null, statsAt = 0, statsLoading = false, statsErr = '';
   var cur = store.get('jobsCur') || '';       // phone: the stage whose cards are showing
@@ -203,7 +204,7 @@
     });
   }
   function segHTML() {
-    return '<div class="jbseg"><button class="' + (view === 'board' ? 'on' : '') + '" data-jb="view" data-v="board">Board</button><button class="' + (view === 'discover' ? 'on' : '') + '" data-jb="view" data-v="discover">Discover' + (newLeads ? ' <i class="jbn">' + newLeads + '</i>' : '') + '</button><button class="' + (view === 'stats' ? 'on' : '') + '" data-jb="view" data-v="stats">Analytics</button></div>';
+    return '<div class="jbseg"><button class="' + (view === 'board' ? 'on' : '') + '" data-jb="view" data-v="board">Board</button><button class="' + (view === 'discover' ? 'on' : '') + '" data-jb="view" data-v="discover">Discover' + (newLeads ? ' <i class="jbn">' + newLeads + '</i>' : '') + '</button><button class="' + (view === 'stats' ? 'on' : '') + '" data-jb="view" data-v="stats">Analytics</button><button class="' + (view === 'profile' ? 'on' : '') + '" data-jb="view" data-v="profile">Profile</button></div>';
   }
 
   /* ---------- board ---------- */
@@ -230,6 +231,7 @@
       '<div class="jbrole">' + esc(j.role || 'Untitled role') + '</div>' + (meta.length ? '<div class="jbmeta">' + esc(meta.join(' · ')) + '</div>' : '') + nx + '</div>';
   }
   function build() {
+    if (view === 'profile') return segHTML() + profHTML();
     if (err && !loaded) return '<div class="jbmsg">' + esc(err) + '<br><button class="btn primary" data-jb="retry">Try again</button></div>';
     if (!loaded) return '<div class="jbmsg">Loading your jobs…</div>';
     var c = counts(), h = '', tabs = '', cols = '', i, k, s, list, n, on, cards;
@@ -489,6 +491,137 @@
     }, false);
   })();
 
+
+  /* ---------- career profile (v1081): the CV facts, stored in the database only ---------- */
+  var prof = null, profAt = 0, profLoading = false, profErr = '';
+  function fetchProf(force) {
+    if (profLoading || (!force && prof && Date.now() - profAt < 60000)) return;
+    profLoading = true;
+    App.api('GET', '?jobs=profile', null, function (s, d) {
+      profLoading = false;
+      if (s === 200 && d && d.profile) { if (!pend) prof = d.profile; profAt = Date.now(); profErr = ''; }
+      else if (!prof) profErr = failText(s);
+      paint();
+    }, API);
+  }
+  function lns(a) { return (a || []).join('\n'); }
+  function parseLines(v) { var o = [], a = String(v || '').split('\n'), i, t; for (i = 0; i < a.length; i++) { t = a[i].replace(/^\s+|\s+$/g, ''); if (t) o.push(t); } return o; }
+  function cell(x) { return String(x || '').replace(/\|/g, '/'); }
+  function parts(l) { var a = l.split('|'), i; for (i = 0; i < a.length; i++) a[i] = a[i].replace(/^\s+|\s+$/g, ''); return a; }
+  function itemLines(a) { var o = [], i; for (i = 0; i < (a || []).length; i++) o.push([cell(a[i].title), cell(a[i].org), cell(a[i].years)].join(' | ').replace(/( \| )+$/, '')); return o.join('\n'); }
+  function parseItems(v) { var L = parseLines(v), o = [], i, p; for (i = 0; i < L.length; i++) { p = parts(L[i]); if (p[0]) o.push({ title: p[0], org: p[1] || '', years: p[2] || '' }); } return o; }
+  function pcard(t, sub, part, idx) {
+    return '<div class="jbpc" data-jb="pedit" data-p="' + part + '"' + (idx === undefined ? '' : ' data-i="' + idx + '"') + '><div class="jbpct"><b>' + esc(t) + '</b><span>' + esc(sub) + '</span></div><i class="jbpcg">Edit</i></div>';
+  }
+  function profHTML() {
+    if (profErr && !prof) return '<div class="jbmsg">' + esc(profErr) + '<br><button class="btn primary" data-jb="pretry">Try again</button></div>';
+    if (!prof) return '<div class="jbmsg">Loading your profile…</div>';
+    var p = prof, nm = p.name || {}, c = p.contact || {}, ex = p.experience || [], h = '', i, r, nr = 0;
+    for (i = 0; i < ex.length; i++) if (ex[i].type !== 'milestone') nr++;
+    h += '<p class="jbpnote">Your CV facts. Tailor my CV (next step) will only ever use what is written here. Name, contact details and references stay on this server and are never sent to Gemini.</p>';
+    h += pcard([nm.first, nm.last].join(' ').replace(/^\s+|\s+$/g, '') || 'Your name', (p.title || 'No headline yet') + (c.address ? ' · ' + c.address : ''), 'basics');
+    h += pcard('Summary', p.profile ? p.profile.slice(0, 90) + (p.profile.length > 90 ? '…' : '') : 'Empty', 'summary');
+    h += pcard('Career highlights', (p.highlights || []).length + ' lines', 'highlights');
+    h += '<h3 class="jbph">Experience <span>' + nr + ' roles</span></h3>';
+    for (i = 0; i < ex.length; i++) {
+      r = ex[i];
+      h += r.type === 'milestone' ? pcard('Milestone: ' + r.title, [r.company, r.date].join(' · '), 'role', i)
+        : pcard(r.title + ' · ' + r.company, [[r.start, r.end].join(' – '), (r.bullets || []).length + ' bullets'].join(' · '), 'role', i);
+    }
+    h += '<div class="jbpadd"><button class="btn" data-jb="padd" data-t="role">+ Add role</button><button class="btn" data-jb="padd" data-t="ms">+ Add milestone</button></div>';
+    h += '<h3 class="jbph">Skills and more</h3>';
+    h += pcard('Skills and domains', (p.core_skills || []).length + ' skills · ' + (p.domains || []).length + ' domains', 'skills');
+    h += pcard('Software', (p.software || []).length + ' tools', 'software');
+    h += pcard('Education and training', (p.qualifications || []).length + ' + ' + (p.additional_experience || []).length + ' entries', 'edu');
+    h += pcard('References', (p.references || []).length + ' on file', 'refs');
+    h += pcard('Import / export cv_data.json', 'Paste the file from your cv-designer skill', 'json');
+    return h;
+  }
+  function pf(id, label, v, rows, hint) {
+    v = v === undefined || v === null ? '' : v;
+    return '<label class="jbf"><span>' + label + '</span>' + (rows ? '<textarea id="' + id + '" rows="' + rows + '" placeholder="' + esc(hint || '') + '">' + esc(v) + '</textarea>' : '<input id="' + id + '" type="text" value="' + esc(v) + '">') + '</label>';
+  }
+  function openProf(part, idx, ms) {
+    if (!prof) return;
+    var p = prof, c = p.contact || {}, nm = p.name || {}, r, body = '', title = '', foot = '<button class="btn primary" data-jb="psave">Save</button><button class="btn" data-jb="close">Cancel</button>', sw = [], i;
+    sh = { kind: 'prof', part: part, idx: isNaN(idx) ? -1 : idx, ms: !!ms, delArm: 0 };
+    if (part === 'basics') { title = 'Name and contact'; body = pf('jpFirst', 'First name', nm.first) + pf('jpLast', 'Surname', nm.last) + pf('jpTitle', 'Headline title', p.title) + pf('jpPhone', 'Phone', c.phone) + pf('jpEmail', 'Email', c.email) + pf('jpAddr', 'Address (shown on the CV, e.g. Fulham, London)', c.address) + pf('jpLi', 'LinkedIn', c.linkedin) + pf('jpWeb', 'Website (optional)', c.website); }
+    else if (part === 'summary') { title = 'Summary'; body = pf('jpText', 'Profile paragraph', p.profile, 10); }
+    else if (part === 'highlights') { title = 'Career highlights'; body = pf('jpText', 'One per line, short and quantified', lns(p.highlights), 12); }
+    else if (part === 'skills') { title = 'Skills and domains'; body = pf('jpSkills', 'Core skills, one per line', lns(p.core_skills), 8) + pf('jpDomains', 'Domains and industries, one per line', lns(p.domains), 5); }
+    else if (part === 'software') { title = 'Software'; for (i = 0; i < (p.software || []).length; i++) sw.push(cell(p.software[i].name) + ' | ' + p.software[i].level); body = pf('jpText', 'One per line: name | level 0-100', sw.join('\n'), 12); }
+    else if (part === 'edu') { title = 'Education and training'; body = pf('jpQual', 'Qualifications: title | organisation | years', itemLines(p.qualifications), 6) + pf('jpAdd', 'Apprenticeships and courses: title | organisation | years', itemLines(p.additional_experience), 6); }
+    else if (part === 'refs') {
+      var rl = [], k; for (i = 0; i < (p.references || []).length; i++) { r = p.references[i]; rl.push([cell(r.name)].concat((r.lines || []).map(cell)).join(' | ')); }
+      title = 'References'; body = pf('jpRefs', 'One per line: name | organisation / relationship | job title | phone', rl.join('\n'), 5) + pf('jpNote', 'Note under the references', p.references_note);
+    }
+    else if (part === 'json') {
+      title = 'Import / export'; body = '<p class="jbpnote">Paste a cv_data.json from your cv-designer skill and tap Import to replace everything above. "Show current" fills the box with what is stored, so you can copy it into a chat with the skill.</p>' + pf('jpJson', 'cv_data.json', '', 14, '{ "name": { "first": ... } }');
+      foot = '<button class="btn primary" data-jb="psave">Import</button><button class="btn" data-jb="pshow">Show current</button><button class="btn" data-jb="close">Close</button>';
+    }
+    else if (part === 'role') {
+      r = sh.idx >= 0 ? p.experience[sh.idx] : null; if (r) sh.ms = r.type === 'milestone'; r = r || {};
+      if (sh.ms) { title = sh.idx >= 0 ? 'Milestone' : 'Add milestone'; body = pf('jpDate', 'Date (e.g. April 2021)', r.date) + pf('jpRTitle', 'What happened (e.g. Promoted from Junior to Mid-Senior Annotator)', r.title) + pf('jpCo', 'Company', r.company); }
+      else { title = sh.idx >= 0 ? 'Role' : 'Add role'; body = pf('jpRTitle', 'Job title', r.title) + pf('jpCo', 'Company', r.company) + pf('jpLoc', 'Location', r.location) + pf('jpStart', 'Start (e.g. May 2025)', r.start) + pf('jpEnd', 'End (e.g. November 2025 or Present)', r.end) + pf('jpBul', 'Bullets, one per line', lns(r.bullets), 14); }
+      if (sh.idx >= 0) body += '<div class="jbpadd"><button class="btn" data-jb="pmove" data-d="-1">Move up</button><button class="btn" data-jb="pmove" data-d="1">Move down</button><button class="btn" data-jb="pdel" id="jpDel">Delete</button></div>';
+    }
+    else { sh = null; return; }
+    openSheet('<div class="jbsh1"><div class="jbsht"><b>' + title + '</b></div><button class="jbx" data-jb="close" aria-label="Close">&times;</button></div>' + body, foot);
+  }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function profPost(next, done) {
+    write('POST', '?jobs=profile', { profile: next }, function (s, d) {
+      if (s === 200 && d && d.profile) { prof = d.profile; profAt = Date.now(); done(true); }
+      else { App.toast(s === 400 && d && d.error ? d.error : s === 409 ? 'Run setup32.sql in Supabase first.' : 'Could not save, try again'); done(false); }
+    });
+  }
+  function profSave() {
+    if (!sh || sh.kind !== 'prof' || !prof) return;
+    var n = clone(prof), part = sh.part, c, r, i, L, sw, o, old, j;
+    n.contact = n.contact || {}; n.name = n.name || {};
+    if (part === 'json') {
+      try { n = JSON.parse(val('jpJson')); } catch (e) { App.toast('That is not valid JSON'); return; }
+      if (!n || typeof n !== 'object' || n.length !== undefined) { App.toast('Expected a cv_data.json object'); return; }
+    }
+    else if (part === 'basics') { n.name.first = val('jpFirst'); n.name.last = val('jpLast'); n.title = val('jpTitle'); c = n.contact; c.phone = val('jpPhone'); c.email = val('jpEmail'); c.address = val('jpAddr'); c.linkedin = val('jpLi'); c.website = val('jpWeb'); }
+    else if (part === 'summary') n.profile = val('jpText');
+    else if (part === 'highlights') n.highlights = parseLines(val('jpText'));
+    else if (part === 'skills') { n.core_skills = parseLines(val('jpSkills')); n.domains = parseLines(val('jpDomains')); }
+    else if (part === 'software') {
+      L = parseLines(val('jpText')); sw = [];
+      for (i = 0; i < L.length; i++) { var q = parts(L[i]); if (!q[0]) continue; o = { name: q[0], level: parseInt(q[1], 10) }; if (isNaN(o.level)) o.level = 60;
+        for (j = 0; j < (prof.software || []).length; j++) if (prof.software[j].name === q[0] && prof.software[j].ats_name) o.ats_name = prof.software[j].ats_name; sw.push(o); }
+      n.software = sw;
+    }
+    else if (part === 'edu') { n.qualifications = parseItems(val('jpQual')); n.additional_experience = parseItems(val('jpAdd')); }
+    else if (part === 'refs') {
+      L = parseLines(val('jpRefs')); n.references = [];
+      for (i = 0; i < L.length; i++) { var rp = parts(L[i]); if (rp[0]) n.references.push({ name: rp[0], lines: rp.slice(1).filter(function (x) { return x; }) }); }
+      n.references_note = val('jpNote');
+    }
+    else if (part === 'role') {
+      n.experience = n.experience || [];
+      if (sh.ms) r = { type: 'milestone', date: val('jpDate'), title: val('jpRTitle'), company: val('jpCo') };
+      else r = { type: 'role', title: val('jpRTitle'), company: val('jpCo'), location: val('jpLoc'), start: val('jpStart'), end: val('jpEnd'), bullets: parseLines(val('jpBul')) };
+      if (!r.title) { App.toast(sh.ms ? 'Say what happened' : 'The role needs a title'); return; }
+      if (sh.idx >= 0) { old = n.experience[sh.idx]; if (old && old.italic === false) r.italic = false; n.experience[sh.idx] = r; } else n.experience.unshift(r);
+    }
+    profPost(n, function (ok) { if (ok) { closeSheet(); paint(); App.toast(part === 'json' ? 'Profile imported' : 'Saved'); } });
+  }
+  function profDel() {
+    if (!sh || sh.kind !== 'prof' || sh.idx < 0 || !prof) return;
+    if (!sh.delArm) { sh.delArm = 1; var b = $('jpDel'); if (b) b.innerHTML = 'Tap again to delete'; return; }
+    var n = clone(prof); n.experience.splice(sh.idx, 1);
+    profPost(n, function (ok) { if (ok) { closeSheet(); paint(); App.toast('Deleted'); } });
+  }
+  function profMove(d) {
+    if (!sh || sh.kind !== 'prof' || sh.idx < 0 || !prof) return;
+    var j = sh.idx + d, n = clone(prof), t;
+    if (j < 0 || j >= n.experience.length) return;
+    t = n.experience[j]; n.experience[j] = n.experience[sh.idx]; n.experience[sh.idx] = t;
+    profPost(n, function (ok) { if (ok) { sh.idx = j; App.toast('Moved'); paint(); } });
+  }
+
   /* ---------- events ---------- */
   document.addEventListener('click', function (e) {
     var el = e.target, act = null;
@@ -504,6 +637,13 @@
     else if (act === 'lretry') { leadsErr = ''; fetchLeads(true); paint(); }
     else if (act === 'desctog') { if (sh) { sh.descOpen = !sh.descOpen; paintInfo(); } }
     else if (act === 'reenrich') { if (sh) { sh.aiErr = false; enrich(); } }
+    else if (act === 'pedit') openProf(el.getAttribute('data-p'), parseInt(el.getAttribute('data-i'), 10));
+    else if (act === 'padd') openProf('role', -1, el.getAttribute('data-t') === 'ms');
+    else if (act === 'psave') profSave();
+    else if (act === 'pdel') profDel();
+    else if (act === 'pmove') profMove(parseInt(el.getAttribute('data-d'), 10));
+    else if (act === 'pshow') { var jt = $('jpJson'); if (jt && prof) jt.value = JSON.stringify(prof, null, 2); }
+    else if (act === 'pretry') { profErr = ''; fetchProf(true); paint(); }
     else if (act === 'fcheck') runFeed(true);
     else if (act === 'fcfg') { feedOpen = !feedOpen; if (feedOpen && !feedCfg) fetchFeedCfg(); paint(); }
     else if (act === 'fsave') feedSave();
@@ -512,7 +652,7 @@
     else if (act === 'llike') leadAct(el.getAttribute('data-id'), 'like');
     else if (act === 'lsave') leadAct(el.getAttribute('data-id'), 'save');
     else if (act === 'ldismiss') leadAct(el.getAttribute('data-id'), 'dismiss');
-    else if (act === 'view') { var vv = el.getAttribute('data-v'); view = vv === 'stats' ? 'stats' : vv === 'discover' ? 'discover' : 'board'; store.set('jobsView', view); if (view === 'stats') fetchStats(true); if (view === 'discover') { fetchLeads(true); openDiscover(); } paint(); }
+    else if (act === 'view') { view = normView(el.getAttribute('data-v')); store.set('jobsView', view); if (view === 'profile') fetchProf(true); if (view === 'stats') fetchStats(true); if (view === 'discover') { fetchLeads(true); openDiscover(); } paint(); }
     else if (act === 'tab') { cur = sid; store.set('jobsCur', sid); paint(); }
     else if (act === 'open') openJob(el.getAttribute('data-id'));
     else if (act === 'add') openJob('', '');
@@ -541,7 +681,7 @@
 
   App.register('jobs', {
     title: 'Jobs',
-    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); if (view === 'stats' && !sh && Date.now() - statsAt > 60000) fetchStats(); if (view === 'discover' && !sh && !feedOpen && Date.now() - leadsAt > 60000) fetchLeads(); },
-    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); if (view === 'stats') fetchStats(); if (view === 'discover') { fetchLeads(true); openDiscover(); } }); paint(); }
+    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); if (view === 'profile' && !sh) fetchProf(); if (view === 'stats' && !sh && Date.now() - statsAt > 60000) fetchStats(); if (view === 'discover' && !sh && !feedOpen && Date.now() - leadsAt > 60000) fetchLeads(); },
+    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); if (view === 'profile') fetchProf(true); if (view === 'stats') fetchStats(); if (view === 'discover') { fetchLeads(true); openDiscover(); } }); paint(); }
   });
 })();

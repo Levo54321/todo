@@ -46,6 +46,9 @@ class H:
         self.jjobs = []
         self.jevents = {}
         self.feedcfg = {'keywords': ['AI ops'], 'skills': ['RLHF', 'LLM'], 'last_run': None, 'last_added': 0, 'last_err': ''}; self.feed_added = []  # Reed feed mock
+        self.cvprof = {'name': {'first': 'Test', 'last': 'Person'}, 'title': 'Program Manager', 'contact': {'address': 'London'}, 'profile': 'Runs programs.', 'highlights': ['One win'],
+                       'experience': [{'type': 'role', 'title': 'Lead', 'company': 'Acme', 'start': 'May 2025', 'end': 'Present', 'location': 'London', 'bullets': ['Did a', 'Did b']}, {'type': 'role', 'title': 'Analyst', 'company': 'Beta', 'start': 'Jan 2020', 'end': 'May 2025', 'location': 'Cardiff', 'bullets': ['Did c']}],
+                       'core_skills': ['SQL'], 'software': [{'name': 'Excel', 'level': 85}], 'qualifications': [], 'additional_experience': [], 'domains': ['AI'], 'references': []}
         self.jleads = []  # Jobs Discover: [{id, source, role, company, location, mode, url, created_at}]
         self.fail_jobs = False  # make GET /api/pprojects?jobs answer 500
         self.vault = {'configured': True, 'pw': None, 'pass': None, 'n': 0, 'fails': 0, 'entries': {}, 'gets': 0}
@@ -163,6 +166,11 @@ class H:
                 j = [x for x in self.jjobs if x['id'] == body.get('id')][0]; self.enrich_calls = getattr(self, 'enrich_calls', 0) + 1
                 j.setdefault('details', {})['ai'] = {'summary': 'Runs research ops.', 'requirements': ['5 years in ops', 'SQL'], 'nice_to_have': ['RLHF'], 'skills': ['SQL', 'Python']}
                 return 200, {'details': j['details']}
+            if what == 'profile':
+                if method == 'POST':
+                    if not isinstance(body.get('profile'), dict): return 400, {'error': 'profile must be an object'}
+                    self.cvprof = body['profile']
+                return 200, {'profile': self.cvprof, 'updated_at': '2026-11-14T10:00:00Z'}
             if what == 'feedcfg':
                 if method == 'POST': self.feedcfg = dict(self.feedcfg, keywords=body['keywords'], skills=body['skills'])
                 return 200, {'cfg': self.feedcfg}
@@ -173,7 +181,7 @@ class H:
                 return 200, {'added': n, 'skipped': 0, 'failed': 0}
             if what == 'quick':
                 return 201, {'job': put({'role': body.get('text', 'Saved job'), 'url': body.get('url', '')}, 'share')}
-            if method == 'GET' and what not in ('stats', 'leads', 'lead', 'feedcfg', 'feed'):
+            if method == 'GET' and what not in ('stats', 'leads', 'lead', 'feedcfg', 'feed', 'profile'):
                 if self.fail_jobs: return 500, {'error': 'upstream error'}
                 if 'id' in q:
                     j = [x for x in self.jjobs if x['id'] == q['id'][0]][0]; return 200, {'job': j, 'events': self.jevents.get(j['id'], [])}
