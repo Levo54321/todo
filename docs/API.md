@@ -18,6 +18,17 @@ change the header in the endpoint file and regenerate._
 // forGemini() is what Tailor my CV (v1082) may send to Gemini: roles, bullets, skills. NEVER name, contact details or references.
 ```
 
+## api/_cvtailor.js
+```
+// Tailor my CV (v1082). Not an endpoint: used by api/_jobs.js (route ?jobs=tailor, GET ?jobs=cv).
+// Gemini only PROPOSES (a list of keywords and wording changes). Code decides what is allowed and builds the CV:
+//  - coverage is computed here by matching keywords against the profile (not taken from Gemini);
+//  - a proposed change is dropped unless its evidence is an existing line of the profile (or a fact Luc typed) and it adds no new number
+//    or capitalised name/tool that is absent from the profile and his answers;
+//  - "before" text is read from the profile, never from Gemini; applying is deterministic code.
+// Gemini sees cvprofile.forGemini() only (no name, contact details, references) plus the advert and Luc's typed answers.
+```
+
 ## api/_jarvis.js
 ```
 // api/_jarvis.js — helpers for the voice-assistant ("Jarvis") branches of /api/todos. No network, no database: pure
@@ -98,6 +109,10 @@ change the header in the endpoint file and regenerate._
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
 //   GET   ?jobs=profile          -> { profile:{...cv_data shape...}, updated_at }     POST ?jobs=profile {profile:{...}} -> same (cleaned and capped by _cvprofile.js; whole profile replaced).
 //                                    Career profile (v1081): Luc's CV facts, database only. Name/contact/references are never sent to Gemini (cvprofile.forGemini).
+//   POST  ?jobs=tailor {id, answers?:{term:text}}  -> { cv:{status:'proposed', coverage:[{term,importance,status}], changes:[{id,kind,before,after,why,evidence,...}], dropped, questions:[{term,question}], answers, saved?} }
+//                                    Tailor my CV (v1082): Gemini proposes, code validates (see _cvtailor.js), stored in the job's details.cv. Needs the saved advert text.
+//         POST  ?jobs=tailor {id, apply:[change ids]} -> { cv, cv_variant }   builds the tailored copy deterministically, keeps it in details.cv.saved and sets "CV sent".
+//   GET   ?jobs=cv&id=<uuid>[&which=base] -> { tailored:bool, ats_text, ats_html, json }   the saved tailored CV (or the base profile) for copy / print / the cv-designer skill.
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
 //   GET   ?jobs=lead&id=<uuid>   -> { lead:{...,details}, detail_error }   one Discover posting in full; Reed postings get Reed's job details (full text, contract, closing date, apply link) fetched on first open and kept (v1078, setup30.sql)
 //   POST  ?jobs=enrich {id}      -> { details, cached? }   Gemini reads a saved job's description once: details.ai = {summary, requirements[], nice_to_have[], skills[]}; 503/502/504 if Gemini is down

@@ -163,3 +163,14 @@ body[data-view=jobs] #rail{background:#100f0d}
 .jbph{margin:18px 2px 8px;font-size:14px;font-weight:650;color:var(--ink)}.jbph span{font-weight:400;color:var(--muted);margin-left:6px}
 .jbpnote{margin:4px 2px 12px;font-size:13px;line-height:1.45;color:var(--muted)}
 .jbpadd{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:4px 2px 8px}.jbpadd .btn{margin:0 8px 8px 0}
+
+/* Tailor my CV (v1082) */
+.jbwarn{color:#e0a090}
+.jbtags{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:4px 0 8px}
+.jbcov{display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border-radius:14px;font-size:13px;border:1px solid var(--rule);color:var(--ink)}.jbcov i{font-style:normal;color:var(--muted);font-size:12px}
+.jbcov-covered{border-color:#6f8a5a}.jbcov-skills_only{border-color:#c9a24a}.jbcov-missing{border-color:#b5705a}
+.jbchg{display:-webkit-box;display:-webkit-flex;display:flex;margin:0 0 10px;padding:12px;border:1px solid var(--rule);border-radius:12px;cursor:pointer}.jbchg.on{border-color:var(--accent)}
+.jbbox{-webkit-flex:none;flex:none;width:24px;height:24px;margin-right:12px;border:1.5px solid var(--muted);border-radius:6px;text-align:center;line-height:22px;font-size:15px;color:var(--accent)}
+.jbchb{-webkit-flex:1;flex:1;min-width:0;font-size:14px;line-height:1.4}.jbchb b{display:block;font-size:13px;margin-bottom:4px}
+.jbold{color:var(--muted);text-decoration:line-through;margin-bottom:6px}.jbnew{color:var(--ink)}.jbchb small{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
+.jbcvout{display:block;width:100%;box-sizing:border-box;margin:0 0 8px;padding:8px 10px;border:1px solid var(--rule);border-radius:10px;background:var(--bg);color:var(--ink);font-size:16px;font-family:inherit}

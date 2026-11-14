@@ -350,7 +350,7 @@
       '<div class="jbfs">' + field('jbCompany', 'Company', j.company) + field('jbRole', 'Role', j.role, { max: 160 }) +
       field('jbUrl', 'Link to the posting', j.url, { type: 'url', max: 1000, cap: 'none' }) + field('jbLoc', 'Location', j.location) + field('jbSalary', 'Salary', j.salary, { max: 60 }) + '</div>' +
       '<div class="jblab">Working pattern</div><div class="jbchips" id="jbModes">' + modeHTML() + '</div>' +
-      '<div id="jbInfo"></div><div class="jblab">Next step</div><div class="jbfs">' + field('jbNext', 'What', j.next_step, { cap: 'sentences' }) + '<label class="jbf"><span>When</span><input id="jbNextOn" type="date" value="' + esc(j.next_on || '') + '"></label><label class="jbf"><span>Time (optional)</span><input id="jbNextAt" type="time" value="' + esc(j.next_at || '') + '"></label></div><div class="jbhint">Giving the next step a date adds it to your To-do list, and it moves or goes away when you change it here.</div>' +
+      '<div id="jbInfo"></div><div id="jbCvT"></div><div class="jblab">Next step</div><div class="jbfs">' + field('jbNext', 'What', j.next_step, { cap: 'sentences' }) + '<label class="jbf"><span>When</span><input id="jbNextOn" type="date" value="' + esc(j.next_on || '') + '"></label><label class="jbf"><span>Time (optional)</span><input id="jbNextAt" type="time" value="' + esc(j.next_at || '') + '"></label></div><div class="jbhint">Giving the next step a date adds it to your To-do list, and it moves or goes away when you change it here.</div>' +
       '<div class="jbfs">' + field('jbApplyHow', 'How to apply (link, email or form)', '', { max: 300, cap: 'none' }) + field('jbContact', 'Contact', j.contact) + field('jbCv', 'CV sent', j.cv_variant, { max: 80, cap: 'sentences' }) + '</div>' +
       '<label class="jbf"><span>Notes</span><textarea id="jbNotes" maxlength="4000" rows="5" autocapitalize="sentences">' + esc(j.notes || '') + '</textarea></label>' +
       (id ? '<div class="jbsrc">' + esc(SRC[j.source] || 'Added') + (j.created_at ? ' · ' + esc(sd(App.localISO(new Date(App.parseTS(j.created_at))))) : '') + '</div><div class="jblab">History</div><div id="jbHist"></div>' : '') +
@@ -358,7 +358,7 @@
       (j.url ? '<a class="btn" href="' + esc(j.url) + '" target="_blank" rel="noopener">Open posting</a>' : '') +
       (id ? '<button class="btn danger" data-jb="del" id="jbDel">Delete</button>' : ''));
     if (id) App.api('GET', '?jobs=1&id=' + encodeURIComponent(id), null, function (s, d) {
-      if (s === 200 && d && sh && sh.id === id) { sh.events = d.events || []; sh.details = (d.job && d.job.details) || {}; sh.applyLoaded = true; var ah = $('jbApplyHow'); if (ah && !ah.value) ah.value = sh.details.apply_how || ''; var el = $('jbHist'); if (el) el.innerHTML = histHTML(); paintInfo(); enrich(); }
+      if (s === 200 && d && sh && sh.id === id) { sh.events = d.events || []; sh.details = (d.job && d.job.details) || {}; sh.applyLoaded = true; sh.tl = { cv: sh.details.cv || null }; paintTl(); var ah = $('jbApplyHow'); if (ah && !ah.value) ah.value = sh.details.apply_how || ''; var el = $('jbHist'); if (el) el.innerHTML = histHTML(); paintInfo(); enrich(); }
     }, API);
   }
   function taskNote(t, base) {
@@ -622,6 +622,75 @@
     profPost(n, function (ok) { if (ok) { sh.idx = j; App.toast('Moved'); paint(); } });
   }
 
+
+  /* ---------- Tailor my CV (v1082) ---------- */
+  function paintTl() { var el = $('jbCvT'); if (el && sh && sh.kind === 'job') el.innerHTML = tlHTML(); }
+  function tlReadAnswers() {
+    var t = sh && sh.tl; if (!t || !t.cv) return;
+    var i, e, qs = t.cv.questions || []; t.answers = t.answers || {};
+    for (i = 0; i < qs.length; i++) { e = $('jbQ' + i); if (e) t.answers[qs[i].term] = e.value; }
+  }
+  function tlHTML() {
+    if (!sh || sh.kind !== 'job' || !sh.id) return '';
+    var t = sh.tl; if (!t) return '';
+    var cv = t.cv, h = '<div class="jblab">Tailor my CV</div>', i, c, q, n = 0, k, st = { covered: 'In your CV', skills_only: 'Only in skills list', missing: 'Not in your CV' };
+    if (t.err) h += '<div class="jbhint jbwarn">' + esc(t.err) + '</div>';
+    if (t.busy) return h + '<div class="jbhint">' + esc(t.busy) + '</div>';
+    if (cv && cv.saved) h += '<div class="jbhint">A tailored CV is saved for this job (' + cv.saved.applied + ' change' + (cv.saved.applied === 1 ? '' : 's') + ', ' + esc(sd(String(cv.saved.at || '').slice(0, 10))) + '). Your Profile is unchanged.</div>' +
+      '<div class="jbchips"><button class="btn" data-jb="tlexp" data-w="ats">ATS text</button><button class="btn" data-jb="tlexp" data-w="print">Printable CV</button><button class="btn" data-jb="tlexp" data-w="json">cv_data.json</button></div>';
+    if (t.out) h += '<div class="jbhint">' + (t.out.w === 'json' ? 'Paste this into a chat with your cv-designer skill to get the designed PDF.' : t.out.w === 'print' ? 'Open the page, then print or save as PDF.' : 'Plain text for an upload form.') + '</div>' +
+      (t.out.w === 'print' ? '<button class="btn" data-jb="tlprint">Open printable page</button>' : '<textarea id="jbCvOut" class="jbcvout" rows="8" readonly>' + esc(t.out.text) + '</textarea><button class="btn" data-jb="tlcopy">Copy</button>');
+    if (cv && cv.changes && t.show) {
+      h += '<div class="jbtags">';
+      for (i = 0; i < (cv.coverage || []).length; i++) { c = cv.coverage[i]; h += '<span class="jbcov jbcov-' + c.status + '">' + esc(c.term) + (c.importance === 'must' ? ' *' : '') + ' <i>' + st[c.status] + '</i></span>'; }
+      h += '</div><div class="jbhint">* = must-have in the advert. Tick the changes you approve; nothing is applied until you tap Apply.' + (cv.dropped ? ' ' + cv.dropped + ' suggestion' + (cv.dropped === 1 ? ' was' : 's were') + ' dropped because they used facts that are not in your Profile.' : '') + '</div>';
+      if (!cv.changes.length) h += '<div class="jbhint">No safe wording changes this time.</div>';
+      for (i = 0; i < cv.changes.length; i++) {
+        c = cv.changes[i]; if (t.ticked && t.ticked[c.id]) n++;
+        h += '<div class="jbchg' + (t.ticked && t.ticked[c.id] ? ' on' : '') + '" data-jb="tltick" data-id="' + esc(c.id) + '"><span class="jbbox">' + (t.ticked && t.ticked[c.id] ? '&#10003;' : '') + '</span><div class="jbchb"><b>' + esc(c.kind === 'bullet' ? c.where : c.kind === 'profile' ? 'Summary' : c.kind === 'title' ? 'Headline title' : 'Skills order') + '</b>' +
+          '<div class="jbold">' + esc(c.before) + '</div><div class="jbnew">' + esc(c.after) + '</div><small>' + esc(c.why) + '</small></div></div>';
+      }
+      if (cv.changes.length) h += '<div class="jbchips"><button class="btn" data-jb="tlall">Tick all</button><button class="btn primary" data-jb="tlapply">Apply ' + n + ' ticked</button></div>';
+      if ((cv.questions || []).length) {
+        h += '<div class="jblab">Missing must-haves</div><div class="jbhint">If you have real experience of these, say so in your own words and run it again. Only what you write can be used.</div>';
+        for (i = 0; i < cv.questions.length; i++) { q = cv.questions[i]; k = (t.answers && t.answers[q.term]) || (cv.answers && cv.answers[q.term]) || ''; h += '<label class="jbf"><span>' + esc(q.question) + '</span><textarea id="jbQ' + i + '" rows="2" maxlength="400">' + esc(k) + '</textarea></label>'; }
+        h += '<button class="btn" data-jb="tlrun">Run again with my answers</button>';
+      }
+    } else h += '<div class="jbchips"><button class="btn primary" data-jb="tlrun">' + (cv && cv.changes ? 'Tailor again' : 'Tailor my CV') + '</button>' + (cv && cv.changes ? '<button class="btn" data-jb="tlshow">Review suggestions</button>' : '') + '</div>' +
+      (cv && cv.saved ? '' : '<div class="jbhint">Uses the saved advert and only the facts in your Profile. Gemini never sees your name or contact details.</div>');
+    return h;
+  }
+  function tlRun() {
+    if (!sh || !sh.tl || sh.tl.busy) return;
+    var id = sh.id, t = sh.tl; tlReadAnswers(); var ans = {}, k; for (k in (t.answers || {})) if (t.answers[k] && String(t.answers[k]).replace(/\s/g, '')) ans[k] = t.answers[k];
+    t.err = ''; t.busy = 'Reading the advert and your Profile… this takes about 15 seconds.'; paintTl();
+    write('POST', '?jobs=tailor', { id: id, answers: ans }, function (s, d) {
+      if (!sh || sh.id !== id) return; t = sh.tl; t.busy = '';
+      if (s === 200 && d && d.cv) { t.cv = d.cv; t.show = true; t.ticked = {}; t.out = null; } else t.err = (d && d.error) || (s === 429 ? 'Gemini is busy, try again in a minute.' : 'Could not tailor, try again.');
+      paintTl();
+    });
+  }
+  function tlApply() {
+    if (!sh || !sh.tl || !sh.tl.cv) return;
+    var id = sh.id, t = sh.tl, ids = [], k; tlReadAnswers(); for (k in (t.ticked || {})) if (t.ticked[k]) ids.push(k);
+    if (!ids.length) { App.toast('Tick at least one change'); return; }
+    t.busy = 'Applying…'; paintTl();
+    write('POST', '?jobs=tailor', { id: id, apply: ids }, function (s, d) {
+      if (!sh || sh.id !== id) return; t = sh.tl; t.busy = '';
+      if (s === 200 && d && d.cv) { t.cv = d.cv; t.show = false; var f = $('jbCv'); if (f) f.value = d.cv_variant; var j = jobOf(id); if (j) j.cv_variant = d.cv_variant; App.toast('Tailored CV saved'); }
+      else t.err = (d && d.error) || 'Could not apply, try again.';
+      paintTl();
+    });
+  }
+  function tlExport(w) {
+    if (!sh || !sh.tl) return; var id = sh.id;
+    App.api('GET', '?jobs=cv&id=' + encodeURIComponent(id), null, function (s, d) {
+      if (!sh || sh.id !== id) return;
+      if (s === 200 && d) { sh.tl.out = { w: w, text: w === 'json' ? JSON.stringify(d.json, null, 2) : d.ats_text, html: d.ats_html }; sh.tl.err = ''; } else sh.tl.err = 'Could not load the CV, try again.';
+      paintTl();
+    }, API);
+  }
+
   /* ---------- events ---------- */
   document.addEventListener('click', function (e) {
     var el = e.target, act = null;
@@ -637,6 +706,14 @@
     else if (act === 'lretry') { leadsErr = ''; fetchLeads(true); paint(); }
     else if (act === 'desctog') { if (sh) { sh.descOpen = !sh.descOpen; paintInfo(); } }
     else if (act === 'reenrich') { if (sh) { sh.aiErr = false; enrich(); } }
+    else if (act === 'tlrun') tlRun();
+    else if (act === 'tlshow') { if (sh && sh.tl) { sh.tl.show = true; paintTl(); } }
+    else if (act === 'tltick') { if (sh && sh.tl) { tlReadAnswers(); sh.tl.ticked = sh.tl.ticked || {}; var tid = el.getAttribute('data-id'); sh.tl.ticked[tid] = !sh.tl.ticked[tid]; paintTl(); } }
+    else if (act === 'tlall') { if (sh && sh.tl && sh.tl.cv) { tlReadAnswers(); sh.tl.ticked = {}; for (var ti = 0; ti < sh.tl.cv.changes.length; ti++) sh.tl.ticked[sh.tl.cv.changes[ti].id] = true; paintTl(); } }
+    else if (act === 'tlapply') tlApply();
+    else if (act === 'tlexp') tlExport(el.getAttribute('data-w'));
+    else if (act === 'tlprint') { if (sh && sh.tl && sh.tl.out) { var pw = window.open('', '_blank'); if (pw) { pw.document.write(sh.tl.out.html); pw.document.close(); } else App.toast('Allow pop-ups to open the page'); } }
+    else if (act === 'tlcopy') { var ta = $('jbCvOut'); if (ta) { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(ta.value); App.toast('Copied'); } else { ta.focus(); ta.select(); App.toast('Selected: tap Copy in the menu'); } } }
     else if (act === 'pedit') openProf(el.getAttribute('data-p'), parseInt(el.getAttribute('data-i'), 10));
     else if (act === 'padd') openProf('role', -1, el.getAttribute('data-t') === 'ms');
     else if (act === 'psave') profSave();

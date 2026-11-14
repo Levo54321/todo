@@ -33,6 +33,10 @@
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
 //   GET   ?jobs=profile          -> { profile:{...cv_data shape...}, updated_at }     POST ?jobs=profile {profile:{...}} -> same (cleaned and capped by _cvprofile.js; whole profile replaced).
 //                                    Career profile (v1081): Luc's CV facts, database only. Name/contact/references are never sent to Gemini (cvprofile.forGemini).
+//   POST  ?jobs=tailor {id, answers?:{term:text}}  -> { cv:{status:'proposed', coverage:[{term,importance,status}], changes:[{id,kind,before,after,why,evidence,...}], dropped, questions:[{term,question}], answers, saved?} }
+//                                    Tailor my CV (v1082): Gemini proposes, code validates (see _cvtailor.js), stored in the job's details.cv. Needs the saved advert text.
+//         POST  ?jobs=tailor {id, apply:[change ids]} -> { cv, cv_variant }   builds the tailored copy deterministically, keeps it in details.cv.saved and sets "CV sent".
+//   GET   ?jobs=cv&id=<uuid>[&which=base] -> { tailored:bool, ats_text, ats_html, json }   the saved tailored CV (or the base profile) for copy / print / the cv-designer skill.
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
 //   GET   ?jobs=lead&id=<uuid>   -> { lead:{...,details}, detail_error }   one Discover posting in full; Reed postings get Reed's job details (full text, contract, closing date, apply link) fetched on first open and kept (v1078, setup30.sql)
 //   POST  ?jobs=enrich {id}      -> { details, cached? }   Gemini reads a saved job's description once: details.ai = {summary, requirements[], nice_to_have[], skills[]}; 503/502/504 if Gemini is down
@@ -54,6 +58,7 @@ var jobfeed = require('./_jobfeed.js');
 var jobdetail = require('./_jobdetail.js');
 var joblearn = require('./_joblearn.js');
 var cvprofile = require('./_cvprofile.js');
+var cvtailor = require('./_cvtailor.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var TEXT = { company: 120, role: 160, location: 120, salary: 60, contact: 120, cv_variant: 80, notes: 4000, next_step: 120 };
 var COLORS = ['sand', 'clay', 'ochre', 'sage', 'moss', 'stone', 'rose', 'slate'], KINDS = ['active', 'won', 'lost'];
@@ -259,6 +264,37 @@ module.exports = async function handler(req, res) {
       if (lb.action === 'save' && lr && lr.job && !lr.again) { var lt = await syncLinks(token, lr.job, {}, true); lr.job = publicRow(lr.job); lr.tasks = lt; }
       else if (lr && lr.job) lr.job = publicRow(lr.job);
       return send(res, 200, lr);
+    }
+    if (what === 'tailor') {
+      if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      var tb = readBody(req);
+      if (!UUID.test(String(tb.id || ''))) return send(res, 400, { error: 'bad id' });
+      var tj = await todos.rpc('job_get', { p_token: token, p_id: String(tb.id) }), tjob = tj.job || {}, td = tjob.details || {}, tpr = (await todos.rpc('career_get', { p_token: token })).data || {};
+      if (!(tpr.experience || []).length) return send(res, 400, { error: 'Fill in your Profile first' });
+      if (Array.isArray(tb.apply)) {
+        var tcv = td.cv;
+        if (!tcv || !Array.isArray(tcv.changes)) return send(res, 400, { error: 'Nothing to apply yet: tailor first' });
+        var tap = cvtailor.apply(tpr, tcv.changes, tb.apply.map(String));
+        if (!tap.applied) return send(res, 400, { error: 'Tick at least one change' });
+        var tname = ('Tailored for ' + (tjob.company || tjob.role || 'this job')).slice(0, 80), tnew = Object.assign({}, tcv, { saved: { tailored: tap.tailored, applied: tap.applied, at: new Date().toISOString() } });
+        await todos.rpc('job_details_set', { p_token: token, p_id: String(tb.id), p_details: { cv: tnew } });
+        await todos.rpc('job_put', { p_token: token, p_job: { id: String(tb.id), cv_variant: tname }, p_source: 'manual' });
+        return send(res, 200, { cv: tnew, cv_variant: tname });
+      }
+      if (!td.description) return send(res, 400, { error: 'This job has no saved advert text, so there is nothing to tailor to. Add the advert to the notes or save it from Discover.' });
+      var tprop;
+      try { tprop = await cvtailor.propose(tpr, tjob.role || '', tjob.company || '', td.description, tb.answers, jobmail.ask); }
+      catch (te) { return send(res, te.status || 502, { error: String(te.message).slice(0, 200) }); }
+      var tout = Object.assign({ status: 'proposed', created: new Date().toISOString(), saved: (td.cv && td.cv.saved) || null }, tprop);
+      await todos.rpc('job_details_set', { p_token: token, p_id: String(tb.id), p_details: { cv: tout } });
+      return send(res, 200, { cv: tout });
+    }
+    if (what === 'cv') {
+      if (m !== 'GET') return send(res, 405, { error: 'method not allowed' });
+      if (!UUID.test(String(q.id || ''))) return send(res, 400, { error: 'bad id' });
+      var cj = await todos.rpc('job_get', { p_token: token, p_id: String(q.id) }), cd = ((cj.job || {}).details || {}).cv, cp = (await todos.rpc('career_get', { p_token: token })).data || {};
+      var csv = q.which !== 'base' && cd && cd.saved ? cd.saved.tailored : null, cdoc = cvtailor.merged(cp, csv);
+      return send(res, 200, { tailored: !!csv, ats_text: cvtailor.atsText(cdoc), ats_html: cvtailor.atsHtml(cdoc), json: cdoc });
     }
     if (what === 'profile') {
       if (m === 'GET') { var pg = await todos.rpc('career_get', { p_token: token }); return send(res, 200, { profile: pg.data || {}, updated_at: pg.updated_at }); }

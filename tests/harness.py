@@ -166,6 +166,22 @@ class H:
                 j = [x for x in self.jjobs if x['id'] == body.get('id')][0]; self.enrich_calls = getattr(self, 'enrich_calls', 0) + 1
                 j.setdefault('details', {})['ai'] = {'summary': 'Runs research ops.', 'requirements': ['5 years in ops', 'SQL'], 'nice_to_have': ['RLHF'], 'skills': ['SQL', 'Python']}
                 return 200, {'details': j['details']}
+            if what == 'tailor':
+                j = [x for x in self.jjobs if x['id'] == body.get('id')][0]; det = j.setdefault('details', {})
+                self.tailor_calls = getattr(self, 'tailor_calls', []) + [body]
+                if 'apply' in body:
+                    if not body['apply']: return 400, {'error': 'Tick at least one change'}
+                    det['cv'] = dict(det['cv'], saved={'tailored': {}, 'applied': len(body['apply']), 'at': '2026-11-14T10:00:00Z'}); j['cv_variant'] = 'Tailored for ' + j['company']
+                    return 200, {'cv': det['cv'], 'cv_variant': j['cv_variant']}
+                if getattr(self, 'tailor_fail', False): return 400, {'error': 'This job has no saved advert text'}
+                det['cv'] = {'status': 'proposed', 'created': '2026-11-14T10:00:00Z', 'saved': (det.get('cv') or {}).get('saved'), 'dropped': 2,
+                           'coverage': [{'term': 'SLA', 'importance': 'must', 'status': 'covered'}, {'term': 'red teaming', 'importance': 'must', 'status': 'missing'}, {'term': 'SQL', 'importance': 'nice', 'status': 'skills_only'}],
+                           'changes': [{'id': 'c0', 'kind': 'bullet', 'role': 0, 'bullet': 0, 'where': 'Lead · Acme', 'before': 'Did a', 'after': 'Did a with SLA focus', 'why': 'SLA', 'evidence': 'Did a'},
+                                       {'id': 'c1', 'kind': 'profile', 'before': 'Runs programs.', 'after': 'Runs SLA-led programs.', 'why': 'summary', 'evidence': 'Runs programs.'}],
+                           'questions': [{'term': 'red teaming', 'question': 'Have you done anything involving "red teaming"?'}], 'answers': body.get('answers') or {}}
+                return 200, {'cv': det['cv']}
+            if what == 'cv':
+                return 200, {'tailored': True, 'ats_text': 'TEST PERSON\nProgram Manager\n', 'ats_html': '<h1>TEST PERSON</h1>', 'json': {'title': 'Program Manager'}}
             if what == 'profile':
                 if method == 'POST':
                     if not isinstance(body.get('profile'), dict): return 400, {'error': 'profile must be an object'}
@@ -181,7 +197,7 @@ class H:
                 return 200, {'added': n, 'skipped': 0, 'failed': 0}
             if what == 'quick':
                 return 201, {'job': put({'role': body.get('text', 'Saved job'), 'url': body.get('url', '')}, 'share')}
-            if method == 'GET' and what not in ('stats', 'leads', 'lead', 'feedcfg', 'feed', 'profile'):
+            if method == 'GET' and what not in ('stats', 'leads', 'lead', 'feedcfg', 'feed', 'profile', 'cv'):
                 if self.fail_jobs: return 500, {'error': 'upstream error'}
                 if 'id' in q:
                     j = [x for x in self.jjobs if x['id'] == q['id'][0]][0]; return 200, {'job': j, 'events': self.jevents.get(j['id'], [])}
