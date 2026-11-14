@@ -58,11 +58,26 @@ function toLeads(jobs, links) {
   }
   return out;
 }
+var RETRY_WAIT = 1500, DEADLINE_MS = 26000;   // Vercel allows 30 s per function: all attempts together stay inside that
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+// One Gemini call. When Gemini is overloaded (503/500) it tries the same model once more, then a lighter fallback model
+// (env GEMINI_FALLBACK_MODEL, default gemini-3.5-flash-lite), so a busy moment does not reach Luc as an error.
 async function ask(prompt) {
   var key = process.env.GEMINI_API_KEY;
   if (!key) throw fail(503, 'GEMINI_API_KEY is missing in Vercel.');
-  var model = String(process.env.GEMINI_MODEL || DEFAULT_MODEL); if (!/^[A-Za-z0-9._-]+$/.test(model)) model = DEFAULT_MODEL;
-  var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, TIMEOUT_MS), r, raw, data = null;
+  var okName = function (m, d) { m = String(m || d); return /^[A-Za-z0-9._-]+$/.test(m) ? m : d; };
+  var primary = okName(process.env.GEMINI_MODEL, DEFAULT_MODEL), backup = okName(process.env.GEMINI_FALLBACK_MODEL, 'gemini-3.5-flash-lite');
+  var plan = [primary, primary]; if (backup !== primary) plan.push(backup);
+  var t0 = Date.now(), i, last;
+  for (i = 0; i < plan.length; i++) {
+    var left = DEADLINE_MS - (Date.now() - t0); if (left < 4000) break;
+    try { return await askOnce(key, plan[i], prompt, Math.min(TIMEOUT_MS, left)); }
+    catch (e) { last = e; if (!e || !e.overloaded || i === plan.length - 1) throw e; await sleep(RETRY_WAIT); }
+  }
+  throw last || fail(504, 'Gemini did not answer.');
+}
+async function askOnce(key, model, prompt, timeoutMs) {
+  var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, timeoutMs), r, raw, data = null;
   try {
     r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
       method: 'POST', headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, signal: ctl.signal,
@@ -71,7 +86,10 @@ async function ask(prompt) {
     raw = await r.text();
   } catch (e) { throw fail(e && e.name === 'AbortError' ? 504 : 502, 'Gemini did not answer.'); } finally { clearTimeout(timer); }
   try { data = raw ? JSON.parse(raw) : null; } catch (e2) { data = null; }
-  if (!r.ok) throw fail(r.status === 429 ? 429 : 502, 'Gemini error ' + r.status);
+  if (!r.ok) {
+    var ex = fail(r.status === 429 ? 429 : 502, r.status === 503 ? 'Gemini is busy right now (503). Try again in a minute.' : 'Gemini error ' + r.status);
+    ex.overloaded = r.status === 503 || r.status === 500; throw ex;
+  }
   var parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts, text = '', i;
   for (i = 0; parts && i < parts.length; i++) if (typeof parts[i].text === 'string' && !parts[i].thought) text += parts[i].text;
   if (!text) throw fail(502, 'Gemini sent back nothing.');
@@ -85,4 +103,4 @@ async function read(body, askFn) {
   if (!jobs) throw fail(502, 'Gemini answer was not understood.');
   return { leads: toLeads(jobs, links), seen: links.length };
 }
-module.exports = { ask: ask, read: read, jobUrl: jobUrl, cleanLinks: cleanLinks, buildPrompt: buildPrompt, parseJobs: parseJobs, okPlace: okPlace, toLeads: toLeads };
+module.exports = { _setWait: function (ms) { RETRY_WAIT = ms; }, ask: ask, read: read, jobUrl: jobUrl, cleanLinks: cleanLinks, buildPrompt: buildPrompt, parseJobs: parseJobs, okPlace: okPlace, toLeads: toLeads };
