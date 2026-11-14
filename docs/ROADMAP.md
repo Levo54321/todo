@@ -39,6 +39,15 @@ Follow-ups Luc has not asked for yet (propose, do not build unasked):
 5. **A "complete by words" helper** (`POST ?jarvis=1` with words and an action) so the assistant needs one call instead of find + PATCH; only if two calls prove clumsy.
 6. **One source of truth for ordering/matching**: the copies in `_jarvis.js` can drift from `core.js`/`csvimport.js`; a shared test fixture or generating one from the other would stop that.
 
+## Jobs tab plan (agreed 14 Nov 2026, one deploy each, Luc tests between)
+Dark earth-tone application tracker in the side menu. Design agreed from the mock-up sheet; stages are editable by Luc.
+1. **Step 1 (v1074, built)**: tab, pipeline board with editable stages (add/rename/recolour/reorder by drag/remove, kind active/won/lost, optional follow-up days), job sheet (add/edit/move/delete, history), `POST /api/pprojects?jobs=quick` for the iPhone "Save to Jobs" Share Shortcut (not yet built on the phone: Luc sets it up), phone layout. Moving a card between stages is by tapping a stage chip in the sheet; drag-between-columns is not built.
+2. **Step 2**: Analytics (funnel, applications per week, time in stage, best sources, response rate) plus links to the to-do list: a next step with a time becomes a task/calendar event, and a "follow up" task appears `follow_days` after a job enters a stage that has it. Stage `kind` (won/lost) and `follow_days` already exist for this.
+3. **Step 3**: LinkedIn job-alert emails read by a Google Apps Script (like the Gmail cleanup) and sent to `?jobs=quick`; Gemini (existing `GEMINI_API_KEY`) pulls role/company/place/link out of the email. No scraping or login to LinkedIn (no official jobs API; against its terms).
+4. **Step 4**: Discover feed from the Adzuna API (free, env `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` set by Luc): searches for London or remote only, saved keywords, daily check, save/dismiss, fit score from Luc's skills.
+5. **Step 5 (later)**: career profile (his CV facts per job, entered/edited in the app) and a "Tailor my CV" button on a job card using Gemini (free tier is fine, Luc agreed 14 Nov): may only use facts he entered, shows a diff, exports ATS and designed versions, stores the version used in `jobs.cv_variant`. Address on CVs must read "London". Never send the reference's phone number to Gemini. CV text lives in the database only, never in the repo. Luc's LinkedIn URL is `linkedin.com/in/luc-evans-10842a188`.
+Searches and jobs are London or remote only.
+
 ## P0 — confirm and protect
 1. ~~Alias does not follow pushes~~ Fixed 1 Nov 2026 (see ARCHITECTURE section 6). Keep checking after each push for a few more deploys; do not assign the alias by hand unless it is stale.
 2. **Real-device pass** on iPad 2 and iPhone 13 for Pause, Blocked, board drag/number reorder, Insights and the Google work-calendar prompt.

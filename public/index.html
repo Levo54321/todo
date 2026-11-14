@@ -12,9 +12,10 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="stylesheet" href="/app.css?v=1073">
-<link rel="stylesheet" href="/work.css?v=1073">
-<link rel="stylesheet" href="/pprojects.css?v=1073">
+<link rel="stylesheet" href="/app.css?v=1074">
+<link rel="stylesheet" href="/work.css?v=1074">
+<link rel="stylesheet" href="/pprojects.css?v=1074">
+<link rel="stylesheet" href="/jobs.css?v=1074">
 <script>
 (function(){
   var de=document.documentElement;
@@ -57,6 +58,7 @@
     <button class="ritem" id="nPersonal" aria-label="Personal" data-act="nav" data-view="personal"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><span class="lb">Personal</span><span class="bdg" id="bPersonal"></span></button>
     <button class="ritem" id="nWork" aria-label="Work" data-act="nav" data-view="work"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg><span class="lb">Work</span><span class="bdg" id="bWork"></span></button>
     <button class="ritem" id="nProjects" style="display:none" data-act="nav" data-view="projects" aria-label="Projects"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.500"/><rect x="10" y="4" width="5" height="10" rx="1.500"/><rect x="17" y="4" width="4" height="13" rx="1.500"/></svg><span class="lb">Projects</span></button>
+    <button class="ritem" id="nJobs" style="display:none" data-act="nav" data-view="jobs" aria-label="Jobs"><svg class="ic" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 13l2 2 4-4"/></svg><span class="lb">Jobs</span></button>
     <button class="ritem" id="nPlan" aria-label="Tomorrow" data-act="nav" data-view="plan"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M10 15h4"/></svg><span class="lb">Tomorrow</span></button>
     <button class="ritem" id="nBudget" aria-label="Budget" style="display:none" data-act="nav" data-view="budget"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 8.5a3 3 0 0 0-5.500 1.500V14c0 1.300-.600 2.300-1.500 3h8M8 12.500h5"/></svg><span class="lb">Budget</span></button>
     <button class="ritem" id="nInsights" aria-label="Insights" style="display:none" data-act="nav" data-view="insights"><svg class="ic" viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span class="lb">Insights</span></button>
@@ -97,6 +99,7 @@
       <section class="view" id="vPprojects"><div class="scrollview"><div class="pane" id="ppPane"></div></div></section>
       <section class="view" id="vBoard"><div class="scrollview"><div class="pane wide" id="boardPane"></div></div></section>
       <section class="view" id="vInsights"><div class="scrollview"><div class="pane" id="insightsPane"></div></div></section>
+      <section class="view" id="vJobs"><div class="scrollview"><div class="pane wide" id="jobsPane"></div></div></section>
     </div>
   </div>
 </div>
@@ -176,16 +179,17 @@
   </div>
 </div>
 <div id="toast"></div>
-<script src="/js/core.js?v=1073"></script>
-<script src="/js/budget.js?v=1073"></script>
-<script src="/js/saver.js?v=1073"></script>
-<script src="/js/calendar.js?v=1073"></script>
-<script src="/js/insights.js?v=1073"></script>
-<script src="/js/projects.js?v=1073"></script>
-<script src="/js/workcal.js?v=1073"></script>
-<script src="/js/board.js?v=1073"></script>
-<script src="/js/pprojects.js?v=1073"></script>
-<script src="/js/csvimport.js?v=1073"></script>
+<script src="/js/core.js?v=1074"></script>
+<script src="/js/budget.js?v=1074"></script>
+<script src="/js/saver.js?v=1074"></script>
+<script src="/js/calendar.js?v=1074"></script>
+<script src="/js/insights.js?v=1074"></script>
+<script src="/js/projects.js?v=1074"></script>
+<script src="/js/workcal.js?v=1074"></script>
+<script src="/js/board.js?v=1074"></script>
+<script src="/js/pprojects.js?v=1074"></script>
+<script src="/js/csvimport.js?v=1074"></script>
+<script src="/js/jobs.js?v=1074"></script>
 <style>.fsbtn{position:fixed;right:10px;bottom:10px;z-index:30;width:30px;height:30px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);opacity:.35;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .15s}
 .fsbtn[hidden]{display:none}
 .fsbtn:hover,.fsbtn:focus-visible{opacity:1;background:var(--paper)}

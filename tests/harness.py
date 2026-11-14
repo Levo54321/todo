@@ -42,6 +42,10 @@ class H:
         self.fail_delete = False  # make DELETE /api/todos answer 500 (the task stays on the server)
         self.errors = []
         self.extra = {}
+        self.jstages = None  # Jobs tab: pipeline stages (created on first GET like the database does)
+        self.jjobs = []
+        self.jevents = {}
+        self.fail_jobs = False  # make GET /api/pprojects?jobs answer 500
         self.vault = {'configured': True, 'pw': None, 'pass': None, 'n': 0, 'fails': 0, 'entries': {}, 'gets': 0}
     def find(self, i):
         for t in self.todos:
@@ -120,6 +124,49 @@ class H:
             if method == 'DELETE':
                 if self.fail_delete: return 500, {'error': 'upstream error'}
                 self.todos = [t for t in self.todos if t['id'] != q['id'][0]]; return 200, {'ok': True}
+        if path == '/api/pprojects' and 'jobs' in q:  # mirrors api/_jobs.js + db/setup26.sql (the SQL itself was tested in the database)
+            if self.jstages is None:
+                self.jstages = [{'id': 'st%d' % i, 'name': n, 'color': c, 'kind': k, 'follow_days': f, 'pos': i} for i, (n, c, k, f) in enumerate([('Saved', 'sand', 'active', None), ('Applied', 'clay', 'active', 7), ('Screening', 'ochre', 'active', None), ('Interview', 'sage', 'active', None), ('Offer', 'moss', 'won', None), ('Closed', 'stone', 'lost', None)])]
+            what = q['jobs'][0]
+            def order(): return sorted(self.jjobs, key=lambda j: (j['pos'], j['updated_at']), reverse=False)
+            def put(job, src):
+                jid = job.get('id')
+                if jid:
+                    j = [x for x in self.jjobs if x['id'] == jid][0]
+                    for k, v in job.items():
+                        if k in ('id', 'stage_id'): continue
+                        j[k] = v if v != '' or k not in ('next_on', 'applied_on') else None
+                    if job.get('stage_id') and job['stage_id'] != j['stage_id']:
+                        j['stage_id'] = job['stage_id']; j['pos'] = min([x['pos'] for x in self.jjobs if x['stage_id'] == j['stage_id']] + [1]) - 1
+                        if j['applied_on'] is None and job['stage_id'] != self.jstages[0]['id']: j['applied_on'] = '2026-11-14'
+                        self.jevents.setdefault(jid, []).insert(0, {'at': '2026-11-14T10:00:00Z', 'kind': 'stage', 'text': [x for x in self.jstages if x['id'] == job['stage_id']][0]['name']})
+                    return j
+                sid = job.get('stage_id') or self.jstages[0]['id']
+                j = {'id': 'job%d' % (len(self.jjobs) + 1), 'company': '', 'role': '', 'location': '', 'mode': '', 'salary': '', 'url': '', 'source': src, 'stage_id': sid, 'contact': '', 'cv_variant': '', 'notes': '', 'next_step': '', 'next_on': None, 'applied_on': None,
+                     'pos': min([x['pos'] for x in self.jjobs if x['stage_id'] == sid] + [1]) - 1, 'created_at': '2026-11-14T09:00:00Z', 'updated_at': '2026-11-14T09:00:00Z'}
+                for k, v in job.items():
+                    if k in j and k != 'stage_id': j[k] = v if v != '' or k not in ('next_on', 'applied_on') else None
+                self.jjobs.append(j); self.jevents[j['id']] = [{'at': '2026-11-14T09:00:00Z', 'kind': 'added', 'text': [x for x in self.jstages if x['id'] == sid][0]['name'] + ' \u00b7 ' + src}]
+                return j
+            if what == 'stages':
+                new = []
+                for i, st in enumerate(body['stages']):
+                    sid = st.get('id') or 'st_new%d_%d' % (i, len(self.calls))
+                    new.append({'id': sid, 'name': st['name'], 'color': st['color'], 'kind': st['kind'], 'follow_days': st['follow_days'], 'pos': i})
+                keep = [x['id'] for x in new]
+                for j in self.jjobs:
+                    if j['stage_id'] not in keep: j['stage_id'] = keep[0]
+                self.jstages = new; return 200, {'stages': new, 'jobs': order()}
+            if what == 'quick':
+                return 201, {'job': put({'role': body.get('text', 'Saved job'), 'url': body.get('url', '')}, 'share')}
+            if method == 'GET':
+                if self.fail_jobs: return 500, {'error': 'upstream error'}
+                if 'id' in q:
+                    j = [x for x in self.jjobs if x['id'] == q['id'][0]][0]; return 200, {'job': j, 'events': self.jevents.get(j['id'], [])}
+                return 200, {'stages': self.jstages, 'jobs': order()}
+            if method == 'POST': return 201, {'job': put(body, 'manual')}
+            if method == 'PATCH': b = dict(body); b['id'] = q['id'][0]; return 200, {'job': put(b, 'manual')}
+            if method == 'DELETE': self.jjobs = [x for x in self.jjobs if x['id'] != q['id'][0]]; return 200, {'ok': True}
         if path == '/api/pprojects' and 'vault' in q:  # mirrors api/_vault.js (crypto itself is tested in tests/vault_node.js)
             V = self.vault; a = body.get('action')
             if not V['configured']: return 200, {'configured': False}

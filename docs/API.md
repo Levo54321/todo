@@ -21,6 +21,34 @@ change the header in the endpoint file and regenerate._
 // plus a prefix rule and a few spoken filler words in STOP. Keep the two in step when matching changes.
 ```
 
+## api/_jobs.js
+```
+// Jobs tab handler, reached as /api/pprojects?jobs=... (api/pprojects.js hands the request over). The file name starts with
+// "_" so Vercel does not count it as a function (the Hobby plan allows 12 per deployment). Auth: x-todo-token (or ?t=).
+// Needs db/setup26.sql. A "job" is one posting/application; stages are the pipeline columns (editable).
+//   GET   ?jobs=1                 -> { stages:[{id,name,color,kind,follow_days,pos}], jobs:[{id,company,role,location,mode,
+//                                    salary,url,source,stage_id,contact,cv_variant,notes,next_step,next_on,applied_on,pos,
+//                                    created_at,updated_at}] }   the first call creates the default stages
+//                                    (Saved, Applied, Screening, Interview, Offer, Closed). jobs are in column order.
+//   GET   ?jobs=1&id=<uuid>       -> { job, events:[{at,kind,text}] }   kind 'added' | 'stage', newest first
+//   POST  ?jobs=1 {company?, role?, location?, mode?, salary?, url?, contact?, cv_variant?, notes?, next_step?, next_on?,
+//                  applied_on?, stage_id?}           -> 201 { job }   goes to the top of stage_id (default: first stage)
+//   PATCH ?jobs=1&id=<uuid> {same fields}            -> { job }   only the fields sent change; a new stage_id moves the card
+//                                    to the top of that column, logs the move and sets applied_on the first time a job
+//                                    leaves the first stage
+//   DELETE ?jobs=1&id=<uuid>      -> { ok:true }
+//   POST  ?jobs=stages {stages:[{id?, name, color, kind, follow_days?}]}  -> { stages, jobs }   replaces the whole list in
+//                                    this order (1 to 12). Entries without an id are new; stages left out are removed and
+//                                    their jobs move to the stage before. color: sand clay ochre sage moss stone rose slate;
+//                                    kind: active | won | lost (won/lost end the pipeline); follow_days 1 to 60 or null.
+//   POST  ?jobs=quick {url?, text?}                  -> 201 { job } or 200 { job, duplicate:true }   for the iPhone "Save to Jobs"
+//                                    Shortcut (Share sheet). The link is taken from url or from text; the rest of text becomes
+//                                    the role ("Role at Company" and "Role - Company" are split). A LinkedIn job link is cleaned
+//                                    to its short form so the same job is not saved twice. source = linkedin | adzuna | share.
+// mode: remote | hybrid | onsite | '' ; url must be http(s); dates YYYY-MM-DD or '' (clears). Text fields are cut to their
+// column sizes (company 120, role 160, location 120, salary 60, contact 120, cv_variant 80, notes 4000, next_step 120).
+```
+
 ## api/_scan.js
 ```
 // Scan helper (not an endpoint: the leading _ keeps it out of Vercel's 12-function limit). Used by POST /api/todos?scan=1.
@@ -139,6 +167,7 @@ change the header in the endpoint file and regenerate._
 //                               in the order given -> { pos: {<id>: n} }. New projects go to the top.
 //   DELETE ?id               -> remove (its tasks stay, they just lose the link; its costs go with it)
 //   POST ?vault=1 {action, ...} -> the vault (sensitive values per project), handled by api/_vault.js; see its header
+//   ?jobs=1|stages|quick     -> the Jobs tab (application tracker), handled by api/_jobs.js; see its header (not about projects)
 //   POST ?cost=1 {project_id, name, amount, currency?, freq?, next_due?, link?, email?} -> add a cost -> { cost }
 //   PATCH ?cost=<id> {name, amount, currency?, freq?, next_due?, link?, email?}       -> replace a cost -> { cost }
 //   DELETE ?cost=<id>        -> remove a cost

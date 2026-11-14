@@ -397,6 +397,7 @@
     setCls($('nPlan'), 'ritem' + (view === 'plan' ? ' on' : ''));
     setCls($('nBudget'), 'ritem' + (view === 'budget' ? ' on' : ''));
     setCls($('nInsights'), 'ritem' + (view === 'insights' ? ' on' : ''));
+    setCls($('nJobs'), 'ritem' + (view === 'jobs' ? ' on' : ''));
     setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' ? ' on' : ''));
     setCls($('psW'), view === 'board' ? 'on' : '');
     setCls($('psP'), view === 'pprojects' ? 'on' : '');
@@ -527,7 +528,7 @@
     if (window.pageYOffset !== pageY) window.scrollTo(0, pageY);
   }
   /* ---------- navigation ---------- */
-  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects' };
+  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects', jobs: 'vJobs' };
   function navTo(name) {
     if (name === 'projects') name = (view === 'tasks' || !store.get('projMode')) ? (mode === 'work' ? 'board' : 'pprojects') : store.get('projMode'); // one Projects tab, Work | Personal switch inside
     if (name === 'board' || name === 'pprojects') store.set('projMode', name);
