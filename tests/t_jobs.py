@@ -116,6 +116,22 @@ def run(h):
     chk('clearing the date sends an empty time too', patch.get('next_on') == '' and patch.get('next_at') == '', patch)
     p.click('.jbcard'); wait(250); p.fill('#jbNextOn', '2026-10-20'); p.click('[data-jb=save]'); wait(400)
 
+    # About the role (Reed details kept in jobs.details; Gemini read cached in details.ai)
+    jid = p.evaluate("document.querySelector('.jbcard').getAttribute('data-id')")
+    [j for j in h.jjobs if j['id'] == jid][0]['details'] = {'description': 'Lead the team.\n\n• Own SLAs', 'contract': 'Permanent', 'job_type': 'Full time', 'posted': '2026-11-12', 'expires': '2026-12-10', 'applicants': 23, 'apply_url': 'https://careers.example.com/apply/1'}
+    p.click('.jbcard'); wait(700)
+    sheet = p.inner_text('#jbSheet')
+    chk('card shows contract, posting facts and applicants', all(t in sheet for t in ['Permanent', 'Full time', 'Posted 12 Nov', 'Closes 10 Dec', '23 applicants']), sheet[:300])
+    chk('card links to the company apply page', p.get_attribute('.jbapply', 'href') == 'https://careers.example.com/apply/1')
+    wait(500); sheet = p.inner_text('#jbSheet')
+    chk('opening the card has Gemini read the advert once and shows requirements and skills', getattr(h, 'enrich_calls', 0) == 1 and all(t.lower() in sheet.lower() for t in ['Runs research ops.', '5 years in ops', 'Nice to have', 'Skills to mention', 'Python']), sheet[:400])
+    chk('full description is hidden until asked', 'Own SLAs' not in p.inner_text('#jbSheet'))
+    p.click('[data-jb=desctog]'); wait(200)
+    chk('Show full description reveals the text with its bullets', 'Own SLAs' in p.inner_text('#jbSheet') and 'Hide full description' in p.inner_text('#jbSheet'))
+    p.click('.jbx'); wait(250); p.click('.jbcard'); wait(600)
+    chk('reopening does not read the advert again (cached)', getattr(h, 'enrich_calls', 0) == 1, getattr(h, 'enrich_calls', 0))
+    p.click('.jbx'); wait(250)
+
     # Discover (leads from LinkedIn alert emails)
     h.jleads = [{'id': 'L1', 'source': 'linkedin', 'role': 'AI Data Operations Manager', 'company': 'Corvid Labs', 'location': 'London, England', 'mode': '', 'url': 'https://www.linkedin.com/jobs/view/1111111111/', 'created_at': '2026-11-13T08:00:00Z', 'fit': 83, 'why': 'RLHF, LLM', 'salary': '£60k-£70k'},
                 {'id': 'L2', 'source': 'linkedin', 'role': 'Eval Lead', 'company': 'Cloudy', 'location': 'United Kingdom', 'mode': 'remote', 'url': 'https://www.linkedin.com/jobs/view/2222222222/', 'created_at': '2026-11-14T08:00:00Z'}]

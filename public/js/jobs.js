@@ -262,6 +262,40 @@
     }
     return h;
   }
+  function fdate(iso) { return iso ? sd(iso) : ''; }
+  function infoHTML() {
+    var d = sh && sh.details, h = '', f = [], i, a;
+    if (!d || !sh.id) return '';
+    if (d.contract) f.push(d.contract); if (d.job_type) f.push(d.job_type);
+    if (d.salary_year) f.push(d.salary_year + ' a year'); else if (d.salary_type && d.salary_type !== 'per annum') f.push(d.salary_type);
+    if (d.posted) f.push('Posted ' + fdate(d.posted)); if (d.expires) f.push('Closes ' + fdate(d.expires));
+    if (typeof d.applicants === 'number') f.push(d.applicants + (d.applicants === 1 ? ' applicant' : ' applicants'));
+    a = d.ai;
+    if (!f.length && !a && !d.description && !sh.aiBusy && !d.apply_url) return '';
+    h = '<div class="jblab">About the role</div>';
+    if (f.length) { h += '<div class="jbfacts">'; for (i = 0; i < f.length; i++) h += '<span>' + esc(f[i]) + '</span>'; h += '</div>'; }
+    if (d.apply_url) h += '<a class="btn jbapply" href="' + esc(d.apply_url) + '" target="_blank" rel="noopener">Apply on the company site</a>';
+    if (a) {
+      if (a.summary) h += '<p class="jbsum">' + esc(a.summary) + '</p>';
+      if (a.requirements && a.requirements.length) { h += '<div class="jbsub">Requirements</div><ul class="jbul">'; for (i = 0; i < a.requirements.length; i++) h += '<li>' + esc(a.requirements[i]) + '</li>'; h += '</ul>'; }
+      if (a.nice_to_have && a.nice_to_have.length) { h += '<div class="jbsub">Nice to have</div><ul class="jbul">'; for (i = 0; i < a.nice_to_have.length; i++) h += '<li>' + esc(a.nice_to_have[i]) + '</li>'; h += '</ul>'; }
+      if (a.skills && a.skills.length) { h += '<div class="jbsub">Skills to mention</div><div class="jbtags">'; for (i = 0; i < a.skills.length; i++) h += '<span>' + esc(a.skills[i]) + '</span>'; h += '</div>'; }
+    } else if (sh.aiBusy) h += '<div class="jbhint">Reading the advert…</div>';
+    else if (sh.aiErr && d.description) h += '<div class="jbhint">Could not read the advert yet. <button class="jblink" data-jb="reenrich">Try again</button></div>';
+    if (d.description) h += '<button class="btn jbdtog" data-jb="desctog">' + (sh.descOpen ? 'Hide full description' : 'Show full description') + '</button>' + (sh.descOpen ? '<div class="jbdesc">' + esc(d.description) + '</div>' : '');
+    return h;
+  }
+  function paintInfo() { var el = $('jbInfo'); if (el) el.innerHTML = infoHTML(); }
+  function enrich() {
+    if (!sh || !sh.id || !sh.details || !sh.details.description || sh.details.ai || sh.aiBusy) return;
+    var id = sh.id; sh.aiBusy = true; sh.aiErr = false; paintInfo();
+    App.api('POST', '?jobs=enrich', { id: id }, function (s, d) {
+      if (!sh || sh.id !== id) return;
+      sh.aiBusy = false;
+      if (s === 200 && d && d.details) sh.details = d.details; else sh.aiErr = true;
+      paintInfo();
+    }, API);
+  }
   function field(id, label, v, extra) {
     return '<label class="jbf"><span>' + label + '</span><input id="' + id + '" type="' + ((extra && extra.type) || 'text') + '" value="' + esc(v || '') + '" maxlength="' + ((extra && extra.max) || 120) + '" autocomplete="off" autocorrect="off" autocapitalize="' + ((extra && extra.cap) || 'words') + '" spellcheck="false"></label>';
   }
@@ -277,7 +311,7 @@
       '<div class="jbfs">' + field('jbCompany', 'Company', j.company) + field('jbRole', 'Role', j.role, { max: 160 }) +
       field('jbUrl', 'Link to the posting', j.url, { type: 'url', max: 1000, cap: 'none' }) + field('jbLoc', 'Location', j.location) + field('jbSalary', 'Salary', j.salary, { max: 60 }) + '</div>' +
       '<div class="jblab">Working pattern</div><div class="jbchips" id="jbModes">' + modeHTML() + '</div>' +
-      '<div class="jblab">Next step</div><div class="jbfs">' + field('jbNext', 'What', j.next_step, { cap: 'sentences' }) + '<label class="jbf"><span>When</span><input id="jbNextOn" type="date" value="' + esc(j.next_on || '') + '"></label><label class="jbf"><span>Time (optional)</span><input id="jbNextAt" type="time" value="' + esc(j.next_at || '') + '"></label></div><div class="jbhint">Giving the next step a date adds it to your To-do list, and it moves or goes away when you change it here.</div>' +
+      '<div id="jbInfo"></div><div class="jblab">Next step</div><div class="jbfs">' + field('jbNext', 'What', j.next_step, { cap: 'sentences' }) + '<label class="jbf"><span>When</span><input id="jbNextOn" type="date" value="' + esc(j.next_on || '') + '"></label><label class="jbf"><span>Time (optional)</span><input id="jbNextAt" type="time" value="' + esc(j.next_at || '') + '"></label></div><div class="jbhint">Giving the next step a date adds it to your To-do list, and it moves or goes away when you change it here.</div>' +
       '<div class="jbfs">' + field('jbContact', 'Contact', j.contact) + field('jbCv', 'CV sent', j.cv_variant, { max: 80, cap: 'sentences' }) + '</div>' +
       '<label class="jbf"><span>Notes</span><textarea id="jbNotes" maxlength="4000" rows="5" autocapitalize="sentences">' + esc(j.notes || '') + '</textarea></label>' +
       (id ? '<div class="jbsrc">' + esc(SRC[j.source] || 'Added') + (j.created_at ? ' · ' + esc(sd(App.localISO(new Date(App.parseTS(j.created_at))))) : '') + '</div><div class="jblab">History</div><div id="jbHist"></div>' : '') +
@@ -285,7 +319,7 @@
       (j.url ? '<a class="btn" href="' + esc(j.url) + '" target="_blank" rel="noopener">Open posting</a>' : '') +
       (id ? '<button class="btn danger" data-jb="del" id="jbDel">Delete</button>' : '') + '</div>');
     if (id) App.api('GET', '?jobs=1&id=' + encodeURIComponent(id), null, function (s, d) {
-      if (s === 200 && d && sh && sh.id === id) { sh.events = d.events || []; var el = $('jbHist'); if (el) el.innerHTML = histHTML(); }
+      if (s === 200 && d && sh && sh.id === id) { sh.events = d.events || []; sh.details = (d.job && d.job.details) || {}; var el = $('jbHist'); if (el) el.innerHTML = histHTML(); paintInfo(); enrich(); }
     }, API);
   }
   function taskNote(t, base) {
@@ -430,6 +464,8 @@
     if (act === 'retry') { err = ''; fetchJobs(); paint(); }
     else if (act === 'sretry') { statsErr = ''; fetchStats(true); paint(); }
     else if (act === 'lretry') { leadsErr = ''; fetchLeads(true); paint(); }
+    else if (act === 'desctog') { if (sh) { sh.descOpen = !sh.descOpen; paintInfo(); } }
+    else if (act === 'reenrich') { if (sh) { sh.aiErr = false; enrich(); } }
     else if (act === 'fcheck') runFeed(true);
     else if (act === 'fcfg') { feedOpen = !feedOpen; if (feedOpen && !feedCfg) fetchFeedCfg(); paint(); }
     else if (act === 'fsave') feedSave();

@@ -29,6 +29,9 @@
 //   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
+//   GET   ?jobs=lead&id=<uuid>   -> { lead:{...,details}, detail_error }   one Discover posting in full; Reed postings get Reed's job details (full text, contract, closing date, apply link) fetched on first open and kept (v1078, setup30.sql)
+//   POST  ?jobs=enrich {id}      -> { details, cached? }   Gemini reads a saved job's description once: details.ai = {summary, requirements[], nice_to_have[], skills[]}; 503/502/504 if Gemini is down
+//                                    details (jsonb) = description, contract, job_type, salary_type, salary_year, posted, expires (YYYY-MM-DD), applicants, apply_url, ai. The board list never carries details; GET ?jobs=1&id= does.
 //   POST  ?jobs=email {text, links:[{url,text}]}  -> { added, skipped, seen }   for the Google Apps Script that reads LinkedIn job-alert emails
 //                                    (docs/jobs/linkedin-alerts.gs). Gemini reads the text and says which link is which job; only LinkedIn job links
 //                                    from the email are used; only London or remote jobs are kept; postings already saved or already offered are
@@ -43,6 +46,7 @@
 var todos = require('./todos.js');
 var jobmail = require('./_jobmail.js');
 var jobfeed = require('./_jobfeed.js');
+var jobdetail = require('./_jobdetail.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var TEXT = { company: 120, role: 160, location: 120, salary: 60, contact: 120, cv_variant: 80, notes: 4000, next_step: 120 };
 var COLORS = ['sand', 'clay', 'ochre', 'sage', 'moss', 'stone', 'rose', 'slate'], KINDS = ['active', 'won', 'lost'];
@@ -148,7 +152,18 @@ async function syncLinks(token, row, sent, created) {
   } catch (e) { console.error('jobs link error', e.code, e.message); }
   return out;
 }
-function publicRow(row) { var r = {}, k; for (k in row) if (Object.prototype.hasOwnProperty.call(row, k) && k !== 'prev_stage' && k !== 'next_todo' && k !== 'follow_todo') r[k] = row[k]; return r; }
+function publicRow(row) { var r = {}, k; for (k in row) if (Object.prototype.hasOwnProperty.call(row, k) && k !== 'details' && k !== 'prev_stage' && k !== 'next_todo' && k !== 'follow_todo') r[k] = row[k]; return r; }
+
+// Reed postings get their full details (text, contract, apply link) the first time a lead is opened or saved; never throws
+async function ensureLeadDetails(token, ld) {
+  if (ld.source !== 'reed' || (ld.details && ld.details.description)) return { lead: ld, error: '' };
+  if (!process.env.REED_API_KEY) return { lead: ld, error: 'REED_API_KEY is not set in Vercel' };
+  try {
+    var det = await jobdetail.fetchReed(ld.url, process.env.REED_API_KEY);
+    if (!det) return { lead: ld, error: 'Reed has no details for this posting' };
+    return { lead: await todos.rpc('job_lead_details_set', { p_token: token, p_id: ld.id, p_details: det }), error: '' };
+  } catch (e) { return { lead: ld, error: String(e.message).slice(0, 120) }; }
+}
 
 /* ---------- analytics ---------- */
 var HEARD_IDX = 2; // the 3rd stage onwards counts as "heard back" (Screening in the default pipeline)
@@ -210,6 +225,7 @@ module.exports = async function handler(req, res) {
       if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
       var lb = readBody(req);
       if (!UUID.test(String(lb.id || '')) || ['save', 'dismiss'].indexOf(lb.action) < 0) return send(res, 400, { error: 'id and action (save or dismiss) needed' });
+      if (lb.action === 'save') { try { await ensureLeadDetails(token, await todos.rpc('job_lead_get', { p_token: token, p_id: String(lb.id) })); } catch (ge) { /* saving never waits on Reed */ } }
       var lr = await todos.rpc('job_lead_act', { p_token: token, p_id: String(lb.id), p_action: lb.action });
       if (lb.action === 'save' && lr && lr.job && !lr.again) { var lt = await syncLinks(token, lr.job, {}, true); lr.job = publicRow(lr.job); lr.tasks = lt; }
       else if (lr && lr.job) lr.job = publicRow(lr.job);
@@ -233,6 +249,26 @@ module.exports = async function handler(req, res) {
       var fa = fr.leads.length ? await todos.rpc('job_leads_add', { p_token: token, p_leads: fr.leads, p_source: 'reed' }) : { added: 0, skipped: 0 };
       var fc = await todos.rpc('job_feed_ran', { p_token: token, p_added: fa.added, p_err: fr.failed ? fr.failed + ' of ' + fr.calls + ' searches failed' : '' });
       return send(res, 200, { added: fa.added, skipped: fa.skipped, failed: fr.failed, last_run: fc.last_run });
+    }
+    if (what === 'lead') {                // one Discover posting in full; fetches the Reed details the first time it is opened
+      if (m !== 'GET') return send(res, 405, { error: 'method not allowed' });
+      if (!UUID.test(String(q.id || ''))) return send(res, 400, { error: 'bad id' });
+      var ld = await todos.rpc('job_lead_get', { p_token: token, p_id: String(q.id) }), en = await ensureLeadDetails(token, ld);
+      ld = en.lead; var derr = en.error;
+      return send(res, 200, { lead: ld, detail_error: derr });
+    }
+    if (what === 'enrich') {              // Gemini reads the saved job's description once (summary, requirements, skills); cached in details.ai
+      if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      var nb = readBody(req);
+      if (!UUID.test(String(nb.id || ''))) return send(res, 400, { error: 'bad id' });
+      var nj = await todos.rpc('job_get', { p_token: token, p_id: String(nb.id) }), nd = (nj.job && nj.job.details) || {};
+      if (nd.ai) return send(res, 200, { details: nd, cached: true });
+      if (!nd.description) return send(res, 200, { details: nd, nothing: true });
+      var ai;
+      try { ai = await jobdetail.analyse(nj.job.role || '', nj.job.company || '', nd.description, jobmail.ask); }
+      catch (ne) { return send(res, ne.status || 502, { error: String(ne.message).slice(0, 200) }); }
+      var nr = await todos.rpc('job_details_set', { p_token: token, p_id: String(nb.id), p_details: { ai: ai } });
+      return send(res, 200, { details: nr.details });
     }
     if (what === 'email') {
       if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });

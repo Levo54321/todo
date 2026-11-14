@@ -21,6 +21,13 @@ change the header in the endpoint file and regenerate._
 // plus a prefix rule and a few spoken filler words in STOP. Keep the two in step when matching changes.
 ```
 
+## api/_jobdetail.js
+```
+// Job details for the Jobs tab: Reed's job-details call (full description, contract, closing date, apply link) and a Gemini read of the description
+// (summary, requirements, nice-to-haves, skills). Not an endpoint: used by api/_jobs.js (routes ?jobs=lead and ?jobs=enrich).
+// Reed documents the details fields only by label (not JSON key names), so every field is read defensively under its likely names.
+```
+
 ## api/_jobfeed.js
 ```
 // Reed job feed for the Jobs tab (Discover). Not an endpoint: used by api/_jobs.js (routes ?jobs=feed and ?jobs=feedcfg).
@@ -70,6 +77,9 @@ change the header in the endpoint file and regenerate._
 //   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
+//   GET   ?jobs=lead&id=<uuid>   -> { lead:{...,details}, detail_error }   one Discover posting in full; Reed postings get Reed's job details (full text, contract, closing date, apply link) fetched on first open and kept (v1078, setup30.sql)
+//   POST  ?jobs=enrich {id}      -> { details, cached? }   Gemini reads a saved job's description once: details.ai = {summary, requirements[], nice_to_have[], skills[]}; 503/502/504 if Gemini is down
+//                                    details (jsonb) = description, contract, job_type, salary_type, salary_year, posted, expires (YYYY-MM-DD), applicants, apply_url, ai. The board list never carries details; GET ?jobs=1&id= does.
 //   POST  ?jobs=email {text, links:[{url,text}]}  -> { added, skipped, seen }   for the Google Apps Script that reads LinkedIn job-alert emails
 //                                    (docs/jobs/linkedin-alerts.gs). Gemini reads the text and says which link is which job; only LinkedIn job links
 //                                    from the email are used; only London or remote jobs are kept; postings already saved or already offered are

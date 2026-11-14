@@ -136,3 +136,15 @@ body[data-view=jobs] #rail{background:#100f0d}
 .jbfeedcfg{margin:0 2px 16px;padding:16px;border-radius:12px;border:1px solid var(--rule)}.jbfeedcfg textarea{width:100%;box-sizing:border-box;font-size:16px;font-family:inherit}
 .jbfit{margin-left:auto;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;background-color:var(--accsoft,rgba(255,255,255,.12));color:var(--acc,inherit)}
 .jbwhy{margin-top:6px;font-size:12px;line-height:17px;color:var(--muted)}
+
+.jbfacts{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:0 0 8px}
+.jbfacts span{margin:0 8px 8px 0;padding:4px 10px;border-radius:12px;font-size:13px;line-height:18px;background-color:rgba(255,255,255,.08)}
+.jbapply{display:inline-block;margin:0 0 12px}
+.jbsum{margin:4px 0 12px;font-size:15px;line-height:22px}
+.jbsub{margin:12px 0 6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.jbul{margin:0 0 4px;padding-left:20px;font-size:14px;line-height:21px}.jbul li{margin-bottom:4px}
+.jbtags{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap}
+.jbtags span{margin:0 6px 6px 0;padding:3px 10px;border-radius:12px;font-size:13px;border:1px solid var(--rule)}
+.jbdtog{margin:12px 0 8px}
+.jbdesc{white-space:pre-wrap;font-size:14px;line-height:21px;margin:0 0 16px;word-wrap:break-word}
+.jblink{background:none;border:0;min-height:44px;padding:12px 4px;font:inherit;color:inherit;text-decoration:underline}

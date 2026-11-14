@@ -159,6 +159,10 @@ class H:
                 for j in self.jjobs:
                     if j['stage_id'] not in keep: j['stage_id'] = keep[0]
                 self.jstages = new; return 200, {'stages': new, 'jobs': order()}
+            if what == 'enrich':
+                j = [x for x in self.jjobs if x['id'] == body.get('id')][0]; self.enrich_calls = getattr(self, 'enrich_calls', 0) + 1
+                j.setdefault('details', {})['ai'] = {'summary': 'Runs research ops.', 'requirements': ['5 years in ops', 'SQL'], 'nice_to_have': ['RLHF'], 'skills': ['SQL', 'Python']}
+                return 200, {'details': j['details']}
             if what == 'feedcfg':
                 if method == 'POST': self.feedcfg = dict(self.feedcfg, keywords=body['keywords'], skills=body['skills'])
                 return 200, {'cfg': self.feedcfg}

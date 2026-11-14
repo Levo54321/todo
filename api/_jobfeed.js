@@ -28,6 +28,13 @@ function salary(r) {
   if (lo > 0 && hi > 0 && hi !== lo) return money(lo) + '-' + money(hi);
   return money(hi > 0 ? hi : lo);
 }
+function isoDate(v) { var m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(String(v || '')); return m ? m[3] + '-' + m[2] + '-' + m[1] : ''; }
+function searchDetails(r) {            // what the search result already tells us (the full text is fetched when a card is opened)
+  var o = {}, p = isoDate(r.date), x = isoDate(r.expirationDate);
+  if (p) o.posted = p; if (x) o.expires = x;
+  if (r.applications !== undefined && r.applications !== null && !isNaN(Number(r.applications))) o.applicants = Number(r.applications);
+  return o;
+}
 function score(r, skills) {
   var text = (String(r.jobTitle || '') + ' ' + String(r.jobDescription || '')).toLowerCase(), hit = [], i;
   for (i = 0; i < skills.length; i++) if (has(text, skills[i]) && hit.indexOf(skills[i]) < 0) hit.push(skills[i]);
@@ -46,7 +53,7 @@ function toLeads(items, skills, today) {
     out.push({
       role: String(r.jobTitle || '').slice(0, 160), company: String(r.employerName || '').slice(0, 120),
       location: items[i].remote && !/london/i.test(String(r.locationName || '')) ? 'Remote' : String(r.locationName || '').slice(0, 120),
-      mode: items[i].remote ? 'remote' : '', url: r.jobUrl, fit: sc.fit, why: sc.why, salary: salary(r)
+      mode: items[i].remote ? 'remote' : '', url: r.jobUrl, fit: sc.fit, why: sc.why, salary: salary(r), details: searchDetails(r)
     });
   }
   out.sort(function (a, b) { return b.fit - a.fit; });

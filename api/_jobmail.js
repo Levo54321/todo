@@ -85,4 +85,4 @@ async function read(body, askFn) {
   if (!jobs) throw fail(502, 'Gemini answer was not understood.');
   return { leads: toLeads(jobs, links), seen: links.length };
 }
-module.exports = { read: read, jobUrl: jobUrl, cleanLinks: cleanLinks, buildPrompt: buildPrompt, parseJobs: parseJobs, okPlace: okPlace, toLeads: toLeads };
+module.exports = { ask: ask, read: read, jobUrl: jobUrl, cleanLinks: cleanLinks, buildPrompt: buildPrompt, parseJobs: parseJobs, okPlace: okPlace, toLeads: toLeads };
