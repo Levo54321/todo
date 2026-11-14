@@ -21,6 +21,14 @@ change the header in the endpoint file and regenerate._
 // plus a prefix rule and a few spoken filler words in STOP. Keep the two in step when matching changes.
 ```
 
+## api/_jobmail.js
+```
+// Reads one LinkedIn job-alert email into leads (Jobs tab, Discover). Used by api/_jobs.js for POST /api/pprojects?jobs=email.
+// Gemini (env GEMINI_API_KEY, model GEMINI_MODEL, both set by Luc in Vercel) reads the email text and says which numbered link is which job,
+// plus role, company, place and whether it is remote. It never makes up links: it can only point at links that were in the email.
+// Only London or remote jobs are kept (Luc's rule). Nothing here calls LinkedIn.
+```
+
 ## api/_jobs.js
 ```
 // Jobs tab handler, reached as /api/pprojects?jobs=... (api/pprojects.js hands the request over). The file name starts with
@@ -49,6 +57,12 @@ change the header in the endpoint file and regenerate._
 //                                    weeks:[{start,n}] (last 8, Monday start, by applied_on), time:[{name,color,days,n}] (average days
 //                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
 //                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
+//   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,created_at}] }  Discover: recommended postings not yet saved (v1076, setup28.sql)
+//   POST  ?jobs=leads {id, action:'save'|'dismiss'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss: { ok }
+//   POST  ?jobs=email {text, links:[{url,text}]}  -> { added, skipped, seen }   for the Google Apps Script that reads LinkedIn job-alert emails
+//                                    (docs/jobs/linkedin-alerts.gs). Gemini reads the text and says which link is which job; only LinkedIn job links
+//                                    from the email are used; only London or remote jobs are kept; postings already saved or already offered are
+//                                    skipped. Gemini trouble -> 429/502/503/504 so the script tries again later. GET list also carries new_leads.
 //   To-do links (v1075): next_on (+ optional next_at HH:MM) makes ONE Personal to-do "Job: <next step> · <role> at <company>" (category
 //   "Job hunt", due next_on, reminder next_at); changing or clearing the next step updates or removes it, and moving the job to a stage of
 //   kind lost removes it. Entering a stage that has follow_days (kind active) makes a to-do "Follow up: <role> at <company>" due that many

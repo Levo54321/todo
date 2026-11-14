@@ -5,7 +5,8 @@
   var $ = App.$, esc = App.esc, store = App.store;
   var API = '/api/pprojects';
   var stages = [], jobs = [], loaded = false, loading = false, err = '', fetchedAt = 0, pend = 0;
-  var view = store.get('jobsView') === 'stats' ? 'stats' : 'board';  // board | stats (Analytics)
+  var view = store.get('jobsView') === 'stats' ? 'stats' : store.get('jobsView') === 'discover' ? 'discover' : 'board';  // board | discover | stats (Analytics)
+  var leads = [], leadsLoaded = false, leadsAt = 0, leadsLoading = false, newLeads = 0, leadsErr = '';
   var stats = null, statsAt = 0, statsLoading = false, statsErr = '';
   var cur = store.get('jobsCur') || '';       // phone: the stage whose cards are showing
   var sh = null;                              // open sheet: {kind:'job', id, stage, mode, events, delArm} or {kind:'stages', draft, pal}
@@ -32,7 +33,7 @@
     App.api('GET', '?jobs=1', null, function (s, d) {
       loading = false; fetchedAt = Date.now();
       if (s === 200 && d && d.stages) {
-        if (!pend) { stages = d.stages; jobs = d.jobs || []; }
+        if (!pend) { stages = d.stages; jobs = d.jobs || []; if (typeof d.new_leads === 'number') newLeads = d.new_leads; }
         loaded = true; err = '';
       } else if (!loaded) err = failText(s);
       paint();
@@ -45,6 +46,15 @@
     App.api('GET', '?jobs=stats', null, function (s, d) {
       statsLoading = false; statsAt = Date.now();
       if (s === 200 && d && d.stats) { stats = d.stats; statsErr = ''; } else if (!stats) statsErr = failText(s);
+      paint();
+    }, API);
+  }
+  function fetchLeads(force) {
+    if (leadsLoading || (!force && leadsLoaded && Date.now() - leadsAt < 10000)) return;
+    leadsLoading = true;
+    App.api('GET', '?jobs=leads', null, function (s, d) {
+      leadsLoading = false; leadsAt = Date.now();
+      if (s === 200 && d && d.leads) { if (!pend) { leads = d.leads; newLeads = leads.length; } leadsLoaded = true; leadsErr = ''; } else if (!leadsLoaded) leadsErr = failText(s);
       paint();
     }, API);
   }
@@ -86,8 +96,42 @@
     h += card('Where your best leads come from', '', so);
     return h + '</div><p class="jbfoot">Heard back means an applied job that reached the third stage or later (Screening onwards by default). Reordering or renaming stages changes how this reads.</p>';
   }
+  function ago(ts) {
+    var d = Math.floor((App.nowMs() - App.parseTS(ts)) / 86400000);
+    return d < 1 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago';
+  }
+  function leadsHTML() {
+    if (leadsErr && !leadsLoaded) return '<div class="jbmsg">' + esc(leadsErr) + '<br><button class="btn primary" data-jb="lretry">Try again</button></div>';
+    if (!leadsLoaded) return '<div class="jbmsg">Loading recommendations…</div>';
+    if (!leads.length) return '<div class="jbmsg">Nothing to look at right now.<br><span class="jbsm">Postings from your LinkedIn job-alert emails land here. Save the ones you like, dismiss the rest.</span></div>';
+    var h = '<p class="jbfoot jbtop">' + leads.length + (leads.length === 1 ? ' recommended posting' : ' recommended postings') + ', London or remote. Save moves one onto your board.</p><div class="jbcards">', i, l, meta;
+    for (i = 0; i < leads.length; i++) {
+      l = leads[i]; meta = [];
+      if (l.location) meta.push(l.location);
+      if (l.mode === 'remote' && (l.location || '').toLowerCase().indexOf('remote') < 0) meta.push('Remote');
+      meta.push((SRC[l.source] || l.source) + ' · ' + ago(l.created_at));
+      h += '<section class="jbcard2 jblead"><div class="jbco"><span class="jblogo jbc-sand">' + esc((l.company || l.role || '?').charAt(0).toUpperCase()) + '</span><span class="jbcoh">' + esc(l.company || 'Company not shown') + '</span></div>' +
+        '<div class="jbrole">' + esc(l.role || 'Job') + '</div><div class="jbmeta">' + esc(meta.join(' · ')) + '</div>' +
+        '<div class="jbbtns"><button class="btn primary" data-jb="lsave" data-id="' + esc(l.id) + '">Save</button><button class="btn" data-jb="ldismiss" data-id="' + esc(l.id) + '">Dismiss</button>' +
+        (l.url ? '<a class="btn" href="' + esc(l.url) + '" target="_blank" rel="noopener">View</a>' : '') + '</div></section>';
+    }
+    return h + '</div>';
+  }
+  function leadAct(id, act) {
+    var i, l = null; for (i = 0; i < leads.length; i++) if (leads[i].id === id) l = leads[i];
+    if (!l) return;
+    write('POST', '?jobs=leads', { id: id, action: act }, function (s, d) {
+      if (s === 200 && d) {
+        for (i = leads.length - 1; i >= 0; i--) if (leads[i].id === id) leads.splice(i, 1);
+        newLeads = leads.length;
+        if (act === 'save' && d.job) { putJob(d.job); dirty(); App.toast('Saved to ' + ((stageOf(d.job.stage_id) || {}).name || 'your board')); if (d.tasks && d.tasks.follow) App.reload(); }
+        else App.toast('Dismissed');
+        paint();
+      } else App.toast('Could not do that, try again');
+    });
+  }
   function segHTML() {
-    return '<div class="jbseg"><button class="' + (view === 'board' ? 'on' : '') + '" data-jb="view" data-v="board">Board</button><button class="' + (view === 'stats' ? 'on' : '') + '" data-jb="view" data-v="stats">Analytics</button></div>';
+    return '<div class="jbseg"><button class="' + (view === 'board' ? 'on' : '') + '" data-jb="view" data-v="board">Board</button><button class="' + (view === 'discover' ? 'on' : '') + '" data-jb="view" data-v="discover">Discover' + (newLeads ? ' <i class="jbn">' + newLeads + '</i>' : '') + '</button><button class="' + (view === 'stats' ? 'on' : '') + '" data-jb="view" data-v="stats">Analytics</button></div>';
   }
 
   /* ---------- board ---------- */
@@ -118,6 +162,7 @@
     if (!loaded) return '<div class="jbmsg">Loading your jobs…</div>';
     var c = counts(), h = '', tabs = '', cols = '', i, k, s, list, n, on, cards;
     if (view === 'stats') return segHTML() + statsHTML();
+    if (view === 'discover') return segHTML() + leadsHTML();
     if (!stageOf(cur) && stages.length) cur = stages[0].id;
     h += segHTML() + '<div class="jbbar"><div class="jbkpis">' +
       '<div class="jbkpi"><b>' + c.saved + '</b><span>Saved</span></div><div class="jbkpi"><b>' + c.prog + '</b><span>In progress</span></div>' +
@@ -341,7 +386,10 @@
     var sid = el.getAttribute('data-sid'), i = parseInt(el.getAttribute('data-i'), 10);
     if (act === 'retry') { err = ''; fetchJobs(); paint(); }
     else if (act === 'sretry') { statsErr = ''; fetchStats(true); paint(); }
-    else if (act === 'view') { view = el.getAttribute('data-v') === 'stats' ? 'stats' : 'board'; store.set('jobsView', view); if (view === 'stats') fetchStats(true); paint(); }
+    else if (act === 'lretry') { leadsErr = ''; fetchLeads(true); paint(); }
+    else if (act === 'lsave') leadAct(el.getAttribute('data-id'), 'save');
+    else if (act === 'ldismiss') leadAct(el.getAttribute('data-id'), 'dismiss');
+    else if (act === 'view') { var vv = el.getAttribute('data-v'); view = vv === 'stats' ? 'stats' : vv === 'discover' ? 'discover' : 'board'; store.set('jobsView', view); if (view === 'stats') fetchStats(true); if (view === 'discover') fetchLeads(true); paint(); }
     else if (act === 'tab') { cur = sid; store.set('jobsCur', sid); paint(); }
     else if (act === 'open') openJob(el.getAttribute('data-id'));
     else if (act === 'add') openJob('', '');
@@ -370,7 +418,7 @@
 
   App.register('jobs', {
     title: 'Jobs',
-    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); if (view === 'stats' && !sh && Date.now() - statsAt > 60000) fetchStats(); },
-    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); if (view === 'stats') fetchStats(); }); paint(); }
+    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); if (view === 'stats' && !sh && Date.now() - statsAt > 60000) fetchStats(); if (view === 'discover' && !sh && Date.now() - leadsAt > 60000) fetchLeads(); },
+    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); if (view === 'stats') fetchStats(); if (view === 'discover') fetchLeads(true); }); paint(); }
   });
 })();

@@ -24,6 +24,12 @@
 //                                    weeks:[{start,n}] (last 8, Monday start, by applied_on), time:[{name,color,days,n}] (average days
 //                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
 //                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
+//   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,created_at}] }  Discover: recommended postings not yet saved (v1076, setup28.sql)
+//   POST  ?jobs=leads {id, action:'save'|'dismiss'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss: { ok }
+//   POST  ?jobs=email {text, links:[{url,text}]}  -> { added, skipped, seen }   for the Google Apps Script that reads LinkedIn job-alert emails
+//                                    (docs/jobs/linkedin-alerts.gs). Gemini reads the text and says which link is which job; only LinkedIn job links
+//                                    from the email are used; only London or remote jobs are kept; postings already saved or already offered are
+//                                    skipped. Gemini trouble -> 429/502/503/504 so the script tries again later. GET list also carries new_leads.
 //   To-do links (v1075): next_on (+ optional next_at HH:MM) makes ONE Personal to-do "Job: <next step> · <role> at <company>" (category
 //   "Job hunt", due next_on, reminder next_at); changing or clearing the next step updates or removes it, and moving the job to a stage of
 //   kind lost removes it. Entering a stage that has follow_days (kind active) makes a to-do "Follow up: <role> at <company>" due that many
@@ -32,6 +38,7 @@
 // mode: remote | hybrid | onsite | '' ; url must be http(s); dates YYYY-MM-DD or '' (clears). Text fields are cut to their
 // column sizes (company 120, role 160, location 120, salary 60, contact 120, cv_variant 80, notes 4000, next_step 120); next_at HH:MM or ''.
 var todos = require('./todos.js');
+var jobmail = require('./_jobmail.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var TEXT = { company: 120, role: 160, location: 120, salary: 60, contact: 120, cv_variant: 80, notes: 4000, next_step: 120 };
 var COLORS = ['sand', 'clay', 'ochre', 'sage', 'moss', 'stone', 'rose', 'slate'], KINDS = ['active', 'won', 'lost'];
@@ -193,6 +200,25 @@ module.exports = async function handler(req, res) {
       }
       var qrow = await todos.rpc('job_put', { p_token: token, p_job: sh.job, p_source: sh.source }), qt = await syncLinks(token, qrow, sh.job, true);
       return send(res, 201, { job: publicRow(qrow), tasks: qt });
+    }
+    if (what === 'leads') {
+      if (m === 'GET') return send(res, 200, { leads: await todos.rpc('job_leads_list', { p_token: token }) });
+      if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      var lb = readBody(req);
+      if (!UUID.test(String(lb.id || '')) || ['save', 'dismiss'].indexOf(lb.action) < 0) return send(res, 400, { error: 'id and action (save or dismiss) needed' });
+      var lr = await todos.rpc('job_lead_act', { p_token: token, p_id: String(lb.id), p_action: lb.action });
+      if (lb.action === 'save' && lr && lr.job && !lr.again) { var lt = await syncLinks(token, lr.job, {}, true); lr.job = publicRow(lr.job); lr.tasks = lt; }
+      else if (lr && lr.job) lr.job = publicRow(lr.job);
+      return send(res, 200, lr);
+    }
+    if (what === 'email') {
+      if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      var eb = readBody(req), rd;
+      await todos.rpc('job_leads_add', { p_token: token, p_leads: [], p_source: 'linkedin' }); // refuses a bad token BEFORE Gemini is called
+      try { rd = await jobmail.read(eb); }
+      catch (ee) { if (ee && ee.status) return send(res, ee.status, { error: String(ee.message).slice(0, 200) }); throw ee; }
+      var er = rd.leads.length ? await todos.rpc('job_leads_add', { p_token: token, p_leads: rd.leads, p_source: 'linkedin' }) : { added: 0, skipped: 0 };
+      return send(res, 200, { added: er.added, skipped: er.skipped, seen: rd.seen });
     }
     if (what === 'stats') {
       if (m !== 'GET') return send(res, 405, { error: 'method not allowed' });

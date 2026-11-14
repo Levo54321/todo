@@ -85,6 +85,10 @@ body[data-view=jobs] #rail{background:#100f0d}
 .jbseg{display:-webkit-inline-flex;display:inline-flex;margin:2px 0 4px -6px}
 .jbseg button{min-height:44px;margin:0;padding:0 14px;border:6px solid transparent;border-radius:22px;background-clip:padding-box;background-color:transparent;color:var(--muted);font-size:14px;font-weight:500;-webkit-appearance:none;outline:none}
 .jbseg button.on{background-color:var(--chip);color:var(--ink);font-weight:650}
+.jbn{display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;background-color:var(--accent);color:var(--onaccent);font-size:12px;font-style:normal;font-weight:650;line-height:18px;text-align:center}
+.jbsm{font-size:13px;line-height:20px}
+.jblead{cursor:default}.jblead .jbrole{margin-top:6px}.jblead .jbbtns{margin-top:12px}
+.jbtop{margin:2px 2px 12px}
 .jbkpis2{margin:6px 0 14px;-webkit-flex:none;flex:none}
 .jbkpis2 .jbkpi:last-child{margin-right:0}
 .jbcards{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin:0 -7px}

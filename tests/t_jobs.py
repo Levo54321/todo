@@ -116,6 +116,32 @@ def run(h):
     chk('clearing the date sends an empty time too', patch.get('next_on') == '' and patch.get('next_at') == '', patch)
     p.click('.jbcard'); wait(250); p.fill('#jbNextOn', '2026-10-20'); p.click('[data-jb=save]'); wait(400)
 
+    # Discover (leads from LinkedIn alert emails)
+    h.jleads = [{'id': 'L1', 'source': 'linkedin', 'role': 'AI Data Operations Manager', 'company': 'Corvid Labs', 'location': 'London, England', 'mode': '', 'url': 'https://www.linkedin.com/jobs/view/1111111111/', 'created_at': '2026-11-13T08:00:00Z'},
+                {'id': 'L2', 'source': 'linkedin', 'role': 'Eval Lead', 'company': 'Cloudy', 'location': 'United Kingdom', 'mode': 'remote', 'url': 'https://www.linkedin.com/jobs/view/2222222222/', 'created_at': '2026-11-14T08:00:00Z'}]
+    p.click('[data-jb=view][data-v=board]'); wait(200); p.evaluate("App.views.jobs.show()"); wait(500)
+    p.click('[data-jb=view][data-v=discover]'); wait(600)
+    chk('Discover button shows the count of new postings', '2' in p.inner_text('[data-jb=view][data-v=discover]'), p.inner_text('[data-jb=view][data-v=discover]'))
+    chk('Discover lists both postings with Save / Dismiss / View', len(p.query_selector_all('.jblead')) == 2 and len(p.query_selector_all('[data-jb=lsave]')) == 2 and len(p.query_selector_all('.jblead a.btn')) == 2)
+    chk('lead shows company, role, place and where it came from', all(t in p.inner_text('.jblead') for t in ['Corvid Labs', 'AI Data Operations Manager', 'London', 'LinkedIn']), p.inner_text('.jblead'))
+    p.screenshot(path=os.path.join(OUT, 'jobs_discover.png'))
+    p.click('.jblead [data-jb=lsave]'); wait(500)
+    chk('Save posts the lead id and removes it from the list', calls('POST')[-1][3] == {'id': 'L1', 'action': 'save'} and len(p.query_selector_all('.jblead')) == 1, calls('POST')[-1][3])
+    p.click('[data-jb=ldismiss]'); wait(500)
+    chk('Dismiss removes the other one', calls('POST')[-1][3] == {'id': 'L2', 'action': 'dismiss'} and 'Nothing to look at' in p.inner_text('#jobsPane'))
+    chk('Discover badge gone when empty', 'jbn' not in p.inner_html('[data-jb=view][data-v=discover]'))
+    p.click('[data-jb=view][data-v=board]'); wait(400)
+    chk('the saved posting is on the board in Saved', col_of('Corvid Labs') == 0, names())
+    h.jleads = [dict(h.jleads[0] if h.jleads else {'id': 'L3', 'source': 'linkedin', 'role': 'PM', 'company': 'Zed', 'location': 'London', 'mode': '', 'url': '', 'created_at': '2026-11-14T08:00:00Z'}, id='L3')]
+    p.set_viewport_size({'width': 390, 'height': 844}); wait(300)
+    p.click('[data-jb=view][data-v=discover]'); wait(500)
+    chk('Discover phone: no sideways overflow', p.evaluate("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"))
+    chk('Discover phone: the three-way switch fits and is 44px', p.evaluate("(function(){var b=document.querySelectorAll('.jbseg button'),i,r;for(i=0;i<b.length;i++){r=b[i].getBoundingClientRect();if(r.height<43.5||r.right>390)return false}return b.length===3})()"))
+    small = p.evaluate("""(function(){var o=[],els=document.querySelectorAll('.jblead .btn'),k,r;for(k=0;k<els.length;k++){r=els[k].getBoundingClientRect();if(r.height&&r.height<43.5)o.push(r.height)}return o})()""")
+    chk('Discover phone: buttons are 44px', not small, small)
+    p.set_viewport_size({'width': 1024, 'height': 768}); wait(300)
+    p.click('[data-jb=view][data-v=board]'); wait(300)
+
     # analytics
     p.click('[data-jb=view][data-v=stats]'); wait(600)
     chk('Analytics replaces the board', p.query_selector('#jbStrip') is None and len(p.query_selector_all('.jbcard2')) == 4, len(p.query_selector_all('.jbcard2')))
@@ -152,7 +178,7 @@ def run(h):
     p.click('.jbtab:has-text("Applied")'); wait(250)
     chk('phone: tapping a chip shows that stage', 'Corvid' in p.inner_text('#jbStrip .jbcol.on'))
     p.screenshot(path=os.path.join(OUT, 'jobs_phone.png'))
-    p.click('.jbcard'); wait(300)
+    p.click('.jbcol.on .jbcard'); wait(300)
     p.screenshot(path=os.path.join(OUT, 'jobs_phone_sheet.png'))
     box = p.query_selector('#jbSheet').bounding_box()
     chk('phone: sheet fills the width', box['width'] >= 389, box)

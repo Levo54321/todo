@@ -45,6 +45,7 @@ class H:
         self.jstages = None  # Jobs tab: pipeline stages (created on first GET like the database does)
         self.jjobs = []
         self.jevents = {}
+        self.jleads = []  # Jobs Discover: [{id, source, role, company, location, mode, url, created_at}]
         self.fail_jobs = False  # make GET /api/pprojects?jobs answer 500
         self.vault = {'configured': True, 'pw': None, 'pass': None, 'n': 0, 'fails': 0, 'entries': {}, 'gets': 0}
     def find(self, i):
@@ -159,11 +160,16 @@ class H:
                 self.jstages = new; return 200, {'stages': new, 'jobs': order()}
             if what == 'quick':
                 return 201, {'job': put({'role': body.get('text', 'Saved job'), 'url': body.get('url', '')}, 'share')}
-            if method == 'GET' and what != 'stats':
+            if method == 'GET' and what not in ('stats', 'leads'):
                 if self.fail_jobs: return 500, {'error': 'upstream error'}
                 if 'id' in q:
                     j = [x for x in self.jjobs if x['id'] == q['id'][0]][0]; return 200, {'job': j, 'events': self.jevents.get(j['id'], [])}
-                return 200, {'stages': self.jstages, 'jobs': order()}
+                return 200, {'stages': self.jstages, 'jobs': order(), 'new_leads': len(self.jleads)}
+            if what == 'leads':
+                if method == 'GET': return 200, {'leads': list(self.jleads)}
+                l = [x for x in self.jleads if x['id'] == body.get('id')][0]; self.jleads = [x for x in self.jleads if x is not l]
+                if body.get('action') == 'dismiss': return 200, {'ok': True, 'lead_id': l['id']}
+                return 200, {'job': put({'role': l['role'], 'company': l['company'], 'location': l['location'], 'url': l['url']}, l['source']), 'lead_id': l['id'], 'tasks': {}}
             if what == 'stats':  # shape of api/_jobs.js computeStats (the maths is tested in tests/jobs_links_node.js)
                 n = len(self.jjobs); ap = len([j for j in self.jjobs if j.get('applied_on')])
                 return 200, {'stats': {'summary': {'total': n, 'applied': ap, 'heard': 1 if ap else 0, 'rate': 50 if ap else None, 'offers': 0, 'closed': 0, 'active': ap},
