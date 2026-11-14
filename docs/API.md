@@ -36,6 +36,14 @@ change the header in the endpoint file and regenerate._
 // Fit score = how many of Luc's skills appear in the title/snippet (6 or more = 100). Pure functions here; the network call is injectable for tests.
 ```
 
+## api/_joblearn.js
+```
+// "More like this": a transparent word-weight model for Discover (v1080). Not an endpoint: used by api/_jobs.js.
+// Every like/save adds weight to the words of that posting's title (and its company); dismiss/"not for me" takes some away.
+// When leads are listed, the weights of the words in a posting's title become a small boost or penalty on its fit score (max +/-25).
+// No training run, no hidden state: the weights are one small JSON object (job_feed_cfg.learn) and the boost is shown on the card.
+```
+
 ## api/_jobmail.js
 ```
 // Reads one LinkedIn job-alert email into leads (Jobs tab, Discover). Used by api/_jobs.js for POST /api/pprojects?jobs=email.
@@ -73,7 +81,10 @@ change the header in the endpoint file and regenerate._
 //                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
 //                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
 //   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,fit,why,salary,created_at}] } best fit first  Discover: recommended postings not yet saved (v1076, setup28.sql)
-//   POST  ?jobs=leads {id, action:'save'|'dismiss'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss: { ok }
+//   POST  ?jobs=leads {id, action:'save'|'dismiss'|'like'|'dislike'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss/dislike: { ok }, like: { ok, vote:1 }
+//                                    like/save add weight to the words of that posting's title and company, dislike/dismiss take some away (api/_joblearn.js, job_feed_cfg.learn);
+//                                    GET ?jobs=leads then lists with fit moved by that boost (max +/-25, returned as `boost`), best first. vote:1 marks a lead already liked.
+//   POST/PATCH ?jobs=1 also accept apply_how (text up to 300: a link, email or form note), kept in details.apply_how
 //   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }

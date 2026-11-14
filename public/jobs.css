@@ -40,9 +40,9 @@ body[data-view=jobs] #rail{background:#100f0d}
 .jbaddc{display:block;width:100%;min-height:44px;border:1px dashed var(--rule);border-radius:12px;background:none;color:var(--muted);font-size:14px;-webkit-appearance:none}
 
 /* sheet */
-.jbov{position:fixed;left:0;top:0;right:0;bottom:0;z-index:60}
+.jbov{position:fixed;left:0;top:0;right:0;bottom:0;z-index:55}  /* below the screensaver (60) */
 .jbdim{position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.6)}
-.jbsheet{position:absolute;right:0;top:0;bottom:0;width:460px;max-width:100%;box-sizing:border-box;padding:18px 20px 40px;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--paper);border-left:1px solid var(--rule);color:var(--ink)}
+.jbsheet{position:absolute;right:0;top:0;bottom:0;width:460px;max-width:100%;box-sizing:border-box;padding:0;overflow:hidden;display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;background:var(--paper);border-left:1px solid var(--rule);color:var(--ink)}
 .jbsh1{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;margin-bottom:12px}
 .jbsht{-webkit-flex:1;flex:1;min-width:0}
 .jbsht b{display:block;font-size:18px;line-height:24px}
@@ -148,3 +148,10 @@ body[data-view=jobs] #rail{background:#100f0d}
 .jbdtog{margin:12px 0 8px}
 .jbdesc{white-space:pre-wrap;font-size:14px;line-height:21px;margin:0 0 16px;word-wrap:break-word}
 .jblink{background:none;border:0;min-height:44px;padding:12px 4px;font:inherit;color:inherit;text-decoration:underline}
+
+/* sheet = scrolling body + footer that stays put (no position:sticky: iPad 2) */
+.jbsbody{-webkit-flex:1 1 auto;flex:1 1 auto;min-height:0;box-sizing:border-box;padding:18px 20px 24px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+.jbsfoot{-webkit-flex:none;flex:none;box-sizing:border-box;padding:12px 20px;padding-bottom:calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--rule);background:var(--paper)}
+.jbsfoot .jbbtns{margin:0}
+.jbcard2 .btn.on,.jbsfoot .btn.on{background-color:rgba(255,255,255,.12)}
+.jblead{cursor:pointer}

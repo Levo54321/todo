@@ -8,6 +8,9 @@ require.cache[tp] = { id: tp, filename: tp, loaded: true, exports: { rpc: async 
   if (n === 'job_leads_add') { a.p_leads.forEach(function (l) { db.leads.push(l); }); return { added: a.p_leads.length, skipped: 0 }; }
   if (n === 'job_leads_list') return db.leads;
   if (n === 'job_lead_act') { if (a.p_action === 'save') return { job: { id: 'jj', stage_id: 'sx', role: 'PM', company: 'Acme', next_todo: null }, lead_id: a.p_id }; return { ok: true, lead_id: a.p_id }; }
+  if (n === 'job_lead_get') return { id: a.p_id, source: 'linkedin', url: '', role: 'PM', company: 'Acme', details: {}, vote: 0 };
+  if (n === 'job_feed_get') return { learn: {} };
+  if (n === 'job_learn_put') return {};
   if (n === 'job_list') return { stages: [{ id: 'sx', name: 'Saved', kind: 'active', follow_days: null }], jobs: [] };
   throw new Error('unexpected ' + n);
 } } };

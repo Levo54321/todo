@@ -25,7 +25,10 @@
 //                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
 //                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
 //   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,fit,why,salary,created_at}] } best fit first  Discover: recommended postings not yet saved (v1076, setup28.sql)
-//   POST  ?jobs=leads {id, action:'save'|'dismiss'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss: { ok }
+//   POST  ?jobs=leads {id, action:'save'|'dismiss'|'like'|'dislike'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss/dislike: { ok }, like: { ok, vote:1 }
+//                                    like/save add weight to the words of that posting's title and company, dislike/dismiss take some away (api/_joblearn.js, job_feed_cfg.learn);
+//                                    GET ?jobs=leads then lists with fit moved by that boost (max +/-25, returned as `boost`), best first. vote:1 marks a lead already liked.
+//   POST/PATCH ?jobs=1 also accept apply_how (text up to 300: a link, email or form note), kept in details.apply_how
 //   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
 //                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
 //   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
@@ -47,6 +50,7 @@ var todos = require('./todos.js');
 var jobmail = require('./_jobmail.js');
 var jobfeed = require('./_jobfeed.js');
 var jobdetail = require('./_jobdetail.js');
+var joblearn = require('./_joblearn.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var TEXT = { company: 120, role: 160, location: 120, salary: 60, contact: 120, cv_variant: 80, notes: 4000, next_step: 120 };
 var COLORS = ['sand', 'clay', 'ochre', 'sage', 'moss', 'stone', 'rose', 'slate'], KINDS = ['active', 'won', 'lost'];
@@ -154,6 +158,18 @@ async function syncLinks(token, row, sent, created) {
 }
 function publicRow(row) { var r = {}, k; for (k in row) if (Object.prototype.hasOwnProperty.call(row, k) && k !== 'details' && k !== 'prev_stage' && k !== 'next_todo' && k !== 'follow_todo') r[k] = row[k]; return r; }
 
+// teaches the Discover ranking from what Luc did with a lead; never throws
+async function learnFrom(token, lead, action) {
+  try {
+    var cfg = await todos.rpc('job_feed_get', { p_token: token });
+    await todos.rpc('job_learn_put', { p_token: token, p_learn: joblearn.learn((cfg && cfg.learn) || {}, lead, action) });
+  } catch (e) { /* the ranking just does not learn this time */ }
+}
+// the "how to apply" note (link, email or form) lives in details.apply_how; never throws
+async function saveApplyHow(token, id, b) {
+  if (!b || typeof b.apply_how !== 'string') return;
+  try { await todos.rpc('job_details_set', { p_token: token, p_id: id, p_details: { apply_how: b.apply_how.trim().slice(0, 300) } }); } catch (e) { /* the job itself was saved */ }
+}
 // Reed postings get their full details (text, contract, apply link) the first time a lead is opened or saved; never throws
 async function ensureLeadDetails(token, ld) {
   if (ld.source !== 'reed' || (ld.details && ld.details.description)) return { lead: ld, error: '' };
@@ -221,12 +237,22 @@ module.exports = async function handler(req, res) {
       return send(res, 201, { job: publicRow(qrow), tasks: qt });
     }
     if (what === 'leads') {
-      if (m === 'GET') return send(res, 200, { leads: await todos.rpc('job_leads_list', { p_token: token }) });
+      if (m === 'GET') {
+        var lraw = await todos.rpc('job_leads_list', { p_token: token }), lcfg = null;
+        try { lcfg = await todos.rpc('job_feed_get', { p_token: token }); } catch (ce) { if (ce.code === '28000') throw ce; }
+        return send(res, 200, { leads: joblearn.rank(lraw || [], (lcfg && lcfg.learn) || {}) });
+      }
       if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
       var lb = readBody(req);
-      if (!UUID.test(String(lb.id || '')) || ['save', 'dismiss'].indexOf(lb.action) < 0) return send(res, 400, { error: 'id and action (save or dismiss) needed' });
-      if (lb.action === 'save') { try { await ensureLeadDetails(token, await todos.rpc('job_lead_get', { p_token: token, p_id: String(lb.id) })); } catch (ge) { /* saving never waits on Reed */ } }
-      var lr = await todos.rpc('job_lead_act', { p_token: token, p_id: String(lb.id), p_action: lb.action });
+      if (!UUID.test(String(lb.id || '')) || ['save', 'dismiss', 'like', 'dislike'].indexOf(lb.action) < 0) return send(res, 400, { error: 'id and action (save, dismiss, like or dislike) needed' });
+      var lead0 = await todos.rpc('job_lead_get', { p_token: token, p_id: String(lb.id) }), lr;
+      if (lb.action === 'like') {
+        if (lead0.vote !== 1) { await todos.rpc('job_lead_vote', { p_token: token, p_id: lead0.id, p_vote: 1 }); await learnFrom(token, lead0, 'like'); }
+        return send(res, 200, { ok: true, lead_id: lead0.id, vote: 1 });
+      }
+      if (lb.action === 'save') await ensureLeadDetails(token, lead0);   // never throws; saving does not wait on Reed failing
+      lr = await todos.rpc('job_lead_act', { p_token: token, p_id: String(lb.id), p_action: lb.action === 'dislike' ? 'dismiss' : lb.action });
+      await learnFrom(token, lead0, lb.action);
       if (lb.action === 'save' && lr && lr.job && !lr.again) { var lt = await syncLinks(token, lr.job, {}, true); lr.job = publicRow(lr.job); lr.tasks = lt; }
       else if (lr && lr.job) lr.job = publicRow(lr.job);
       return send(res, 200, lr);
@@ -298,7 +324,8 @@ module.exports = async function handler(req, res) {
       return send(res, 200, await todos.rpc('job_list', { p_token: token }));
     }
     if (m === 'POST') {
-      var cb = clean(readBody(req)), crow = await todos.rpc('job_put', { p_token: token, p_job: cb, p_source: 'manual' }), ct = await syncLinks(token, crow, cb, true);
+      var cbody = readBody(req), cb = clean(cbody), crow = await todos.rpc('job_put', { p_token: token, p_job: cb, p_source: 'manual' }), ct = await syncLinks(token, crow, cb, true);
+      await saveApplyHow(token, crow.id, cbody);
       return send(res, 201, { job: publicRow(crow), tasks: ct });
     }
     if (m === 'PATCH' || m === 'DELETE') {
@@ -312,6 +339,7 @@ module.exports = async function handler(req, res) {
       }
       b = readBody(req); job = clean(b); job.id = id;
       var prow = await todos.rpc('job_put', { p_token: token, p_job: job, p_source: 'manual' }), pt = await syncLinks(token, prow, job, false);
+      await saveApplyHow(token, id, b);
       return send(res, 200, { job: publicRow(prow), tasks: pt });
     }
     return send(res, 405, { error: 'method not allowed' });

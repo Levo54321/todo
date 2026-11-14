@@ -153,22 +153,51 @@
       if (l.mode === 'remote' && (l.location || '').toLowerCase().indexOf('remote') < 0) meta.push('Remote');
       if (l.salary) meta.push(l.salary);
       meta.push((SRC[l.source] || l.source) + ' · ' + ago(l.created_at));
-      h += '<section class="jbcard2 jblead"><div class="jbco"><span class="jblogo jbc-sand">' + esc((l.company || l.role || '?').charAt(0).toUpperCase()) + '</span><span class="jbcoh">' + esc(l.company || 'Company not shown') + '</span>' + (typeof l.fit === 'number' ? '<span class="jbfit">' + l.fit + '% fit</span>' : '') + '</div>' +
-        '<div class="jbrole">' + esc(l.role || 'Job') + '</div><div class="jbmeta">' + esc(meta.join(' · ')) + '</div>' + (l.why ? '<div class="jbwhy">Matches: ' + esc(l.why) + '</div>' : '') +
+      h += '<section class="jbcard2 jblead" data-jb="lopen" data-id="' + esc(l.id) + '"><div class="jbco"><span class="jblogo jbc-sand">' + esc((l.company || l.role || '?').charAt(0).toUpperCase()) + '</span><span class="jbcoh">' + esc(l.company || 'Company not shown') + '</span>' + (typeof l.fit === 'number' ? '<span class="jbfit">' + l.fit + '% fit</span>' : '') + '</div>' +
+        '<div class="jbrole">' + esc(l.role || 'Job') + '</div><div class="jbmeta">' + esc(meta.join(' · ')) + '</div>' + (l.why ? '<div class="jbwhy">Matches: ' + esc(l.why) + '</div>' : '') + boostNote(l) +
         '<div class="jbbtns"><button class="btn primary" data-jb="lsave" data-id="' + esc(l.id) + '">Save</button><button class="btn" data-jb="ldismiss" data-id="' + esc(l.id) + '">Dismiss</button>' +
-        (l.url ? '<a class="btn" href="' + esc(l.url) + '" target="_blank" rel="noopener">View</a>' : '') + '</div></section>';
+        '<button class="btn' + (l.vote === 1 ? ' on' : '') + '" data-jb="llike" data-id="' + esc(l.id) + '">' + (l.vote === 1 ? 'Liked ✓' : 'More like this') + '</button></div></section>';
     }
     return h + '</div>';
   }
+  function boostNote(l) {
+    if (typeof l.boost !== 'number' || (l.boost < 4 && l.boost > -4)) return '';
+    return '<div class="jbwhy">' + (l.boost > 0 ? '↑ Like roles you liked (+' + l.boost + ')' : '↓ Like roles you skipped (' + l.boost + ')') + '</div>';
+  }
+  function leadOf(id) { var i; for (i = 0; i < leads.length; i++) if (leads[i].id === id) return leads[i]; return null; }
+  function openLead(id) {
+    var l = leadOf(id); if (!l) return;
+    var init = (l.company || l.role || '?').charAt(0).toUpperCase(), basics = [];
+    if (l.location) basics.push(l.location); if (l.mode) basics.push(l.mode === 'onsite' ? 'On-site' : l.mode.charAt(0).toUpperCase() + l.mode.slice(1)); if (l.salary) basics.push(l.salary); basics.push((SRC[l.source] || l.source) + ' · ' + ago(l.created_at));
+    sh = { kind: 'lead', id: id, details: l.meta || {}, descOpen: false };
+    openSheet('<div class="jbsh1"><span class="jblogo big jbc-sand">' + esc(init) + '</span><div class="jbsht"><b>' + esc(l.role || 'Job') + '</b><span>' + esc(l.company || 'Company not shown') + '</span></div><button class="jbx" data-jb="close" aria-label="Close">&times;</button></div>' +
+      '<div class="jbfacts"><span>' + esc(basics.join(' · ')) + '</span>' + (typeof l.fit === 'number' ? '<span>' + l.fit + '% fit</span>' : '') + '</div>' + (l.why ? '<div class="jbwhy">Matches: ' + esc(l.why) + '</div>' : '') + boostNote(l) +
+      '<div id="jbInfo"></div><div class="jbhint" id="jbLoadMsg">' + (l.source === 'reed' && !l.has_desc ? 'Loading the advert…' : '') + '</div>',
+      '<button class="btn primary" data-jb="lsave" data-id="' + esc(id) + '">Save</button><button class="btn" data-jb="ldismiss" data-id="' + esc(id) + '">Dismiss</button>' +
+      '<button class="btn' + (l.vote === 1 ? ' on' : '') + '" data-jb="llike" data-id="' + esc(id) + '">' + (l.vote === 1 ? 'Liked ✓' : 'More like this') + '</button><button class="btn" data-jb="ldislike" data-id="' + esc(id) + '">Not for me</button>' +
+      (l.url ? '<a class="btn" href="' + esc(l.url) + '" target="_blank" rel="noopener">Open on ' + esc(SRC[l.source] || 'the web') + '</a>' : ''));
+    paintInfo();
+    App.api('GET', '?jobs=lead&id=' + encodeURIComponent(id), null, function (st, d) {
+      if (!sh || sh.kind !== 'lead' || sh.id !== id) return;
+      var m = $('jbLoadMsg');
+      if (st === 200 && d && d.lead) { sh.details = d.lead.details || {}; if (m) m.innerHTML = d.detail_error ? esc('Could not load the full advert (' + d.detail_error + '). The basics are above.') : ''; }
+      else if (m) m.innerHTML = 'Could not load the full advert, try again later.';
+      paintInfo();
+    }, API);
+  }
   function leadAct(id, act) {
-    var i, l = null; for (i = 0; i < leads.length; i++) if (leads[i].id === id) l = leads[i];
+    var l = leadOf(id);
     if (!l) return;
+    if (act === 'like' && l.vote === 1) return;
     write('POST', '?jobs=leads', { id: id, action: act }, function (s, d) {
+      var i;
       if (s === 200 && d) {
+        if (act === 'like') { l.vote = 1; App.toast('Noted: more like this'); var lb = document.querySelectorAll('#jbSheet [data-jb=llike]'), k; for (k = 0; k < lb.length; k++) { lb[k].className = 'btn on'; lb[k].innerHTML = 'Liked ✓'; } paint(); return; }
         for (i = leads.length - 1; i >= 0; i--) if (leads[i].id === id) leads.splice(i, 1);
         newLeads = leads.length;
+        if (sh && sh.kind === 'lead') closeSheet();
         if (act === 'save' && d.job) { putJob(d.job); dirty(); App.toast('Saved to ' + ((stageOf(d.job.stage_id) || {}).name || 'your board')); if (d.tasks && d.tasks.follow) App.reload(); }
-        else App.toast('Dismissed');
+        else App.toast(act === 'dislike' ? 'Got it, fewer like this' : 'Dismissed');
         paint();
       } else App.toast('Could not do that, try again');
     });
@@ -238,7 +267,7 @@
     }
     return o;
   }
-  function openSheet(html) { var o = overlay(); $('jbSheet').innerHTML = html; $('jbSheet').scrollTop = 0; o.style.display = 'block'; }
+  function openSheet(html, foot) { var o = overlay(); $('jbSheet').innerHTML = '<div class="jbsbody" id="jbBody">' + html + '</div>' + (foot ? '<div class="jbsfoot"><div class="jbbtns">' + foot + '</div></div>' : ''); $('jbBody').scrollTop = 0; o.style.display = 'block'; }
   function closeSheet() { sh = null; var o = $('jbOv'); if (o) { o.style.display = 'none'; $('jbSheet').innerHTML = ''; } }
   function val(id) { var e = $(id); return e ? e.value : ''; }
 
@@ -262,19 +291,27 @@
     }
     return h;
   }
+  function applyTarget(d) {              // what the Apply button opens: Luc's own note if it is a link or email, else the company page Reed gave
+    var how = String((d && d.apply_how) || '').replace(/^\s+|\s+$/g, '');
+    if (/^https?:\/\/\S+$/i.test(how)) return { href: how, label: 'Open the application link' };
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(how)) return { href: 'mailto:' + how, label: 'Email your application' };
+    if (d && d.apply_url) return { href: d.apply_url, label: 'Apply on the company site' };
+    return null;
+  }
   function fdate(iso) { return iso ? sd(iso) : ''; }
   function infoHTML() {
-    var d = sh && sh.details, h = '', f = [], i, a;
+    var d = sh && sh.details, h = '', f = [], i, a, ap;
     if (!d || !sh.id) return '';
     if (d.contract) f.push(d.contract); if (d.job_type) f.push(d.job_type);
     if (d.salary_year) f.push(d.salary_year + ' a year'); else if (d.salary_type && d.salary_type !== 'per annum') f.push(d.salary_type);
     if (d.posted) f.push('Posted ' + fdate(d.posted)); if (d.expires) f.push('Closes ' + fdate(d.expires));
     if (typeof d.applicants === 'number') f.push(d.applicants + (d.applicants === 1 ? ' applicant' : ' applicants'));
     a = d.ai;
-    if (!f.length && !a && !d.description && !sh.aiBusy && !d.apply_url) return '';
+    if (!f.length && !a && !d.description && !sh.aiBusy && !applyTarget(d)) return '';
     h = '<div class="jblab">About the role</div>';
     if (f.length) { h += '<div class="jbfacts">'; for (i = 0; i < f.length; i++) h += '<span>' + esc(f[i]) + '</span>'; h += '</div>'; }
-    if (d.apply_url) h += '<a class="btn jbapply" href="' + esc(d.apply_url) + '" target="_blank" rel="noopener">Apply on the company site</a>';
+    ap = applyTarget(d);
+    if (ap) h += '<a class="btn jbapply" href="' + esc(ap.href) + '" target="_blank" rel="noopener">' + esc(ap.label) + '</a>';
     if (a) {
       if (a.summary) h += '<p class="jbsum">' + esc(a.summary) + '</p>';
       if (a.requirements && a.requirements.length) { h += '<div class="jbsub">Requirements</div><ul class="jbul">'; for (i = 0; i < a.requirements.length; i++) h += '<li>' + esc(a.requirements[i]) + '</li>'; h += '</ul>'; }
@@ -287,7 +324,7 @@
   }
   function paintInfo() { var el = $('jbInfo'); if (el) el.innerHTML = infoHTML(); }
   function enrich() {
-    if (!sh || !sh.id || !sh.details || !sh.details.description || sh.details.ai || sh.aiBusy) return;
+    if (!sh || sh.kind !== 'job' || !sh.id || !sh.details || !sh.details.description || sh.details.ai || sh.aiBusy) return;
     var id = sh.id; sh.aiBusy = true; sh.aiErr = false; paintInfo();
     App.api('POST', '?jobs=enrich', { id: id }, function (s, d) {
       if (!sh || sh.id !== id) return;
@@ -312,14 +349,14 @@
       field('jbUrl', 'Link to the posting', j.url, { type: 'url', max: 1000, cap: 'none' }) + field('jbLoc', 'Location', j.location) + field('jbSalary', 'Salary', j.salary, { max: 60 }) + '</div>' +
       '<div class="jblab">Working pattern</div><div class="jbchips" id="jbModes">' + modeHTML() + '</div>' +
       '<div id="jbInfo"></div><div class="jblab">Next step</div><div class="jbfs">' + field('jbNext', 'What', j.next_step, { cap: 'sentences' }) + '<label class="jbf"><span>When</span><input id="jbNextOn" type="date" value="' + esc(j.next_on || '') + '"></label><label class="jbf"><span>Time (optional)</span><input id="jbNextAt" type="time" value="' + esc(j.next_at || '') + '"></label></div><div class="jbhint">Giving the next step a date adds it to your To-do list, and it moves or goes away when you change it here.</div>' +
-      '<div class="jbfs">' + field('jbContact', 'Contact', j.contact) + field('jbCv', 'CV sent', j.cv_variant, { max: 80, cap: 'sentences' }) + '</div>' +
+      '<div class="jbfs">' + field('jbApplyHow', 'How to apply (link, email or form)', '', { max: 300, cap: 'none' }) + field('jbContact', 'Contact', j.contact) + field('jbCv', 'CV sent', j.cv_variant, { max: 80, cap: 'sentences' }) + '</div>' +
       '<label class="jbf"><span>Notes</span><textarea id="jbNotes" maxlength="4000" rows="5" autocapitalize="sentences">' + esc(j.notes || '') + '</textarea></label>' +
       (id ? '<div class="jbsrc">' + esc(SRC[j.source] || 'Added') + (j.created_at ? ' · ' + esc(sd(App.localISO(new Date(App.parseTS(j.created_at))))) : '') + '</div><div class="jblab">History</div><div id="jbHist"></div>' : '') +
-      '<div class="jbbtns"><button class="btn primary" data-jb="save">' + (id ? 'Save' : 'Add job') + '</button>' +
+      '', '<button class="btn primary" data-jb="save">' + (id ? 'Save' : 'Add job') + '</button>' +
       (j.url ? '<a class="btn" href="' + esc(j.url) + '" target="_blank" rel="noopener">Open posting</a>' : '') +
-      (id ? '<button class="btn danger" data-jb="del" id="jbDel">Delete</button>' : '') + '</div>');
+      (id ? '<button class="btn danger" data-jb="del" id="jbDel">Delete</button>' : ''));
     if (id) App.api('GET', '?jobs=1&id=' + encodeURIComponent(id), null, function (s, d) {
-      if (s === 200 && d && sh && sh.id === id) { sh.events = d.events || []; sh.details = (d.job && d.job.details) || {}; var el = $('jbHist'); if (el) el.innerHTML = histHTML(); paintInfo(); enrich(); }
+      if (s === 200 && d && sh && sh.id === id) { sh.events = d.events || []; sh.details = (d.job && d.job.details) || {}; sh.applyLoaded = true; var ah = $('jbApplyHow'); if (ah && !ah.value) ah.value = sh.details.apply_how || ''; var el = $('jbHist'); if (el) el.innerHTML = histHTML(); paintInfo(); enrich(); }
     }, API);
   }
   function taskNote(t, base) {
@@ -334,6 +371,7 @@
     var body = { company: company, role: role, url: val('jbUrl').replace(/^\s+|\s+$/g, ''), location: val('jbLoc'), salary: val('jbSalary'), mode: sh.mode, next_step: val('jbNext'), next_on: val('jbNextOn'), next_at: val('jbNextOn') ? val('jbNextAt') : '', contact: val('jbContact'), cv_variant: val('jbCv'), notes: val('jbNotes') };
     var id = sh.id;
     if (!id) body.stage_id = sh.stage;
+    if (!id || sh.applyLoaded) body.apply_how = val('jbApplyHow');
     write(id ? 'PATCH' : 'POST', '?jobs=1' + (id ? '&id=' + encodeURIComponent(id) : ''), body, function (s, d) {
       if ((s === 200 || s === 201) && d && d.job) { putJob(d.job); closeSheet(); paint(); dirty(); App.toast(taskNote(d.tasks, id ? 'Saved' : 'Job added')); if (d.tasks && (d.tasks.next || d.tasks.follow)) App.reload(); setTimeout(fetchJobs, 300); }
       else App.toast(s === 400 ? 'Check the link and date' : 'Could not save, try again');
@@ -386,7 +424,7 @@
     sh = { kind: 'stages', draft: d, pal: -1, delArm: 0 };
     openSheet('<div class="jbsh1"><div class="jbsht"><b>Pipeline stages</b><span>Drag ☰ to reorder. Tap the colour dot to change it. Removing a stage moves its jobs to the stage before it.</span></div><button class="jbx" data-jb="close" aria-label="Close">&times;</button></div>' +
       '<div id="jbSList">' + sRows() + '</div><button class="jbaddc" data-jb="sadd">+ Add stage</button>' +
-      '<div class="jbbtns"><button class="btn primary" data-jb="ssave">Save</button><button class="btn" data-jb="close">Cancel</button></div>');
+      '', '<button class="btn primary" data-jb="ssave">Save</button><button class="btn" data-jb="close">Cancel</button>');
   }
   function sRedraw() { var el = $('jbSList'); if (el) el.innerHTML = sRows(); }
   function sRemove(i) {
@@ -469,6 +507,9 @@
     else if (act === 'fcheck') runFeed(true);
     else if (act === 'fcfg') { feedOpen = !feedOpen; if (feedOpen && !feedCfg) fetchFeedCfg(); paint(); }
     else if (act === 'fsave') feedSave();
+    else if (act === 'lopen') openLead(el.getAttribute('data-id'));
+    else if (act === 'ldislike') leadAct(el.getAttribute('data-id'), 'dislike');
+    else if (act === 'llike') leadAct(el.getAttribute('data-id'), 'like');
     else if (act === 'lsave') leadAct(el.getAttribute('data-id'), 'save');
     else if (act === 'ldismiss') leadAct(el.getAttribute('data-id'), 'dismiss');
     else if (act === 'view') { var vv = el.getAttribute('data-v'); view = vv === 'stats' ? 'stats' : vv === 'discover' ? 'discover' : 'board'; store.set('jobsView', view); if (view === 'stats') fetchStats(true); if (view === 'discover') { fetchLeads(true); openDiscover(); } paint(); }

@@ -173,13 +173,18 @@ class H:
                 return 200, {'added': n, 'skipped': 0, 'failed': 0}
             if what == 'quick':
                 return 201, {'job': put({'role': body.get('text', 'Saved job'), 'url': body.get('url', '')}, 'share')}
-            if method == 'GET' and what not in ('stats', 'leads', 'feedcfg', 'feed'):
+            if method == 'GET' and what not in ('stats', 'leads', 'lead', 'feedcfg', 'feed'):
                 if self.fail_jobs: return 500, {'error': 'upstream error'}
                 if 'id' in q:
                     j = [x for x in self.jjobs if x['id'] == q['id'][0]][0]; return 200, {'job': j, 'events': self.jevents.get(j['id'], [])}
                 return 200, {'stages': self.jstages, 'jobs': order(), 'new_leads': len(self.jleads)}
+            if what == 'lead':
+                l = [x for x in self.jleads if x['id'] == q['id'][0]][0]
+                return 200, {'lead': dict(l, details=dict(l.get('meta', {}), description=l.get('desc', 'Full advert text'))), 'detail_error': ''}
             if what == 'leads':
                 if method == 'GET': return 200, {'leads': list(self.jleads)}
+                if body.get('action') == 'like':
+                    [x for x in self.jleads if x['id'] == body.get('id')][0]['vote'] = 1; return 200, {'ok': True, 'lead_id': body.get('id'), 'vote': 1}
                 l = [x for x in self.jleads if x['id'] == body.get('id')][0]; self.jleads = [x for x in self.jleads if x is not l]
                 if body.get('action') == 'dismiss': return 200, {'ok': True, 'lead_id': l['id']}
                 return 200, {'job': put({'role': l['role'], 'company': l['company'], 'location': l['location'], 'url': l['url']}, l['source']), 'lead_id': l['id'], 'tasks': {}}
