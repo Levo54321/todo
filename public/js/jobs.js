@@ -14,7 +14,7 @@
   var MODES = [['remote', 'Remote'], ['hybrid', 'Hybrid'], ['onsite', 'On-site']];
   var COLORS = ['sand', 'clay', 'ochre', 'sage', 'moss', 'stone', 'rose', 'slate'];
   var KINDS = [['active', 'In progress'], ['won', 'Offer (counts as won)'], ['lost', 'Closed (counts as lost)']];
-  var SRC = { linkedin: 'LinkedIn', adzuna: 'Adzuna', share: 'Shared from phone', manual: 'Added by hand' };
+  var SRC = { linkedin: 'LinkedIn', reed: 'Reed', adzuna: 'Adzuna', share: 'Shared from phone', manual: 'Added by hand' };
   var ICAL = '<svg class="jbi" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
 
   /* ---------- helpers ---------- */
@@ -58,6 +58,48 @@
       paint();
     }, API);
   }
+  /* ---------- Reed feed (v1077) ---------- */
+  var feedCfg = null, feedOpen = false, feedBusy = false, feedMsg = '', feedTried = false;
+  function fetchFeedCfg() {
+    App.api('GET', '?jobs=feedcfg', null, function (s, d) { if (s === 200 && d && d.cfg) { feedCfg = d.cfg; paint(); } }, API);
+  }
+  function runFeed(force) {
+    if (feedBusy || feedOpen) return;
+    feedBusy = true; feedMsg = force ? 'Checking Reed…' : ''; paint();
+    write('POST', '?jobs=feed', { force: !!force }, function (s, d) {
+      feedBusy = false;
+      if (s === 200 && d) {
+        if (d.skipped) feedMsg = '';
+        else feedMsg = d.added ? d.added + ' new from Reed' : 'Nothing new from Reed';
+        if (!d.skipped) fetchLeads(true);
+        fetchFeedCfg();
+      } else feedMsg = s === 503 ? 'Reed key missing in Vercel' : 'Could not reach Reed, try again later';
+      paint();
+    });
+  }
+  function lastCheck() {
+    if (!feedCfg || !feedCfg.last_run) return 'Not checked yet';
+    var d = Math.floor((App.nowMs() - App.parseTS(feedCfg.last_run)) / 3600000);
+    return 'Reed checked ' + (d < 1 ? 'within the last hour' : d < 24 ? d + ' hours ago' : Math.floor(d / 24) + ' days ago');
+  }
+  function feedBar() {
+    var h = '<div class="jbfeed"><span class="jbfeedt">' + esc(feedMsg || lastCheck()) + '</span><span class="jbfeedb"><button class="btn" data-jb="fcheck"' + (feedBusy ? ' disabled' : '') + '>Check now</button><button class="btn" data-jb="fcfg">' + (feedOpen ? 'Close' : 'Settings') + '</button></span></div>';
+    if (feedOpen && feedCfg) {
+      h += '<div class="jbfeedcfg"><label class="jbf"><span>Job titles to search (one per line, up to 10)</span><textarea id="jbFKw" rows="6">' + esc((feedCfg.keywords || []).join('\n')) + '</textarea></label>' +
+        '<label class="jbf"><span>Your skills, used for the fit score (one per line)</span><textarea id="jbFSk" rows="8">' + esc((feedCfg.skills || []).join('\n')) + '</textarea></label>' +
+        '<div class="jbhint">Fit = how many of these skills a posting mentions (6 or more is 100). London (15 miles) and remote only.</div><div class="jbbtns"><button class="btn primary" data-jb="fsave">Save</button></div></div>';
+    }
+    return h;
+  }
+  function lines(id) { var v = ($(id) || {}).value || '', a = v.split(/[\n,]+/), o = [], i; for (i = 0; i < a.length; i++) if (a[i].replace(/\s+/g, '')) o.push(a[i].replace(/^\s+|\s+$/g, '')); return o; }
+  function feedSave() {
+    var kw = lines('jbFKw'), sk = lines('jbFSk');
+    if (!kw.length) { App.toast('Add at least one job title'); return; }
+    write('POST', '?jobs=feedcfg', { keywords: kw, skills: sk }, function (s, d) {
+      if (s === 200 && d && d.cfg) { feedCfg = d.cfg; feedOpen = false; feedMsg = 'Saved. Check now to search again'; paint(); } else App.toast('Could not save, try again');
+    });
+  }
+  function openDiscover() { if (!feedCfg) fetchFeedCfg(); if (!feedTried) { feedTried = true; App.whenToken(function () { runFeed(false); }); } }
   function dirty() { statsAt = 0; }   // a change was saved: the numbers are out of date
 
   /* ---------- analytics ---------- */
@@ -103,15 +145,16 @@
   function leadsHTML() {
     if (leadsErr && !leadsLoaded) return '<div class="jbmsg">' + esc(leadsErr) + '<br><button class="btn primary" data-jb="lretry">Try again</button></div>';
     if (!leadsLoaded) return '<div class="jbmsg">Loading recommendations…</div>';
-    if (!leads.length) return '<div class="jbmsg">Nothing to look at right now.<br><span class="jbsm">Postings from your LinkedIn job-alert emails land here. Save the ones you like, dismiss the rest.</span></div>';
-    var h = '<p class="jbfoot jbtop">' + leads.length + (leads.length === 1 ? ' recommended posting' : ' recommended postings') + ', London or remote. Save moves one onto your board.</p><div class="jbcards">', i, l, meta;
+    if (!leads.length) return feedBar() + '<div class="jbmsg">Nothing to look at right now.<br><span class="jbsm">Reed postings and your LinkedIn job-alert emails land here. Save the ones you like, dismiss the rest.</span></div>';
+    var h = feedBar() + '<p class="jbfoot jbtop">' + leads.length + (leads.length === 1 ? ' recommended posting' : ' recommended postings') + ', London or remote. Save moves one onto your board.</p><div class="jbcards">', i, l, meta;
     for (i = 0; i < leads.length; i++) {
       l = leads[i]; meta = [];
       if (l.location) meta.push(l.location);
       if (l.mode === 'remote' && (l.location || '').toLowerCase().indexOf('remote') < 0) meta.push('Remote');
+      if (l.salary) meta.push(l.salary);
       meta.push((SRC[l.source] || l.source) + ' · ' + ago(l.created_at));
-      h += '<section class="jbcard2 jblead"><div class="jbco"><span class="jblogo jbc-sand">' + esc((l.company || l.role || '?').charAt(0).toUpperCase()) + '</span><span class="jbcoh">' + esc(l.company || 'Company not shown') + '</span></div>' +
-        '<div class="jbrole">' + esc(l.role || 'Job') + '</div><div class="jbmeta">' + esc(meta.join(' · ')) + '</div>' +
+      h += '<section class="jbcard2 jblead"><div class="jbco"><span class="jblogo jbc-sand">' + esc((l.company || l.role || '?').charAt(0).toUpperCase()) + '</span><span class="jbcoh">' + esc(l.company || 'Company not shown') + '</span>' + (typeof l.fit === 'number' ? '<span class="jbfit">' + l.fit + '% fit</span>' : '') + '</div>' +
+        '<div class="jbrole">' + esc(l.role || 'Job') + '</div><div class="jbmeta">' + esc(meta.join(' · ')) + '</div>' + (l.why ? '<div class="jbwhy">Matches: ' + esc(l.why) + '</div>' : '') +
         '<div class="jbbtns"><button class="btn primary" data-jb="lsave" data-id="' + esc(l.id) + '">Save</button><button class="btn" data-jb="ldismiss" data-id="' + esc(l.id) + '">Dismiss</button>' +
         (l.url ? '<a class="btn" href="' + esc(l.url) + '" target="_blank" rel="noopener">View</a>' : '') + '</div></section>';
     }
@@ -387,9 +430,12 @@
     if (act === 'retry') { err = ''; fetchJobs(); paint(); }
     else if (act === 'sretry') { statsErr = ''; fetchStats(true); paint(); }
     else if (act === 'lretry') { leadsErr = ''; fetchLeads(true); paint(); }
+    else if (act === 'fcheck') runFeed(true);
+    else if (act === 'fcfg') { feedOpen = !feedOpen; if (feedOpen && !feedCfg) fetchFeedCfg(); paint(); }
+    else if (act === 'fsave') feedSave();
     else if (act === 'lsave') leadAct(el.getAttribute('data-id'), 'save');
     else if (act === 'ldismiss') leadAct(el.getAttribute('data-id'), 'dismiss');
-    else if (act === 'view') { var vv = el.getAttribute('data-v'); view = vv === 'stats' ? 'stats' : vv === 'discover' ? 'discover' : 'board'; store.set('jobsView', view); if (view === 'stats') fetchStats(true); if (view === 'discover') fetchLeads(true); paint(); }
+    else if (act === 'view') { var vv = el.getAttribute('data-v'); view = vv === 'stats' ? 'stats' : vv === 'discover' ? 'discover' : 'board'; store.set('jobsView', view); if (view === 'stats') fetchStats(true); if (view === 'discover') { fetchLeads(true); openDiscover(); } paint(); }
     else if (act === 'tab') { cur = sid; store.set('jobsCur', sid); paint(); }
     else if (act === 'open') openJob(el.getAttribute('data-id'));
     else if (act === 'add') openJob('', '');
@@ -418,7 +464,7 @@
 
   App.register('jobs', {
     title: 'Jobs',
-    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); if (view === 'stats' && !sh && Date.now() - statsAt > 60000) fetchStats(); if (view === 'discover' && !sh && Date.now() - leadsAt > 60000) fetchLeads(); },
-    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); if (view === 'stats') fetchStats(); if (view === 'discover') fetchLeads(true); }); paint(); }
+    render: function () { paint(); if (loaded && !sh && !loading && Date.now() - fetchedAt > 45000) fetchJobs(); if (view === 'stats' && !sh && Date.now() - statsAt > 60000) fetchStats(); if (view === 'discover' && !sh && !feedOpen && Date.now() - leadsAt > 60000) fetchLeads(); },
+    show: function () { App.whenToken(function () { if (!loaded || Date.now() - fetchedAt > 10000) fetchJobs(); if (view === 'stats') fetchStats(); if (view === 'discover') { fetchLeads(true); openDiscover(); } }); paint(); }
   });
 })();

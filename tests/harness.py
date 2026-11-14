@@ -45,6 +45,7 @@ class H:
         self.jstages = None  # Jobs tab: pipeline stages (created on first GET like the database does)
         self.jjobs = []
         self.jevents = {}
+        self.feedcfg = {'keywords': ['AI ops'], 'skills': ['RLHF', 'LLM'], 'last_run': None, 'last_added': 0, 'last_err': ''}; self.feed_added = []  # Reed feed mock
         self.jleads = []  # Jobs Discover: [{id, source, role, company, location, mode, url, created_at}]
         self.fail_jobs = False  # make GET /api/pprojects?jobs answer 500
         self.vault = {'configured': True, 'pw': None, 'pass': None, 'n': 0, 'fails': 0, 'entries': {}, 'gets': 0}
@@ -158,9 +159,17 @@ class H:
                 for j in self.jjobs:
                     if j['stage_id'] not in keep: j['stage_id'] = keep[0]
                 self.jstages = new; return 200, {'stages': new, 'jobs': order()}
+            if what == 'feedcfg':
+                if method == 'POST': self.feedcfg = dict(self.feedcfg, keywords=body['keywords'], skills=body['skills'])
+                return 200, {'cfg': self.feedcfg}
+            if what == 'feed':
+                self.feedcfg['last_run'] = '2026-11-14T09:00:00Z'
+                if body.get('force') is not True and self.feedcfg.get('fresh'): return 200, {'skipped': True}
+                self.jleads += self.feed_added; n = len(self.feed_added); self.feed_added = []
+                return 200, {'added': n, 'skipped': 0, 'failed': 0}
             if what == 'quick':
                 return 201, {'job': put({'role': body.get('text', 'Saved job'), 'url': body.get('url', '')}, 'share')}
-            if method == 'GET' and what not in ('stats', 'leads'):
+            if method == 'GET' and what not in ('stats', 'leads', 'feedcfg', 'feed'):
                 if self.fail_jobs: return 500, {'error': 'upstream error'}
                 if 'id' in q:
                     j = [x for x in self.jjobs if x['id'] == q['id'][0]][0]; return 200, {'job': j, 'events': self.jevents.get(j['id'], [])}

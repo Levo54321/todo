@@ -117,7 +117,7 @@ def run(h):
     p.click('.jbcard'); wait(250); p.fill('#jbNextOn', '2026-10-20'); p.click('[data-jb=save]'); wait(400)
 
     # Discover (leads from LinkedIn alert emails)
-    h.jleads = [{'id': 'L1', 'source': 'linkedin', 'role': 'AI Data Operations Manager', 'company': 'Corvid Labs', 'location': 'London, England', 'mode': '', 'url': 'https://www.linkedin.com/jobs/view/1111111111/', 'created_at': '2026-11-13T08:00:00Z'},
+    h.jleads = [{'id': 'L1', 'source': 'linkedin', 'role': 'AI Data Operations Manager', 'company': 'Corvid Labs', 'location': 'London, England', 'mode': '', 'url': 'https://www.linkedin.com/jobs/view/1111111111/', 'created_at': '2026-11-13T08:00:00Z', 'fit': 83, 'why': 'RLHF, LLM', 'salary': '£60k-£70k'},
                 {'id': 'L2', 'source': 'linkedin', 'role': 'Eval Lead', 'company': 'Cloudy', 'location': 'United Kingdom', 'mode': 'remote', 'url': 'https://www.linkedin.com/jobs/view/2222222222/', 'created_at': '2026-11-14T08:00:00Z'}]
     p.click('[data-jb=view][data-v=board]'); wait(200); p.evaluate("App.views.jobs.show()"); wait(500)
     p.click('[data-jb=view][data-v=discover]'); wait(600)
@@ -125,6 +125,16 @@ def run(h):
     chk('Discover lists both postings with Save / Dismiss / View', len(p.query_selector_all('.jblead')) == 2 and len(p.query_selector_all('[data-jb=lsave]')) == 2 and len(p.query_selector_all('.jblead a.btn')) == 2)
     chk('lead shows company, role, place and where it came from', all(t in p.inner_text('.jblead') for t in ['Corvid Labs', 'AI Data Operations Manager', 'London', 'LinkedIn']), p.inner_text('.jblead'))
     p.screenshot(path=os.path.join(OUT, 'jobs_discover.png'))
+    chk('lead shows fit score, matched skills and salary', all(t in p.inner_text('.jblead') for t in ['83% fit', 'Matches: RLHF, LLM', '£60k-£70k']), p.inner_text('.jblead'))
+    chk('opening Discover asks the server to check Reed (not forced)', any(c[0] == 'POST' and c[2].get('jobs') == ['feed'] and c[3] == {'force': False} for c in h.calls), [c for c in h.calls if str(c[2].get('jobs', '')).startswith("['feed")])
+    h.feed_added = [{'id': 'R1', 'source': 'reed', 'role': 'RLHF Programme Lead', 'company': 'Reedco', 'location': 'London', 'mode': '', 'url': 'https://www.reed.co.uk/jobs/x/1', 'created_at': '2026-11-14T09:00:00Z', 'fit': 100, 'why': 'RLHF', 'salary': ''}]
+    p.click('[data-jb=fcheck]'); wait(700)
+    chk('Check now forces a search and the new Reed posting appears', any(c[0] == 'POST' and c[2].get('jobs') == ['feed'] and c[3] == {'force': True} for c in h.calls) and 'Reedco' in p.inner_text('#jobsPane') and '1 new from Reed' in p.inner_text('#jobsPane'), p.inner_text('#jobsPane')[:200])
+    p.click('[data-jb=fcfg]'); wait(400)
+    chk('Settings shows the keywords and skills boxes', p.input_value('#jbFKw') == 'AI ops' and p.input_value('#jbFSk') == 'RLHF\nLLM')
+    p.fill('#jbFKw', 'AI ops\nLLM evaluation'); p.fill('#jbFSk', 'RLHF, LLM\nSLA'); p.click('[data-jb=fsave]'); wait(500)
+    chk('Settings save sends the lists (commas or lines)', calls('POST')[-1][3] == {'keywords': ['AI ops', 'LLM evaluation'], 'skills': ['RLHF', 'LLM', 'SLA']} and not p.query_selector('#jbFKw'), calls('POST')[-1][3])
+    p.click('[data-jb=ldismiss][data-id=R1]'); wait(400)
     p.click('.jblead [data-jb=lsave]'); wait(500)
     chk('Save posts the lead id and removes it from the list', calls('POST')[-1][3] == {'id': 'L1', 'action': 'save'} and len(p.query_selector_all('.jblead')) == 1, calls('POST')[-1][3])
     p.click('[data-jb=ldismiss]'); wait(500)

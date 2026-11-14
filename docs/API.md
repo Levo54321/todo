@@ -21,6 +21,14 @@ change the header in the endpoint file and regenerate._
 // plus a prefix rule and a few spoken filler words in STOP. Keep the two in step when matching changes.
 ```
 
+## api/_jobfeed.js
+```
+// Reed job feed for the Jobs tab (Discover). Not an endpoint: used by api/_jobs.js (routes ?jobs=feed and ?jobs=feedcfg).
+// Reed Jobseeker API: GET https://www.reed.co.uk/api/1.0/search, basic auth with REED_API_KEY as the user name and an empty password.
+// London (15 miles) plus a "remote" search per keyword; no remote filter exists, so remote hits are recognised from the text.
+// Fit score = how many of Luc's skills appear in the title/snippet (6 or more = 100). Pure functions here; the network call is injectable for tests.
+```
+
 ## api/_jobmail.js
 ```
 // Reads one LinkedIn job-alert email into leads (Jobs tab, Discover). Used by api/_jobs.js for POST /api/pprojects?jobs=email.
@@ -57,8 +65,11 @@ change the header in the endpoint file and regenerate._
 //                                    weeks:[{start,n}] (last 8, Monday start, by applied_on), time:[{name,color,days,n}] (average days
 //                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
 //                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
-//   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,created_at}] }  Discover: recommended postings not yet saved (v1076, setup28.sql)
+//   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,fit,why,salary,created_at}] } best fit first  Discover: recommended postings not yet saved (v1076, setup28.sql)
 //   POST  ?jobs=leads {id, action:'save'|'dismiss'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss: { ok }
+//   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
+//                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
+//   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
 //   POST  ?jobs=email {text, links:[{url,text}]}  -> { added, skipped, seen }   for the Google Apps Script that reads LinkedIn job-alert emails
 //                                    (docs/jobs/linkedin-alerts.gs). Gemini reads the text and says which link is which job; only LinkedIn job links
 //                                    from the email are used; only London or remote jobs are kept; postings already saved or already offered are

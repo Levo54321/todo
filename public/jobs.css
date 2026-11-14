@@ -130,3 +130,9 @@ body[data-view=jobs] #rail{background:#100f0d}
   .jbch{display:none}
   .jbsheet{width:100%;border-left:0}
 }
+
+.jbfeed{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;margin:0 2px 12px;font-size:13px;color:var(--muted)}
+.jbfeedt{-webkit-flex:1;flex:1;min-width:0;padding-right:8px}.jbfeedb{display:-webkit-box;display:-webkit-flex;display:flex}.jbfeedb .btn{margin-left:8px}
+.jbfeedcfg{margin:0 2px 16px;padding:16px;border-radius:12px;border:1px solid var(--rule)}.jbfeedcfg textarea{width:100%;box-sizing:border-box;font-size:16px;font-family:inherit}
+.jbfit{margin-left:auto;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;background-color:var(--accsoft,rgba(255,255,255,.12));color:var(--acc,inherit)}
+.jbwhy{margin-top:6px;font-size:12px;line-height:17px;color:var(--muted)}

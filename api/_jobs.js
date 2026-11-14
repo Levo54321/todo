@@ -24,8 +24,11 @@
 //                                    weeks:[{start,n}] (last 8, Monday start, by applied_on), time:[{name,color,days,n}] (average days
 //                                    spent in each stage), sources:[{source,total,applied,heard,rate}], lost, today } }  (v1075, needs setup27.sql)
 //                                    "heard back" = an applied job that reached the 3rd stage or later (Screening onwards by default).
-//   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,created_at}] }  Discover: recommended postings not yet saved (v1076, setup28.sql)
+//   GET   ?jobs=leads            -> { leads:[{id,source,role,company,location,mode,url,fit,why,salary,created_at}] } best fit first  Discover: recommended postings not yet saved (v1076, setup28.sql)
 //   POST  ?jobs=leads {id, action:'save'|'dismiss'} -> save: { job, lead_id } (a job in the first stage, source kept), dismiss: { ok }
+//   POST  ?jobs=feed {force?}    -> { added, skipped, failed, last_run } | { skipped:true, last_run, added }   Reed search (v1077, setup29.sql), London 15 miles + remote postings, scored against the skills list;
+//                                    runs at most once per 20 h unless force; needs env REED_API_KEY (503 if missing); results go into job_leads with source 'reed', fit 0-100, why, salary
+//   GET   ?jobs=feedcfg          -> { cfg:{keywords:[...],skills:[...],last_run,last_added,last_err} }     POST ?jobs=feedcfg {keywords:[1-10], skills:[0-40]} -> { cfg }
 //   POST  ?jobs=email {text, links:[{url,text}]}  -> { added, skipped, seen }   for the Google Apps Script that reads LinkedIn job-alert emails
 //                                    (docs/jobs/linkedin-alerts.gs). Gemini reads the text and says which link is which job; only LinkedIn job links
 //                                    from the email are used; only London or remote jobs are kept; postings already saved or already offered are
@@ -39,6 +42,7 @@
 // column sizes (company 120, role 160, location 120, salary 60, contact 120, cv_variant 80, notes 4000, next_step 120); next_at HH:MM or ''.
 var todos = require('./todos.js');
 var jobmail = require('./_jobmail.js');
+var jobfeed = require('./_jobfeed.js');
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var TEXT = { company: 120, role: 160, location: 120, salary: 60, contact: 120, cv_variant: 80, notes: 4000, next_step: 120 };
 var COLORS = ['sand', 'clay', 'ochre', 'sage', 'moss', 'stone', 'rose', 'slate'], KINDS = ['active', 'won', 'lost'];
@@ -210,6 +214,25 @@ module.exports = async function handler(req, res) {
       if (lb.action === 'save' && lr && lr.job && !lr.again) { var lt = await syncLinks(token, lr.job, {}, true); lr.job = publicRow(lr.job); lr.tasks = lt; }
       else if (lr && lr.job) lr.job = publicRow(lr.job);
       return send(res, 200, lr);
+    }
+    if (what === 'feedcfg') {
+      if (m === 'GET') return send(res, 200, { cfg: await todos.rpc('job_feed_get', { p_token: token }) });
+      if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      var fb = readBody(req), fk = jobfeed.cleanList(fb.keywords, 10), fs = jobfeed.cleanList(fb.skills, 40);
+      if (!fk || !fs || !fk.length) return send(res, 400, { error: 'keywords (1 to 10) and skills needed' });
+      return send(res, 200, { cfg: await todos.rpc('job_feed_put', { p_token: token, p_cfg: { keywords: fk, skills: fs } }) });
+    }
+    if (what === 'feed') {
+      if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      var gb = readBody(req), cfg = await todos.rpc('job_feed_get', { p_token: token });   // also refuses a bad token
+      if (!gb.force && !jobfeed.stale(cfg, Date.now())) return send(res, 200, { skipped: true, last_run: cfg.last_run, added: cfg.last_added });
+      if (!process.env.REED_API_KEY) return send(res, 503, { error: 'REED_API_KEY is not set in Vercel' });
+      var fr;
+      try { fr = await jobfeed.search(cfg, process.env.REED_API_KEY, todayISO()); }
+      catch (fe) { await todos.rpc('job_feed_ran', { p_token: token, p_added: 0, p_err: String(fe.message).slice(0, 200) }); return send(res, fe.status || 502, { error: String(fe.message).slice(0, 200) }); }
+      var fa = fr.leads.length ? await todos.rpc('job_leads_add', { p_token: token, p_leads: fr.leads, p_source: 'reed' }) : { added: 0, skipped: 0 };
+      var fc = await todos.rpc('job_feed_ran', { p_token: token, p_added: fa.added, p_err: fr.failed ? fr.failed + ' of ' + fr.calls + ' searches failed' : '' });
+      return send(res, 200, { added: fa.added, skipped: fa.skipped, failed: fr.failed, last_run: fc.last_run });
     }
     if (what === 'email') {
       if (m !== 'POST') return send(res, 405, { error: 'method not allowed' });
