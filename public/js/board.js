@@ -6,6 +6,8 @@
   var projects = [], known = false, failed = false, fold = {}, msg = '', pick = null, drag = null;
   var tab = store.get('bdTab') === 'ins' ? 'ins' : 'board';
   var rows = null, hErr = '', hLoading = false, hAt = 0;
+  var clients = [], cardsOk = false, cFilter = '';  // v35: Work clients; filter '' = All, 'int' = Internal, else a client id (remembered in localStorage wbClient)
+  try { cFilter = store.get('wbClient') || ''; } catch (e0) { cFilter = ''; }
   var cards = {}, people = {}, cardsAt = 0, kept = null; // v34: RAG / owner / due per project (GET ?cards=1), scroll kept while a project page is open
   try { fold = JSON.parse(store.get('bdFold') || '{}') || {}; } catch (e) { fold = {}; }
 
@@ -22,10 +24,11 @@
   function loadCards() { // board header details; fetched when the board is shown (not on every refresh)
     if (!App.token()) return;
     cardsAt = Date.now();
-    App.api('GET', '?cards=1', null, function (s, d) { if (s === 200 && d && d.cards) setCards(d.cards, d.people); }, '/api/projects');
+    App.api('GET', '?cards=1', null, function (s, d) { if (s === 200 && d && d.cards) setCards(d.cards, d.people, d.clients || []); }, '/api/projects');
   }
-  function setCards(c, pl) {
+  function setCards(c, pl, cl) {
     var i; cards = c || {}; people = {};
+    if (cl) { clients = cl; cardsOk = true; }
     for (i = 0; i < (pl || []).length; i++) people[pl[i].id] = pl[i];
     paint();
   }
@@ -34,6 +37,14 @@
     return pe.name.split(' ')[0] + (pe.removed ? ' (removed)' : '');
   }
   var RAGN = { r: 'Red', a: 'Amber', g: 'Green' };
+  function clientById(id) { var i; for (i = 0; i < clients.length; i++) if (clients[i].id === id) return clients[i]; return null; }
+  // The active filter, once the cards are loaded: a stored client that no longer exists falls back to All.
+  function curFilter() { return cardsOk && cFilter && (cFilter === 'int' || clientById(cFilter)) && clients.length ? cFilter : ''; }
+  function wanted(p, f) { // does this project's column show under filter f? (hides columns only, never changes counts)
+    if (!f) return true;
+    var cid = (cards[p.id] || {}).client || '';
+    return f === 'int' ? !cid : cid === f;
+  }
 
   /* ---------- data ---------- */
   function openWork() {
@@ -256,11 +267,12 @@
     h = '<section class="bdcol' + (folded ? ' folded' : '') + (hold ? ' hold' : '') + '">' +
       '<div class="bdtop"><button class="bdhead" data-bd="fold" data-pid="' + esc(p.id) + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
       (cd.rag ? '<span class="wprag wprag-' + cd.rag + '" title="RAG: ' + RAGN[cd.rag] + '" aria-label="RAG ' + RAGN[cd.rag] + '"></span>' : '') +
+      (cd.client && clientById(cd.client) ? App.clientLogo(clientById(cd.client), 'sm') : '') +
       '<span class="bdname">' + esc(p.name) + '</span>' +
       (hold ? '<span class="bdp hold">On hold</span>' : p.prio ? '<span class="bdp bdp' + p.prio + '">' + PL[p.prio] + '</span>' : '') +
       '<span class="bdn">' + (tasks.length - pzn) + ' open</span><span class="bdcaret">' + (folded ? '▸' : '▾') + '</span></button>' +
       '<button class="bdopen" data-bd="page" data-pid="' + esc(p.id) + '" aria-label="Open the ' + esc(p.name) + ' page">Open ›</button></div>' +
-      '<div class="bdhealth">' + (cd.owner && firstName(cd.owner) ? '<span class="bdh own">' + esc(firstName(cd.owner)) + '</span>' : '') +
+      '<div class="bdhealth">' + (cd.client && clientById(cd.client) ? '<span class="bdh cli">' + esc(clientById(cd.client).name) + '</span>' : '') + (cd.owner && firstName(cd.owner) ? '<span class="bdh own">' + esc(firstName(cd.owner)) + '</span>' : '') +
       (cd.due && cd.due < App.today() ? '<span class="bdh bad pdue">Past due</span>' : '') + health(tasks) +
       (p.order && p.order.length && tasks.length > 1 ? '<button class="bdh auto" data-bd="auto" data-pid="' + esc(p.id) + '">↺ Auto-order</button>' : '') + '</div>';
     if (!folded) {
@@ -278,10 +290,17 @@
     for (i = 0; i < rest.length; i++) h += row(rest[i], i, '', rest.length, false);
     return h + '</ul></section>';
   }
+  function filterBar() { // All / Internal / each client; only once there is at least one client
+    if (tab !== 'board' || !cardsOk || !clients.length) return '';
+    var f = curFilter(), h = '<div class="bdfilter" role="group" aria-label="Show projects for"><span class="bdfl">Show</span>', i;
+    h += '<button class="chip' + (!f ? ' on' : '') + '" data-bd="cf" data-val="">All</button><button class="chip' + (f === 'int' ? ' on' : '') + '" data-bd="cf" data-val="int">Internal</button>';
+    for (i = 0; i < clients.length; i++) h += '<button class="chip wcchip' + (f === clients[i].id ? ' on' : '') + '" data-bd="cf" data-val="' + esc(clients[i].id) + '">' + App.clientLogo(clients[i], 'sm') + esc(clients[i].name) + '</button>';
+    return h + '</div>';
+  }
   function tabBar() {
     return '<div class="bdbar"><div class="bdtools"><span class="sg sm"><button class="' + (tab === 'board' ? 'on' : '') + '" data-bd="tab" data-tab="board">Board</button>' +
       '<button class="' + (tab === 'ins' ? 'on' : '') + '" data-bd="tab" data-tab="ins">Insights</button></span>' +
-      '<button class="chip" data-pj="open">Manage projects…</button></div></div>';
+      '<button class="chip" data-pj="open">Manage projects…</button></div>' + filterBar() + '</div>';
   }
   var LEGEND = '<div class="bdlegend"><span class="lg blk">Blocked</span><span class="lg od">Overdue</span><span class="lg td">Due today</span><span class="lg hi">High priority</span><span class="lg pz">Paused</span>' +
     '<span class="lgx">Order follows the Work list: priority, quick wins, deadline. Drag ☰ or tap a number to change it.</span></div>';
@@ -306,10 +325,13 @@
     if (bl) sums.push(bl + ' blocked');
     if (pzs) sums.push(pzs + ' paused');
     if (g.archived) sums.push(g.archived + ' completed');
+    var f = curFilter(), shownCols = 0, fh = '';
+    for (i = 0; i < g.cols.length; i++) if (wanted(g.cols[i].p, f)) { fh += column(g.cols[i]); shownCols++; }
+    if (f) sums.push('showing ' + shownCols + ' of ' + g.cols.length + ' for ' + (f === 'int' ? 'Internal' : esc(clientById(f).name)));
+    else if (g.rest.length) fh += looseColumn(g.rest);
+    if (f && !shownCols) fh = '<p class="empty">No projects here yet. Tap “All” to see everything.</p>';
     h += '<div class="bdsum">' + sums.join(' · ') + '</div>' + LEGEND +
-      (msg ? '<div class="sethint" style="color:var(--alert)">' + esc(msg) + '</div>' : '') + '<div class="bdcols">';
-    for (i = 0; i < g.cols.length; i++) h += column(g.cols[i]);
-    if (g.rest.length) h += looseColumn(g.rest);
+      (msg ? '<div class="sethint" style="color:var(--alert)">' + esc(msg) + '</div>' : '') + '<div class="bdcols">' + fh;
     return h + '</div>';
   }
 
@@ -591,6 +613,10 @@
       if (ap) { setOrder(ap, [], true); App.toast('Back to the automatic order'); }
     } else if (a === 'retry') {
       failed = false; paint(); load(function () { paint(); });
+    } else if (a === 'cf') {
+      cFilter = el.getAttribute('data-val') || '';
+      try { store.set('wbClient', cFilter); } catch (e1) {}
+      paint();
     } else if (a === 'tab') {
       tab = el.getAttribute('data-tab') === 'ins' ? 'ins' : 'board';
       store.set('bdTab', tab); pick = null;
@@ -601,9 +627,9 @@
   document.addEventListener('visibilitychange', function () { if (!App.hidden()) load(function () { paint(); }); }, false);
 
   App.boardSet = function (l) { use(l); paint(); };
-  App.boardCards = function (pid, c, pl) { // the project page sends fresh header details after a save
-    if (c && (c.rag || c.owner || c.due)) cards[pid] = c; else delete cards[pid];
-    setCards(cards, pl);
+  App.boardCards = function (pid, c, pl, cl) { // the project page sends fresh header details after a save
+    if (c && (c.rag || c.owner || c.due || c.client)) cards[pid] = c; else delete cards[pid];
+    setCards(cards, pl, cl);
   };
   App.boardReloadCards = loadCards; // after the Work people list changes
   App.boardTasks = function (pid) { // a project's open tasks in board order (the project page lists them the same way)

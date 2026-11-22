@@ -159,6 +159,16 @@ change the header in the endpoint file and regenerate._
 // db/setup20.sql. Values, names, passwords and passes are never logged and never written to the activity log.
 ```
 
+## api/_wclients.js
+```
+// Work clients (v35, db/setup35.sql): the list a Work project can be "for" (meta.client = client id; none = Internal),
+// each with an optional icon. Used by api/projects.js; the leading _ means this is not a serverless function of its own.
+// Routes (all inside /api/projects, contract in that file's header):
+//   GET ?clients=1 -> {clients:[{id,name,n,icon_at?}]} (n = projects using it) · POST ?clients=1 {name} -> add (201)
+//   PATCH ?clients=<id> {name} -> rename · DELETE ?clients=<id> -> {clients, reset} (projects using it go back to Internal)
+//   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the image · POST ?clienticon=<id> {data,mime} -> store · DELETE -> remove
+```
+
 ## api/_wpmeta.js
 ```
 // Work project page details (work_projects.meta) and the Work people list; used by api/projects.js.
@@ -169,7 +179,8 @@ change the header in the endpoint file and regenerate._
 //     rag: 'r' | 'a' | 'g',
 //     dates: { requested, started, target, due: 'YYYY-MM-DD' },
 //     links: { slack: [{n, u, init?}], groups: [{n, u}], studies: [{n, u}], other: [{n, u}] }  (init = "Initial request", at most one),
-//     codes: [{n, c}] }  (campaign codes: plain text, not links)
+//     codes: [{n, c}],  (campaign codes: plain text, not links)
+//     client: work_clients id (12 hex); left out = Internal (v35, the database checks that the client exists) }
 ```
 
 ## api/budget.js
@@ -310,6 +321,17 @@ change the header in the endpoint file and regenerate._
 //   GET ?people=1       -> {people}; POST ?people=1 {name} -> add (a removed person with that name comes back);
 //   PATCH ?people=<id> {name} -> rename; DELETE ?people=<id> -> remove: hidden from pickers, projects keep the id and show
 //        "Name (removed)" until another person is picked. All reply {people}; names up to 40, unique ignoring case.
+// Work clients (v35, db/setup35.sql, code in api/_wclients.js): a project is Internal (no meta.client) or for a client.
+//   meta.client = <client id> | null (null/'' = Internal; an id that is not in the list is refused with 400). Logged as event kind
+//        client (text = client name, '' = Internal). ?page and ?cards now also return clients:[{id,name,n,icon_at?}] and each card
+//        may carry client:<id>. n = projects using that client; icon_at (ms) is the icon's cache stamp.
+//   GET ?clients=1 -> {clients}; POST ?clients=1 {name} -> add (201); PATCH ?clients=<id> {name} -> rename (all reply {clients};
+//        names up to 40, unique ignoring case, at most 60 clients, A-Z).
+//   DELETE ?clients=<id> -> {clients, reset:n}: every project using it goes back to Internal (event kind client_removed, text = name),
+//        its icon is deleted. The app asks first, using n from the list.
+//   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the stored image (nosniff + sandbox CSP, cached for a year per ?v=; 404 = none, the app
+//        shows the first letter). POST ?clienticon=<id> {data: base64, mime} -> store (max 200 KB, PNG/JPEG/GIF/WebP by the file's own bytes,
+//        never SVG; the browser crops to 128px PNG first) -> {clients}. DELETE ?clienticon=<id> -> remove -> {clients}.
 ```
 
 ## api/saver.js

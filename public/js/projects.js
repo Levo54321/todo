@@ -4,7 +4,17 @@
   var $ = App.$, esc = App.esc;
   var list = [], known = false, editId = '', msg = '', busy = false, tries = 0, sheet = null, shownCur = '', lastPick = '', showArch = false;
   var people = null, pEdit = '', pMsg = '', pBusy = false; // v34: Work people (Owner / Requester / Recruiter on project pages)
+  var clients = null, cEdit = '', cMsg = '', cBusy = false; // v35: Work clients (Internal / Client on project pages)
   var PRIO = ['None', 'Low', 'Medium', 'High'];
+
+  // A client's icon (or its first letter) as a small square. Shared by the board, project pages and this list (v35).
+  // The letter sits under the image and a broken image removes itself, so the letter always shows when there is no icon.
+  App.clientLogo = function (c, cls) {
+    if (!c) return '';
+    var letter = esc((c.name || '?').charAt(0).toUpperCase());
+    return '<span class="wcl' + (cls ? ' ' + cls : '') + '" title="' + esc(c.name || '') + '">' + letter +
+      (c.icon_at ? '<img src="/api/projects?clienticon=' + encodeURIComponent(c.id) + '&amp;v=' + c.icon_at + '&amp;t=' + encodeURIComponent(App.token() || '') + '" alt="" onerror="this.parentNode.removeChild(this)">' : '') + '</span>';
+  };
 
   function load(cb) {
     if (!App.token()) { App.whenToken(function () { load(cb); }); return; }
@@ -68,7 +78,7 @@
     sheet.innerHTML = '<div class="card" id="projCard"></div>';
     document.body.appendChild(sheet);
     sheet.addEventListener('click', function (e) { if (e.target === sheet) close(); }, false);
-    sheet.addEventListener('submit', function (e) { e.preventDefault(); if (e.target && e.target.id === 'wpPForm') addPerson(); else add($('pjNew').value); }, false);
+    sheet.addEventListener('submit', function (e) { e.preventDefault(); if (e.target && e.target.id === 'wpPForm') addPerson(); else if (e.target && e.target.id === 'wpCForm') addClient(); else add($('pjNew').value); }, false);
   }
   function seg(kind, id, labels, cur) {
     var h = '<span class="sg sm">', i;
@@ -128,11 +138,14 @@
       for (i = 0; i < lg.length; i++) h += '<button class="chip" data-pj="promote" data-name="' + esc(lg[i]) + '">+ ' + esc(lg[i]) + '</button>';
     }
     h += peopleHTML();
+    h += clientsHTML();
     h += '<div class="row"><span class="sp"></span><button class="btn primary" data-pj="close">Done</button></div>';
-    var pk = $('wpPNew') ? $('wpPNew').value : '';
+    var pk = $('wpPNew') ? $('wpPNew').value : '', ck = $('wpCNew') ? $('wpCNew').value : '';
     $('projCard').innerHTML = h;
+    if ($('wpCNew') && ck) $('wpCNew').value = ck;
     if ($('pjNew') && keep) $('pjNew').value = keep;
     if ($('wpPNew') && pk) $('wpPNew').value = pk;
+    if (cEdit && $('wpCEdit')) { try { $('wpCEdit').focus(); } catch (e3) {} }
     if (pEdit && $('wpPEdit')) { try { $('wpPEdit').focus(); } catch (e2) {} }
     if (editId && $('pjEdit')) { try { $('pjEdit').focus(); } catch (e) {} }
   }
@@ -187,12 +200,100 @@
     }, function (b) { if (b === 0) peopleCall('DELETE', '?people=' + encodeURIComponent(id), null, pe.name + ' removed'); });
   }
 
+  /* ---------- Work clients: who a project is for (v35). Each can have an icon, cropped to 128px in the browser ---------- */
+  function clientsHTML() {
+    var h = '<div class="lbl wpplbl">Work clients</div><div class="sethint" style="margin:-4px 0 8px">Mark a project as for a client on its page, then filter the board by client. Removing a client sets its projects back to Internal.</div>', i, c, n = 0;
+    if (!clients) return h + '<div class="sethint">Loading…</div>';
+    h += '<ul class="plist">';
+    for (i = 0; i < clients.length; i++) {
+      c = clients[i]; n++;
+      if (cEdit === c.id) {
+        h += '<li class="wcli"><div class="prow editing">' + App.clientLogo(c) + '<input class="setinput" id="wpCEdit" type="text" maxlength="40" autocomplete="off" autocorrect="off" value="' + esc(c.name) + '">' +
+          '<button class="btn sm primary" data-pj="csave" data-id="' + esc(c.id) + '"' + (cBusy ? ' disabled' : '') + '>Save</button><button class="btn sm" data-pj="ccancel">Cancel</button></div>' +
+          (c.icon_at ? '<div class="wcsub"><button class="btn sm danger" data-pj="cicx" data-id="' + esc(c.id) + '"' + (cBusy ? ' disabled' : '') + '>Remove icon</button></div>' : '') + '</li>';
+      } else {
+        h += '<li class="wcli"><div class="prow">' + App.clientLogo(c) + '<span class="pname wpperson">' + esc(c.name) + '</span>' +
+          '<label class="btn sm wcup" aria-label="Upload an icon for ' + esc(c.name) + '">' + (cBusy ? '…' : 'Icon') + '<input type="file" class="wcfile" data-id="' + esc(c.id) + '" accept="image/*"' + (cBusy ? ' disabled' : '') + '></label>' +
+          '<button class="pbtn" data-pj="cedit" data-id="' + esc(c.id) + '" aria-label="Rename ' + esc(c.name) + '">✎</button>' +
+          '<button class="pbtn del" data-pj="cdel" data-id="' + esc(c.id) + '" aria-label="Remove ' + esc(c.name) + '">×</button></div></li>';
+      }
+    }
+    h += '</ul>';
+    if (!n) h += '<div class="sethint">No clients yet. Add your first one below.</div>';
+    h += '<form class="addform" id="wpCForm" autocomplete="off"><input id="wpCNew" type="text" placeholder="Add a client…" maxlength="40" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"><button type="submit"' + (cBusy ? ' disabled' : '') + '>Add</button></form>';
+    if (cMsg) h += '<div class="sethint" style="color:var(--alert)">' + esc(cMsg) + '</div>';
+    return h;
+  }
+  function loadClients() {
+    App.api('GET', '?clients=1', null, function (s, d) { if (s === 200 && d && d.clients) { clients = d.clients; if (sheetOpen()) paint(); } }, '/api/projects');
+  }
+  function clientCall(method, q, body, okMsg, extra) {
+    if (cBusy) return;
+    cBusy = true; cMsg = ''; paint();
+    App.api(method, q, body, function (s, d) {
+      cBusy = false;
+      if ((s === 200 || s === 201) && d && d.clients) {
+        clients = d.clients; cEdit = ''; if ($('wpCNew') && method === 'POST' && q.indexOf('clients') >= 0) $('wpCNew').value = '';
+        if (okMsg) App.toast(typeof okMsg === 'function' ? okMsg(d) : okMsg);
+        if (App.boardReloadCards) App.boardReloadCards(); // board headers and filter show clients
+      } else cMsg = (d && d.error) || 'Could not save, try again';
+      paint();
+    }, '/api/projects');
+  }
+  function addClient() {
+    var v = $('wpCNew') ? $('wpCNew').value.replace(/^\s+|\s+$/g, '') : '';
+    if (!v) { cMsg = 'Give the client a name'; paint(); return; }
+    clientCall('POST', '?clients=1', { name: v }, v + ' added');
+  }
+  function clientById(id) { var i; for (i = 0; i < (clients || []).length; i++) if (clients[i].id === id) return clients[i]; return null; }
+  function removeClient(id) {
+    var c = clientById(id); if (!c) return;
+    var n = c.n || 0;
+    App.ask({
+      title: 'Remove ' + c.name + '?',
+      text: (n ? n + (n === 1 ? ' project is' : ' projects are') + ' for ' + c.name + '. ' + (n === 1 ? 'It goes' : 'They go') + ' back to Internal and ' + (n === 1 ? 'its' : 'their') + ' activity log says so.' : 'No project uses this client.') + ' The icon is deleted too.',
+      buttons: [{ label: 'Remove', alert: true }, { label: 'Cancel', primary: true }]
+    }, function (b) {
+      if (b === 0) clientCall('DELETE', '?clients=' + encodeURIComponent(id), null, function (d) { return c.name + ' removed' + (d.reset ? ', ' + d.reset + (d.reset === 1 ? ' project is' : ' projects are') + ' Internal now' : ''); });
+    });
+  }
+  // Crop to a centred 128px square PNG (JPEG if it would be big), like My projects icons; the server re-checks the bytes.
+  function squareIcon(file, cb) {
+    var fr = new FileReader();
+    fr.onerror = function () { cb(null); };
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = function () { cb(null); };
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, sz = Math.min(w, h), S = 128, c = document.createElement('canvas');
+          c.width = S; c.height = S;
+          c.getContext('2d').drawImage(img, (w - sz) / 2, (h - sz) / 2, sz, sz, 0, 0, S, S);
+          var url = c.toDataURL('image/png'), mime = 'image/png';
+          if (url.length > 260000) { var x = c.getContext('2d'); x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#fff'; x.fillRect(0, 0, S, S); url = c.toDataURL('image/jpeg', 0.85); mime = 'image/jpeg'; }
+          cb({ data: url.split(',')[1], mime: mime });
+        } catch (e) { cb(null); }
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+  function uploadClientIcon(id, file) {
+    if (cBusy) return;
+    cBusy = true; cMsg = ''; paint();
+    squareIcon(file, function (img) {
+      cBusy = false;
+      if (!img) { cMsg = 'Could not read that image'; paint(); return; }
+      clientCall('POST', '?clienticon=' + encodeURIComponent(id), img, 'Icon saved');
+    });
+  }
+
   function open() {
     ensureSheet(); editId = ''; msg = ''; showArch = false;
-    pEdit = ''; pMsg = '';
+    pEdit = ''; pMsg = ''; cEdit = ''; cMsg = '';
     paint(); sheet.style.display = 'flex';
     load(function () { paint(); });
-    loadPeople();
+    loadPeople(); loadClients();
   }
   function close() { if (sheet) sheet.style.display = 'none'; editId = ''; msg = ''; }
 
@@ -359,6 +460,15 @@
     else if (a === 'pcancel') { pEdit = ''; pMsg = ''; paint(); }
     else if (a === 'psave') { var nv = $('wpPEdit') ? $('wpPEdit').value.replace(/^\s+|\s+$/g, '') : ''; if (!nv) { pMsg = 'Give the person a name'; paint(); } else peopleCall('PATCH', '?people=' + encodeURIComponent(id), { name: nv }, 'Renamed'); }
     else if (a === 'pdel') removePerson(id);
+    else if (a === 'cedit') { cEdit = id; cMsg = ''; paint(); }
+    else if (a === 'ccancel') { cEdit = ''; cMsg = ''; paint(); }
+    else if (a === 'csave') { var cv = $('wpCEdit') ? $('wpCEdit').value.replace(/^\s+|\s+$/g, '') : ''; if (!cv) { cMsg = 'Give the client a name'; paint(); } else clientCall('PATCH', '?clients=' + encodeURIComponent(id), { name: cv }, 'Renamed'); }
+    else if (a === 'cdel') removeClient(id);
+    else if (a === 'cicx') clientCall('DELETE', '?clienticon=' + encodeURIComponent(id), null, 'Icon removed');
+  }, false);
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t && t.className === 'wcfile' && t.files && t.files[0]) uploadClientIcon(t.getAttribute('data-id'), t.files[0]);
   }, false);
   App.projects = { open: open, list: function () { return list; }, active: ranked };
 })();

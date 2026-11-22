@@ -364,7 +364,7 @@ def main():
                 try: body = json.loads(r.request.post_data or 'null')
                 except Exception: pass
                 st, data = h.api(r.request.method, u.path, parse_qs(u.query), body or {})
-                if (u.path == '/api/saver' and 'id' in parse_qs(u.query)) or (u.path == '/api/pprojects' and 'icon' in parse_qs(u.query) and r.request.method == 'GET'):
+                if (u.path == '/api/saver' and 'id' in parse_qs(u.query)) or (u.path == '/api/pprojects' and 'icon' in parse_qs(u.query) and r.request.method == 'GET') or (u.path == '/api/projects' and 'clienticon' in parse_qs(u.query) and r.request.method == 'GET'):
                     return r.fulfill(status=200, content_type='image/png', body=open(os.path.join(REPO, 'public/favicon-32.png'), 'rb').read())
                 return r.fulfill(status=st, content_type='application/json', body=json.dumps(data))
             fp = os.path.join(REPO, 'public', (u.path.lstrip('/') or 'index.html'))

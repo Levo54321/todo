@@ -40,6 +40,11 @@
     var pe = personOf(id);
     return pe ? pe.name + (pe.removed ? ' (removed)' : '') : '(removed)';
   }
+  function clientOf(id) {
+    var d = pg(), l = (d && d.clients) || [], i;
+    for (i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
+    return null;
+  }
   function pastDue(p, m) { return !!(m.dates && m.dates.due && m.dates.due < App.today() && p && p.status !== 'done'); }
   function fmtDay(d) { return d ? App.fmtDate(d) : ''; }
   function ago(at) {
@@ -85,6 +90,8 @@
     if (e.kind === 'prio') return 'Priority: ' + (PRIO[+t] || esc(t));
     if (e.kind === 'status') return 'Status: ' + (t === 'hold' ? 'On hold' : t === 'done' ? 'Completed' : 'Active');
     if (e.kind === 'rag') return 'RAG: ' + (RAGN[t] ? '<span class="wprag wprag-' + t + '"></span>' + RAGN[t] : 'not set');
+    if (e.kind === 'client') return t ? 'Client: ' + esc(t) : 'Internal';
+    if (e.kind === 'client_removed') return 'Back to Internal (client ' + esc(t) + ' was removed)';
     if (PLABEL[e.kind]) return PLABEL[e.kind] + ': ' + (t ? esc(t) : 'cleared');
     if (e.kind === 'details') {
       var names = { goal: 'goal', success: 'success criteria', dates: 'dates', links: 'links', codes: 'campaign codes' };
@@ -109,10 +116,12 @@
   }
   function textBlock(v) { return esc(v).replace(/\n/g, '<br>'); }
   function sideHTML(p, m, d) {
-    var h = '<div class="wphd"><b class="wpnm">' + esc(p.name) + '</b><div class="wppills">' +
+    var cl = m.client ? clientOf(m.client) : null;
+    var h = '<div class="wphd"><b class="wpnm">' + (cl ? App.clientLogo(cl, 'lg') : '') + esc(p.name) + '</b><div class="wppills">' +
       (p.status === 'done' ? '<span class="bdp">Completed</span>' : p.status === 'hold' ? '<span class="bdp hold">On hold</span>' : '<span class="bdp wpact">Active</span>') +
       (p.prio ? '<span class="bdp bdp' + p.prio + '">' + PRIO[p.prio] + '</span>' : '') +
       (pastDue(p, m) ? '<span class="bdh bad pdue">Past due</span>' : '') + '</div></div>';
+    h += '<div class="wpsec"><div class="lbl">For</div>' + (m.client ? '<span class="wpfor">' + (cl ? App.clientLogo(cl) + esc(cl.name) : '(client removed)') + '</span>' : '<span class="wpfor int">Internal</span>') + '</div>';
     h += '<div class="wpsec"><div class="lbl">RAG status</div>' + ragSeg(m) + '</div>';
     if (p.status !== 'done') {
       h += '<div class="wpsec"><div class="lbl">Priority</div>' + seg('prio', PRIO, p.prio || 0) + '</div>';
@@ -167,8 +176,22 @@
     if (cur && !seen) h += '<option value="' + esc(cur) + '" selected>(removed)</option>';
     return h + '</select>';
   }
+  function clientPick(cur) {
+    var d = pg(), l = (d && d.clients) || [], h = '<select class="setinput" data-f="client"><option value="">Pick a client…</option>', i, seen = false;
+    for (i = 0; i < l.length; i++) {
+      if (l[i].id === cur) seen = true;
+      h += '<option value="' + esc(l[i].id) + '"' + (l[i].id === cur ? ' selected' : '') + '>' + esc(l[i].name) + '</option>';
+    }
+    if (cur && !seen) h += '<option value="' + esc(cur) + '" selected>(removed)</option>';
+    return h + '</select>';
+  }
   function formHTML() {
     var m = draft, h = '<div class="wpform"><h2>Edit details</h2>', i, k, j, d = pg();
+    h += '<div class="wpfld"><span class="lbl">Project is</span>' + seg('ctype', ['Internal', 'Client'], draft.isClient ? 1 : 0) + '</div>';
+    if (draft.isClient) {
+      h += '<label class="wpfld"><span class="lbl">Client</span>' + clientPick(m.client || '') + '</label>';
+      if (!d || !d.clients || !d.clients.length) h += '<div class="pphint">No clients yet. Add them in Manage projects, under Work clients.</div>';
+    }
     h += '<div class="wpflds">';
     for (i = 0; i < PEOPLE.length; i++) { k = PEOPLE[i]; h += '<label class="wpfld"><span class="lbl">' + PLABEL[k] + '</span>' + pickHTML(k, m[k] || '') + '</label>'; }
     h += '</div>';
@@ -310,7 +333,8 @@
     if (m.rag) c.rag = m.rag;
     if (m.owner) c.owner = m.owner;
     if (m.dates && m.dates.due) c.due = m.dates.due;
-    App.boardCards(d.id, c, d.people);
+    if (m.client) c.client = m.client;
+    App.boardCards(d.id, c, d.people, d.clients);
   }
   function errMsg(s, d) { return s === 400 && d && d.error ? d.error.charAt(0).toUpperCase() + d.error.slice(1) : 'Could not save, check your connection and try again'; }
   function setRag(v) {
@@ -339,7 +363,7 @@
     var f = pane.querySelectorAll('[data-f]'), i, k, v, m;
     for (i = 0; i < f.length; i++) {
       k = f[i].getAttribute('data-f'); v = f[i].value;
-      if (PEOPLE.indexOf(k) >= 0 || k === 'goal' || k === 'success') draft[k] = v;
+      if (PEOPLE.indexOf(k) >= 0 || k === 'goal' || k === 'success' || k === 'client') draft[k] = v;
       else if ((m = /^d:(\w+)$/.exec(k))) { draft.dates = draft.dates || {}; draft.dates[m[1]] = v; }
       else if ((m = /^l([nu]):(\w+):(\d+)$/.exec(k))) { var row = draft.links[m[2]][+m[3]]; if (row) row[m[1]] = v; }
       else if ((m = /^c([nc]):(\d+)$/.exec(k))) { var cr = draft.codes[+m[2]]; if (cr) cr[m[1]] = v; }
@@ -348,6 +372,7 @@
   function startEdit() {
     var d = pg(); if (!d) return;
     draft = copyMeta(d.meta);
+    draft.isClient = !!draft.client;
     draft.dates = draft.dates || {};
     if (!draft.dates.requested && d.created) draft.dates.requested = d.created; // auto-set to the creation date, editable
     draft.links = draft.links || {};
@@ -360,6 +385,8 @@
     if (!draft || saving) return;
     readForm();
     var out = {}, i, k;
+    if (draft.isClient && !draft.client) { formMsg = 'Pick a client, or switch the project back to Internal'; noKeep = false; paint(); return; }
+    out.client = draft.isClient ? draft.client : null;
     for (i = 0; i < PEOPLE.length; i++) out[PEOPLE[i]] = draft[PEOPLE[i]] || null;
     out.goal = draft.goal || null; out.success = draft.success || null;
     out.dates = {}; for (i = 0; i < DATES.length; i++) { k = DATES[i]; if (draft.dates[k]) out.dates[k] = draft.dates[k]; }
@@ -404,6 +431,7 @@
     else if (a === 'rag') setRag(el.getAttribute('data-val'));
     else if (a === 'prio') setProj({ prio: +el.getAttribute('data-val') });
     else if (a === 'stat') setProj({ status: el.getAttribute('data-val') === '1' ? 'hold' : 'active' }, el.getAttribute('data-val') === '1' ? 'On hold' : 'Active');
+    else if (a === 'ctype') { if (draft) { readForm(); draft.isClient = el.getAttribute('data-val') === '1'; formMsg = ''; noKeep = true; paint(); } }
     else if (a === 'edit') startEdit();
     else if (a === 'cancel') stopEdit();
     else if (a === 'save') save();

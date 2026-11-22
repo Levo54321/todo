@@ -6,7 +6,8 @@
 //     rag: 'r' | 'a' | 'g',
 //     dates: { requested, started, target, due: 'YYYY-MM-DD' },
 //     links: { slack: [{n, u, init?}], groups: [{n, u}], studies: [{n, u}], other: [{n, u}] }  (init = "Initial request", at most one),
-//     codes: [{n, c}] }  (campaign codes: plain text, not links)
+//     codes: [{n, c}],  (campaign codes: plain text, not links)
+//     client: work_clients id (12 hex); left out = Internal (v35, the database checks that the client exists) }
 var PID = /^[0-9a-f]{12}$/, DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 var PEOPLE = ['owner', 'requester', 'recruiter'], TEXTS = { goal: 2000, success: 2000 };
 var DATES = ['requested', 'started', 'target', 'due'], GROUPS = ['slack', 'groups', 'studies', 'other'];
@@ -90,6 +91,11 @@ function cleanMeta(m) {
   }
   if ('codes' in m) { var c = codes(m.codes); p.codes = c.length ? c : null; }
   if ('rag' in m) p.rag = cleanRag(m.rag);
+  if ('client' in m) {
+    if (m.client === null || m.client === '') p.client = null;
+    else if (typeof m.client === 'string' && PID.test(m.client)) p.client = m.client;
+    else throw bad('bad client');
+  }
   return p;
 }
 function cleanRag(v) {

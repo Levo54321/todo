@@ -25,9 +25,21 @@
 //   GET ?people=1       -> {people}; POST ?people=1 {name} -> add (a removed person with that name comes back);
 //   PATCH ?people=<id> {name} -> rename; DELETE ?people=<id> -> remove: hidden from pickers, projects keep the id and show
 //        "Name (removed)" until another person is picked. All reply {people}; names up to 40, unique ignoring case.
+// Work clients (v35, db/setup35.sql, code in api/_wclients.js): a project is Internal (no meta.client) or for a client.
+//   meta.client = <client id> | null (null/'' = Internal; an id that is not in the list is refused with 400). Logged as event kind
+//        client (text = client name, '' = Internal). ?page and ?cards now also return clients:[{id,name,n,icon_at?}] and each card
+//        may carry client:<id>. n = projects using that client; icon_at (ms) is the icon's cache stamp.
+//   GET ?clients=1 -> {clients}; POST ?clients=1 {name} -> add (201); PATCH ?clients=<id> {name} -> rename (all reply {clients};
+//        names up to 40, unique ignoring case, at most 60 clients, A-Z).
+//   DELETE ?clients=<id> -> {clients, reset:n}: every project using it goes back to Internal (event kind client_removed, text = name),
+//        its icon is deleted. The app asks first, using n from the list.
+//   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the stored image (nosniff + sandbox CSP, cached for a year per ?v=; 404 = none, the app
+//        shows the first letter). POST ?clienticon=<id> {data: base64, mime} -> store (max 200 KB, PNG/JPEG/GIF/WebP by the file's own bytes,
+//        never SVG; the browser crops to 128px PNG first) -> {clients}. DELETE ?clienticon=<id> -> remove -> {clients}.
 var crypto = require('crypto');
 var todos = require('./todos.js');
 var wp = require('./_wpmeta.js');
+var wc = require('./_wclients.js');
 var MAX = 40, MAXN = 30, MAXALL = 120, STATUS = ['active', 'hold', 'done'];
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,6 +70,7 @@ function dupe(list, name, exceptId) {
 // Project pages, board header cards and the Work people list (v34).
 async function pages(req, res, q, token) {
   var m = req.method, b, r;
+  if (q.clients !== undefined || q.clienticon !== undefined) return wc.handle(req, res, q, token, { send: send, readBody: readBody });
   if (q.cards && m === 'GET') return send(res, 200, await todos.rpc('wproj_cards', { p_token: token }));
   if (q.page && m === 'GET') {
     if (!wp.PID.test(q.page)) return send(res, 404, { error: 'not found' });
@@ -95,7 +108,7 @@ module.exports = async function handler(req, res) {
   var token = req.headers['x-todo-token'] || q.t;
   if (!token) return send(res, 401, { error: 'missing token' });
   try {
-    if (q.page || q.cards || q.people || q.meta) return await pages(req, res, q, token);
+    if (q.page || q.cards || q.people || q.meta || q.clients !== undefined || q.clienticon !== undefined) return await pages(req, res, q, token);
     var list = await read(token), name, i;
     if (req.method === 'GET') return send(res, 200, { projects: list });
     if (req.method === 'POST') {
@@ -165,7 +178,7 @@ module.exports = async function handler(req, res) {
     if (e.code === '28000') return send(res, 401, { error: 'bad token' });
     if (e.code === '23505') return send(res, 409, { error: 'You already have a project with that name' });
     if (e.code === 'P0002') return send(res, 404, { error: 'not found' });
-    if (e.code === '23514') return send(res, 400, { error: 'bad value' });
+    if (e.code === '23514') return send(res, 400, { error: e.message === 'bad client' ? 'That client is not in the list any more, pick another' : 'bad value' });
     if (e.code === 'PGRST202') return send(res, 409, { error: 'run the projects migration first (db/setup34.sql)' });
     console.error('projects api error', e.code, e.message);
     return send(res, 502, { error: 'upstream error' });
