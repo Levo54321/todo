@@ -300,7 +300,7 @@
   function tabBar() {
     return '<div class="bdbar"><div class="bdtools"><span class="sg sm"><button class="' + (tab === 'board' ? 'on' : '') + '" data-bd="tab" data-tab="board">Board</button>' +
       '<button class="' + (tab === 'ins' ? 'on' : '') + '" data-bd="tab" data-tab="ins">Insights</button></span>' +
-      '<button class="chip" data-pj="open">Manage projects…</button></div>' + filterBar() + '</div>';
+      '<button class="chip" data-pj="open">Manage projects…</button>' + (App.wsBar ? App.wsBar() : '') + '</div>' + filterBar() + '</div>';
   }
   var LEGEND = '<div class="bdlegend"><span class="lg blk">Blocked</span><span class="lg od">Overdue</span><span class="lg td">Due today</span><span class="lg hi">High priority</span><span class="lg pz">Paused</span>' +
     '<span class="lgx">Order follows the Work list: priority, quick wins, deadline. Drag ☰ or tap a number to change it.</span></div>';
@@ -644,6 +644,7 @@
     if (cols) { b = cols.querySelectorAll('.bdlist'); for (i = 0; i < b.length; i++) kept.tops.push(b[i].scrollTop); }
   }
   App.boardKeep = grabKept;
+  App.boardReload = function () { cardsAt = 0; loadCards(); }; // v36: a saved status update may have changed a RAG
   function putKept() {
     var k = kept, cols = $('boardPane') && $('boardPane').querySelector('.bdcols'), b, i;
     kept = null; if (!k) return;
@@ -658,6 +659,7 @@
       msg = ''; pick = null; paint(); putKept();
       load(function () { paint(); });
       if (Date.now() - cardsAt > 60000) loadCards();
+      if (App.wsCheck) App.wsCheck();
       if (tab === 'ins' && (!rows || Date.now() - hAt > 60000)) fetchRows();
     }
   });

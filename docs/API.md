@@ -183,6 +183,17 @@ change the header in the endpoint file and regenerate._
 //     client: work_clients id (12 hex); left out = Internal (v35, the database checks that the client exists) }
 ```
 
+## api/_wstatus.js
+```
+// Work status updates (v36): the todo-status block parser, cleaning, and the "Copy for Claude" export; used by api/projects.js.
+// A leading _ means this file is not a serverless function of its own (12-function limit). Format: docs/work-status-format.md.
+// parse(text, projects, opts) never throws and never saves anything:
+//   { ok:true, version, exported, entries:[{ref, project:{id,name}, by:'id'|'name', update:{...}}], skipped:[{ref, label, why}], warnings:[] }
+//   { ok:false, error:'plain English reason' }
+// An update (cleaned): { period?, rag?:'r'|'a'|'g', headline, done[], next[], blockers[], risks[], decisions[], asks:[{who,what}],
+//   sources:{slack?:[{n,u}], linear?:[{n,u}]}, notes? }. Strings are trimmed to one line (lists: <=12 items of <=300 chars); links must be https.
+```
+
 ## api/budget.js
 ```
 // /api/budget — token-gated access to the budget config and entries.
@@ -332,6 +343,17 @@ change the header in the endpoint file and regenerate._
 //   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the stored image (nosniff + sandbox CSP, cached for a year per ?v=; 404 = none, the app
 //        shows the first letter). POST ?clienticon=<id> {data: base64, mime} -> store (max 200 KB, PNG/JPEG/GIF/WebP by the file's own bytes,
 //        never SVG; the browser crops to 128px PNG first) -> {clients}. DELETE ?clienticon=<id> -> remove -> {clients}.
+// Work status updates (v36, db/setup36.sql, parser and export in api/_wstatus.js; format in docs/work-status-format.md):
+//   POST ?statusparse=1 {text, only?:<project id>} -> reads the todo-status block, saves NOTHING:
+//        {ok:true, entries:[{ref, by:'id'|'name', project:{id,name,rag?}, update:{...}}], skipped:[{ref,label,why}], warnings:[], exported}
+//        or {ok:false, error}. Entries match by project id, else exact name (ignoring case). only = one project (the page's paste box).
+//   POST ?updates=1 {items:[{id, update:{...}, accept_rag?:bool}]} -> saves the updates (origin 'claude', all or nothing; each update is
+//        cleaned again here); accept_rag true also sets that project's RAG to the update's rag (logged as a rag event) -> {saved, projects:[ids]}.
+//   POST ?updates=1 {id, manual:{headline, notes?}} -> saves a typed update (origin 'manual'; never touches RAG) -> {saved, projects}
+//   GET  ?updates=<id> -> {updates:[{id, at, period?, rag?, headline, done[], next[], blockers[], risks[], decisions[], asks:[{who,what}],
+//        sources:{slack?, linear?:[{n,u}]}, notes?, origin, rag_accepted}]} newest first (at most 100); rag = the SUGGESTED RAG.
+//   GET  ?export=1 -> {text, hash, count, changed, ever} "Copy for Claude": open (active + on hold) projects as one fenced todo-projects block;
+//        changed = the content differs from the last export recorded with POST (ever = one was recorded at all). POST ?export=1 {hash} -> {ok} records "copied".
 ```
 
 ## api/saver.js

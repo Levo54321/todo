@@ -36,10 +36,22 @@
 //   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the stored image (nosniff + sandbox CSP, cached for a year per ?v=; 404 = none, the app
 //        shows the first letter). POST ?clienticon=<id> {data: base64, mime} -> store (max 200 KB, PNG/JPEG/GIF/WebP by the file's own bytes,
 //        never SVG; the browser crops to 128px PNG first) -> {clients}. DELETE ?clienticon=<id> -> remove -> {clients}.
+// Work status updates (v36, db/setup36.sql, parser and export in api/_wstatus.js; format in docs/work-status-format.md):
+//   POST ?statusparse=1 {text, only?:<project id>} -> reads the todo-status block, saves NOTHING:
+//        {ok:true, entries:[{ref, by:'id'|'name', project:{id,name,rag?}, update:{...}}], skipped:[{ref,label,why}], warnings:[], exported}
+//        or {ok:false, error}. Entries match by project id, else exact name (ignoring case). only = one project (the page's paste box).
+//   POST ?updates=1 {items:[{id, update:{...}, accept_rag?:bool}]} -> saves the updates (origin 'claude', all or nothing; each update is
+//        cleaned again here); accept_rag true also sets that project's RAG to the update's rag (logged as a rag event) -> {saved, projects:[ids]}.
+//   POST ?updates=1 {id, manual:{headline, notes?}} -> saves a typed update (origin 'manual'; never touches RAG) -> {saved, projects}
+//   GET  ?updates=<id> -> {updates:[{id, at, period?, rag?, headline, done[], next[], blockers[], risks[], decisions[], asks:[{who,what}],
+//        sources:{slack?, linear?:[{n,u}]}, notes?, origin, rag_accepted}]} newest first (at most 100); rag = the SUGGESTED RAG.
+//   GET  ?export=1 -> {text, hash, count, changed, ever} "Copy for Claude": open (active + on hold) projects as one fenced todo-projects block;
+//        changed = the content differs from the last export recorded with POST (ever = one was recorded at all). POST ?export=1 {hash} -> {ok} records "copied".
 var crypto = require('crypto');
 var todos = require('./todos.js');
 var wp = require('./_wpmeta.js');
 var wc = require('./_wclients.js');
+var ws = require('./_wstatus.js');
 var MAX = 40, MAXN = 30, MAXALL = 120, STATUS = ['active', 'hold', 'done'];
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -71,6 +83,7 @@ function dupe(list, name, exceptId) {
 async function pages(req, res, q, token) {
   var m = req.method, b, r;
   if (q.clients !== undefined || q.clienticon !== undefined) return wc.handle(req, res, q, token, { send: send, readBody: readBody });
+  if (q.statusparse !== undefined || q.updates !== undefined || q.export !== undefined) return status(req, res, q, token);
   if (q.cards && m === 'GET') return send(res, 200, await todos.rpc('wproj_cards', { p_token: token }));
   if (q.page && m === 'GET') {
     if (!wp.PID.test(q.page)) return send(res, 404, { error: 'not found' });
@@ -103,12 +116,62 @@ async function pages(req, res, q, token) {
   return send(res, 405, { error: 'method not allowed' });
 }
 
+// Status updates (v36): parse a pasted block, save updates, list them, and the Copy for Claude export.
+async function status(req, res, q, token) {
+  var m = req.method, b, r, i;
+  if (q.statusparse !== undefined) {
+    if (m !== 'POST') { res.setHeader('Allow', 'POST'); return send(res, 405, { error: 'method not allowed' }); }
+    b = readBody(req);
+    var list = await read(token), cards = await todos.rpc('wproj_cards', { p_token: token }), cs = (cards && cards.cards) || {};
+    var out = ws.parse(b.text, list, { only: typeof b.only === 'string' && wp.PID.test(b.only) ? b.only : '' });
+    if (out.ok) out.entries.forEach(function (e) { var c = cs[e.project.id]; if (c && c.rag) e.project.rag = c.rag; });
+    return send(res, 200, out);
+  }
+  if (q.updates !== undefined) {
+    if (m === 'GET') {
+      if (!wp.PID.test(q.updates)) return send(res, 404, { error: 'not found' });
+      return send(res, 200, { updates: await todos.rpc('wupd_list', { p_token: token, p_id: q.updates }) });
+    }
+    if (m !== 'POST') { res.setHeader('Allow', 'GET, POST'); return send(res, 405, { error: 'method not allowed' }); }
+    b = readBody(req);
+    var items = [], warn = [];
+    if (b.manual !== undefined) {
+      if (!wp.PID.test(b.id || '')) return send(res, 404, { error: 'not found' });
+      var mu = ws.cleanManual(b.manual);
+      if (!mu) return send(res, 400, { error: 'Give the update a headline' });
+      items.push({ project_id: b.id, update: mu, accept_rag: false, origin: 'manual' });
+    } else {
+      if (!Array.isArray(b.items) || !b.items.length) return send(res, 400, { error: 'nothing to save' });
+      for (i = 0; i < b.items.length && i < 60; i++) {
+        var it = b.items[i], cu = it && wp.PID.test(it.id || '') ? ws.cleanUpdate(it.update, warn, 'update ' + (i + 1)) : null;
+        if (!cu) return send(res, 400, { error: 'Update ' + (i + 1) + ' is not complete (it needs a project and a headline)' });
+        items.push({ project_id: it.id, update: cu, accept_rag: it.accept_rag === true, origin: 'claude' });
+      }
+    }
+    r = await todos.rpc('wupd_add', { p_token: token, p_items: items });
+    return send(res, 201, r);
+  }
+  // export
+  if (m === 'GET') {
+    r = await todos.rpc('wupd_export', { p_token: token });
+    var ex = ws.buildExport(r);
+    return send(res, 200, { text: ex.text, hash: ex.hash, count: ex.count, changed: ex.hash !== (r.last_hash || ''), ever: !!r.last_hash });
+  }
+  if (m === 'POST') {
+    b = readBody(req);
+    if (typeof b.hash !== 'string' || !/^[0-9a-f]{40}$/.test(b.hash)) return send(res, 400, { error: 'bad hash' });
+    return send(res, 200, await todos.rpc('wupd_copied', { p_token: token, p_hash: b.hash }));
+  }
+  res.setHeader('Allow', 'GET, POST');
+  return send(res, 405, { error: 'method not allowed' });
+}
+
 module.exports = async function handler(req, res) {
   var q = req.query || {};
   var token = req.headers['x-todo-token'] || q.t;
   if (!token) return send(res, 401, { error: 'missing token' });
   try {
-    if (q.page || q.cards || q.people || q.meta || q.clients !== undefined || q.clienticon !== undefined) return await pages(req, res, q, token);
+    if (q.page || q.cards || q.people || q.meta || q.statusparse !== undefined || q.updates !== undefined || q.export !== undefined || q.clients !== undefined || q.clienticon !== undefined) return await pages(req, res, q, token);
     var list = await read(token), name, i;
     if (req.method === 'GET') return send(res, 200, { projects: list });
     if (req.method === 'POST') {

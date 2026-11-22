@@ -235,6 +235,7 @@
     if (p.status !== 'done') h += '<form class="wpadd" id="wpTaskForm" autocomplete="off"><input id="wpTask" type="text" maxlength="200" placeholder="Add a task to ' + esc(p.name) + '…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"><button type="submit">Add</button></form>';
     h += '<h2>Open tasks<span class="count">' + open.length + '</span></h2>';
     h += open.length ? App.listHTML(open) : '<p class="empty">Nothing open in this project.</p>';
+    h += App.wsSection ? App.wsSection(p.id) : '';
     h += '<button class="donebtn" data-wp="done">' + (showDone ? '▾' : '▸') + ' Done in the last 30 days (' + done.length + ')</button>';
     if (showDone) h += done.length ? App.listHTML(done) : '<p class="empty">Nothing finished recently.</p>';
     h += '<button class="ppacth" data-wp="act" aria-expanded="' + (showAct ? 'true' : 'false') + '">' + (showAct ? '▾' : '▸') + ' Activity' + (ev ? '<small>' + ev.length + ' entries</small>' : '') + '</button>';
@@ -325,6 +326,7 @@
       loading[id] = false;
       if (s === 200 && d && d.meta) { pages[id] = d; failed[id] = false; } else if (!pages[id]) failed[id] = true;
       paint(); if (cb) cb();
+      if (App.wsLoad && d && d.meta) App.wsLoad(id);
     }, '/api/projects');
   }
   function toBoard(d) { // the board header shows RAG, owner and due: give it the new values
@@ -452,6 +454,7 @@
     }
   }, false);
 
+  App.wpReload = function (id) { if (pages[id]) fetchPage(id); }; // v36: an accepted RAG changed the page
   App.openWorkProject = function (id) {
     if (!id) return;
     if (App.view && App.view() === 'board' && App.boardKeep) App.boardKeep();

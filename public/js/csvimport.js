@@ -501,13 +501,10 @@
   }
   // Paste CSV reads the clipboard straight away (v1071). Browsers that cannot (iPad 2) or that refuse the permission get a small paste box instead.
   function pasteClip() {
-    var c = window.navigator && window.navigator.clipboard;
     pasteHint = 'This browser would not let the page read the clipboard. Paste the CSV here instead:';
-    if (!(c && c.readText)) { pasteBox = true; st.msg = ''; paint(); return; }
-    c.readText().then(function (txt) {
-      if (!txt || !/\S/.test(txt)) { st.msg = 'The clipboard is empty. Copy the CSV first, then tap Paste CSV.'; paint(); return; }
-      start(txt, 'Pasted CSV');
-    }, function () { pasteBox = true; st.msg = ''; paint(); });
+    App.pasteClip(function (txt) { start(txt, 'Pasted CSV'); },
+      function () { pasteBox = true; st.msg = ''; paint(); },
+      function () { st.msg = 'The clipboard is empty. Copy the CSV first, then tap Paste CSV.'; paint(); });
   }
   function reviewHead() {
     var h = '<div class="imprev"><div class="imprevt"><b>' + esc(st.file || 'Import') + '</b><span class="impsoft">under review: nothing is added yet</span></div>';

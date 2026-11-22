@@ -398,8 +398,8 @@
     setCls($('nBudget'), 'ritem' + (view === 'budget' ? ' on' : ''));
     setCls($('nInsights'), 'ritem' + (view === 'insights' ? ' on' : ''));
     setCls($('nJobs'), 'ritem' + (view === 'jobs' ? ' on' : ''));
-    setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' || view === 'wproject' ? ' on' : ''));
-    setCls($('psW'), view === 'board' || view === 'wproject' ? 'on' : '');
+    setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' || view === 'wproject' || view === 'wstatus' ? ' on' : ''));
+    setCls($('psW'), view === 'board' || view === 'wproject' || view === 'wstatus' ? 'on' : '');
     setCls($('psP'), view === 'pprojects' ? 'on' : '');
     if (document.body.getAttribute('data-view') !== view) document.body.setAttribute('data-view', view);
     var bc = railOpen ? 'rail-open' : '';
@@ -528,7 +528,7 @@
     if (window.pageYOffset !== pageY) window.scrollTo(0, pageY);
   }
   /* ---------- navigation ---------- */
-  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects', jobs: 'vJobs', wproject: 'vWproject' };
+  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects', jobs: 'vJobs', wproject: 'vWproject', wstatus: 'vWstatus' };
   function navTo(name) {
     if (name === 'projects') name = (view === 'tasks' || !store.get('projMode')) ? (mode === 'work' ? 'board' : 'pprojects') : store.get('projMode'); // one Projects tab, Work | Personal switch inside
     if (name === 'board' || name === 'pprojects') store.set('projMode', name);
@@ -1870,6 +1870,13 @@
   App.whenToken = whenToken; App.getProjects = getProjects; App.navTo = navTo; App.view = function () { return view; };
   App.settings = settings;
   App.render = render;
+  // Reads the clipboard for a paste button (shared by Settings > Import and Work status updates): onText(text), onBox() when this
+  // browser cannot read or refuses (show a paste box instead), onEmpty() when it holds nothing.
+  App.pasteClip = function (onText, onBox, onEmpty) {
+    var c = window.navigator && window.navigator.clipboard;
+    if (!(c && c.readText)) { onBox(); return; }
+    c.readText().then(function (txt) { if (!txt || !/\S/.test(txt)) onEmpty(); else onText(txt); }, function () { onBox(); });
+  };
   App.ask = ask;
   App.reload = function () { forceLoad(); };
   App.md = mdHTML;
