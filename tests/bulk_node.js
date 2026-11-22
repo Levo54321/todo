@@ -41,6 +41,7 @@ function fakeRpc(name, args) {
   if (name === 'todo_import_list') return imports.map(function (x) { return { id: x.id, name: x.name, n: x.ids.length, alive: x.ids.length, undone_at: x.undone ? 'x' : null }; });
   if (name === 'todo_import_undo') { var u = imports.filter(function (x) { return x.id === args.p_id; })[0]; if (!u) { var e1 = new Error('no such import'); e1.code = 'P0002'; throw e1; } if (u.undone) { var e2 = new Error('already undone'); e2.code = '23505'; throw e2; } u.undone = true; return { ok: true, removed: u.ids.length, added: u.ids.length }; }
   if (name === 'cfg_get') return JSON.stringify([{ name: 'Alpha' }]);
+  if (name === 'wproj_list') return [{ id: 'aaaaaaaaaaa1', name: 'Alpha' }]; // v33: projects come from the work_projects table
   if (name === 'proj_list' || name === 'project_list') return [{ name: 'Alpha' }];
   throw new Error('unexpected rpc ' + name);
 }
