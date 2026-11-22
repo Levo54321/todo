@@ -234,7 +234,7 @@ function parseQuick(raw, today) {
 
 // On the Work list a #tag that matches one of your projects (any capitalisation) uses the project's exact name.
 async function projectList(token) {
-  try { var raw = await rpc('cfg_get', { p_token: token, p_key: 'projects' }), l = raw ? JSON.parse(raw) : []; return Array.isArray(l) ? l : []; }
+  try { var l = await rpc('wproj_list', { p_token: token }); return Array.isArray(l) ? l : []; } // table work_projects (db/setup33.sql), same shape as /api/projects
   catch (e) { return []; }
 }
 async function canonProject(token, name) {

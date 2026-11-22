@@ -11,7 +11,8 @@ function fakeRpc(name, args) {
   if (args.p_token !== 'goodtoken') { var e = new Error('no'); e.code = '28000'; throw e; }
   if (name === 'todo_list') return JSON.parse(JSON.stringify(rows)); // a fresh copy each time, like a real database answer
   if (name === 'todo_add') { var r = { id: 'n' + rows.length, title: args.p_title, done: false }; rows.push(r); return r; }
-  if (name === 'cfg_get') return args.p_key === 'projects' ? projectsJson : null;
+  if (name === 'wproj_list') return projectsJson ? JSON.parse(projectsJson) : []; // Work projects table (db/setup33.sql), old config-key shape
+  if (name === 'cfg_get') { if (args.p_key === 'projects') throw new Error('projects must come from wproj_list, not the config key'); return null; }
   if (name === 'todo_update') { // applies the patch the way the database would for simple fields
     var row = null, i, k;
     for (i = 0; i < rows.length; i++) if (rows[i].id === args.p_id) row = rows[i];

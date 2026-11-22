@@ -10,6 +10,9 @@
 //   DELETE ?id          -> remove (Work tasks carrying it lose the project)
 // A task's project is simply its category on the Work list, so everything that already shows or groups by
 // category (filters, insights) works for projects too. Names are unique, ignoring capitalisation.
+// Storage (v33): table work_projects via RPCs wproj_list / wproj_save / wproj_delete (db/setup33.sql). Created, renamed,
+// prio and status changes are logged in work_project_events. The old 'projects' config key is kept in step by the database
+// for one release (fallback only; nothing reads it).
 var crypto = require('crypto');
 var todos = require('./todos.js');
 var MAX = 40, MAXN = 30, MAXALL = 120, STATUS = ['active', 'hold', 'done'];
@@ -27,11 +30,11 @@ function readBody(req) {
   if (typeof b === 'object' && !Buffer.isBuffer(b)) return b;
   try { return JSON.parse(Buffer.isBuffer(b) ? b.toString('utf8') : String(b)) || {}; } catch (e) { return {}; }
 }
-async function read(token) {
-  var raw = await todos.rpc('cfg_get', { p_token: token, p_key: 'projects' });
-  try { var l = raw ? JSON.parse(raw) : []; return Array.isArray(l) ? l : []; } catch (e) { return []; }
-}
-function write(token, list) { return todos.rpc('cfg_set', { p_token: token, p_key: 'projects', p_value: list.length ? JSON.stringify(list) : null }); }
+// The list lives in table work_projects (db/setup33.sql) and comes back in the old config-key shape:
+// [{id, name, prio?, order?, status?, done_at?, left_open?}] in list order (keys left out when not set).
+async function read(token) { var l = await todos.rpc('wproj_list', { p_token: token }); return Array.isArray(l) ? l : []; }
+function save(token, id, patch) { return todos.rpc('wproj_save', { p_token: token, p_id: id, p_patch: patch }); } // -> {projects, tasks}
+function newId() { return crypto.randomBytes(6).toString('hex'); }
 function clean(v) { return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().replace(/^#+/, '').trim().slice(0, MAX) : ''; }
 function live(list) { return list.filter(function (p) { return p.status !== 'done'; }).length; }
 function dupe(list, name, exceptId) {
@@ -54,12 +57,11 @@ module.exports = async function handler(req, res) {
         if (!UUID.test(assign)) return send(res, 400, { error: 'bad task id' });
         var low = name.toLowerCase(), found = null;
         list.forEach(function (p) { if (p.name.toLowerCase() === low) found = p; });
-        if (found && found.status === 'done') { delete found.status; delete found.done_at; delete found.left_open; await write(token, list); }
+        if (found && found.status === 'done') list = (await save(token, found.id, { status: 'active' })).projects;
         if (!found) {
           if (live(list) >= MAXN || list.length >= MAXALL) return send(res, 400, { error: 'That is the most projects (' + MAXN + '), remove one first' });
-          found = { id: crypto.randomBytes(6).toString('hex'), name: name };
-          list.push(found);
-          await write(token, list);
+          found = { name: name };
+          list = (await save(token, newId(), { new: true, name: name })).projects;
         }
         await todos.rpc('todo_update', { p_token: token, p_id: assign, p_patch: { category: found.name } });
         return send(res, 201, { project: found.name, projects: list });
@@ -69,64 +71,52 @@ module.exports = async function handler(req, res) {
         var ex = list.filter(function (x) { return x.name.toLowerCase() === name.toLowerCase(); })[0];
         return send(res, 409, { error: ex && ex.status === 'done' ? name + ' is in your completed projects. Reopen it from there.' : 'You already have a project called ' + name });
       }
-      list.push({ id: crypto.randomBytes(6).toString('hex'), name: name });
-      await write(token, list);
+      list = (await save(token, newId(), { new: true, name: name })).projects;
       return send(res, 201, { projects: list });
     }
     if (req.method === 'PATCH' || req.method === 'DELETE') {
       var at = -1;
       for (i = 0; i < list.length; i++) if (list[i].id === q.id) at = i;
       if (at < 0) return send(res, 404, { error: 'not found' });
-      var old = list[at].name, moved = 0;
+      var r;
       if (req.method === 'PATCH') {
         var ob = readBody(req);
         if (Array.isArray(ob.order)) { // the board: the order of this project's tasks
           var ord = [];
           ob.order.forEach(function (x) { if (typeof x === 'string' && UUID.test(x) && ord.indexOf(x) < 0 && ord.length < 200) ord.push(x); });
-          if (ord.length) list[at].order = ord; else delete list[at].order;
-          await write(token, list);
-          return send(res, 200, { projects: list });
+          return send(res, 200, { projects: (await save(token, q.id, { order: ord })).projects });
         }
-        var p = list[at], touched = false;
+        var p = list[at], patch = {};
         if (ob.prio !== undefined) { // priority: 0 none, 1 low, 2 medium, 3 high
           var pr = Math.round(Number(ob.prio));
           if (!(pr >= 0 && pr <= 3)) return send(res, 400, { error: 'bad priority' });
-          if (pr) p.prio = pr; else delete p.prio;
-          touched = true;
+          patch.prio = pr;
         }
         if (ob.status !== undefined) {
           if (STATUS.indexOf(ob.status) < 0) return send(res, 400, { error: 'bad status' });
           if (ob.status === 'active' && p.status === 'done' && live(list) >= MAXN) return send(res, 400, { error: 'That is the most active projects (' + MAXN + '), complete one first' });
-          if (ob.status === 'active') { delete p.status; delete p.done_at; delete p.left_open; }
-          else {
-            if (ob.status === 'done' && p.status !== 'done') {
-              p.done_at = new Date().toISOString();
-              var lo = Math.round(Number(ob.left_open));
-              if (lo >= 0 && lo < 1000) p.left_open = lo; else delete p.left_open;
-            } else if (ob.status === 'hold') { delete p.done_at; delete p.left_open; }
-            p.status = ob.status;
-          }
-          touched = true;
+          patch.status = ob.status;
+          if (ob.status === 'done') { var lo = Math.round(Number(ob.left_open)); if (lo >= 0 && lo < 1000) patch.left_open = lo; }
         }
-        if (touched && ob.name === undefined) { await write(token, list); return send(res, 200, { projects: list }); }
+        if (ob.name === undefined && (patch.prio !== undefined || patch.status !== undefined)) return send(res, 200, { projects: (await save(token, q.id, patch)).projects });
         name = clean(ob.name);
         if (!name) return send(res, 400, { error: 'Give the project a name' });
         if (dupe(list, name, q.id)) return send(res, 409, { error: 'You already have a project called ' + name });
-        p.name = name;
-        await write(token, list);
-        if (name !== old) moved = await todos.rpc('project_rename', { p_token: token, p_old: old, p_new: name });
+        patch.name = name; // a rename also moves open and finished Work tasks to the new name (in the same database call)
+        r = await save(token, q.id, patch);
       } else {
-        list.splice(at, 1);
-        await write(token, list);
-        moved = await todos.rpc('project_clear', { p_token: token, p_name: old });
+        r = await todos.rpc('wproj_delete', { p_token: token, p_id: q.id });
       }
-      return send(res, 200, { projects: list, tasks: moved || 0 });
+      return send(res, 200, { projects: r.projects, tasks: r.tasks || 0 });
     }
     res.setHeader('Allow', 'GET, POST, PATCH, DELETE');
     return send(res, 405, { error: 'method not allowed' });
   } catch (e) {
     if (e.code === '28000') return send(res, 401, { error: 'bad token' });
-    if (e.code === '23514' || e.code === 'PGRST202') return send(res, 409, { error: 'run the projects migration first' });
+    if (e.code === '23505') return send(res, 409, { error: 'You already have a project with that name' });
+    if (e.code === 'P0002') return send(res, 404, { error: 'not found' });
+    if (e.code === '23514') return send(res, 400, { error: 'bad value' });
+    if (e.code === 'PGRST202') return send(res, 409, { error: 'run the projects migration first (db/setup33.sql)' });
     console.error('projects api error', e.code, e.message);
     return send(res, 502, { error: 'upstream error' });
   }

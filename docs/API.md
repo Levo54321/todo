@@ -282,6 +282,9 @@ change the header in the endpoint file and regenerate._
 //   DELETE ?id          -> remove (Work tasks carrying it lose the project)
 // A task's project is simply its category on the Work list, so everything that already shows or groups by
 // category (filters, insights) works for projects too. Names are unique, ignoring capitalisation.
+// Storage (v33): table work_projects via RPCs wproj_list / wproj_save / wproj_delete (db/setup33.sql). Created, renamed,
+// prio and status changes are logged in work_project_events. The old 'projects' config key is kept in step by the database
+// for one release (fallback only; nothing reads it).
 ```
 
 ## api/saver.js
