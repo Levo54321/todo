@@ -247,8 +247,11 @@ body .bdhead{min-height:44px;padding:6px 0}
 .wsmbox{max-width:560px;margin:24px auto;padding:16px;border-radius:16px;background-color:var(--paper);color:var(--ink)}
 .wsmbox .row{display:-webkit-flex;display:flex;margin-top:8px}
 .wsmbox .sp{-webkit-flex:1;flex:1}
-/* v1086: a column header with an icon, a priority pill, "N open" and a caret is wider than a narrow column. Let the name keep at
-   least ~110px and move the pills to a second line instead of squeezing the title to one word per line (iPad 2). */
-.bdcol .bdhead{-webkit-flex-wrap:wrap;flex-wrap:wrap}
-.bdcol .bdname{-webkit-flex:1 1 110px;flex:1 1 110px}
-.bdcol .bdhead .bdp,.bdcol .bdhead .bdn,.bdcol .bdhead .bdcaret{margin-top:3px;margin-bottom:2px}
+/* v1086: a column header holds an icon, RAG dot, title, caret, priority pill and "N open", which outruns a narrow column. iOS 9 Safari
+   did not wrap a flex <button>, so the header is two plain rows instead: row 1 = RAG dot, icon, title, caret; row 2 = pill + count. */
+.bdtop .bdhead{display:block}
+.bdh1{display:-webkit-flex;display:flex;-webkit-align-items:flex-start;align-items:flex-start;width:100%}
+.bdh1 .bdname{-webkit-flex:1 1 auto;flex:1 1 auto;min-width:0}
+.bdh2{display:-webkit-flex;display:flex;-webkit-align-items:flex-start;align-items:flex-start;-webkit-flex-wrap:wrap;flex-wrap:wrap}
+.bdh2 > :first-child{margin-left:0}
+.bdh2 .bdn{margin-top:5px}

@@ -266,11 +266,11 @@
     for (i = 0; i < tasks.length; i++) if (!tasks[i].blocked && !tasks[i].paused) { firstFree = i; break; }
     h = '<section class="bdcol' + (folded ? ' folded' : '') + (hold ? ' hold' : '') + '">' +
       '<div class="bdtop"><button class="bdhead" data-bd="fold" data-pid="' + esc(p.id) + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
-      (cd.rag ? '<span class="wprag wprag-' + cd.rag + '" title="RAG: ' + RAGN[cd.rag] + '" aria-label="RAG ' + RAGN[cd.rag] + '"></span>' : '') +
+      '<span class="bdh1">' + (cd.rag ? '<span class="wprag wprag-' + cd.rag + '" title="RAG: ' + RAGN[cd.rag] + '" aria-label="RAG ' + RAGN[cd.rag] + '"></span>' : '') +
       (cd.client && clientById(cd.client) ? App.clientLogo(clientById(cd.client), 'sm') : '') +
-      '<span class="bdname">' + esc(p.name) + '</span>' +
-      (hold ? '<span class="bdp hold">On hold</span>' : p.prio ? '<span class="bdp bdp' + p.prio + '">' + PL[p.prio] + '</span>' : '') +
-      '<span class="bdn">' + (tasks.length - pzn) + ' open</span><span class="bdcaret">' + (folded ? '▸' : '▾') + '</span></button>' +
+      '<span class="bdname">' + esc(p.name) + '</span><span class="bdcaret">' + (folded ? '▸' : '▾') + '</span></span>' +
+      '<span class="bdh2">' + (hold ? '<span class="bdp hold">On hold</span>' : p.prio ? '<span class="bdp bdp' + p.prio + '">' + PL[p.prio] + '</span>' : '') +
+      '<span class="bdn">' + (tasks.length - pzn) + ' open</span></span></button>' +
       '<button class="bdopen" data-bd="page" data-pid="' + esc(p.id) + '" aria-label="Open the ' + esc(p.name) + ' page">Open ›</button></div>' +
       '<div class="bdhealth">' + (cd.client && clientById(cd.client) ? '<span class="bdh cli">' + esc(clientById(cd.client).name) + '</span>' : '') + (cd.owner && firstName(cd.owner) ? '<span class="bdh own">' + esc(firstName(cd.owner)) + '</span>' : '') +
       (cd.due && cd.due < App.today() ? '<span class="bdh bad pdue">Past due</span>' : '') + health(tasks) +
