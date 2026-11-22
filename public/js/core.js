@@ -398,13 +398,13 @@
     setCls($('nBudget'), 'ritem' + (view === 'budget' ? ' on' : ''));
     setCls($('nInsights'), 'ritem' + (view === 'insights' ? ' on' : ''));
     setCls($('nJobs'), 'ritem' + (view === 'jobs' ? ' on' : ''));
-    setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' ? ' on' : ''));
-    setCls($('psW'), view === 'board' ? 'on' : '');
+    setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' || view === 'wproject' ? ' on' : ''));
+    setCls($('psW'), view === 'board' || view === 'wproject' ? 'on' : '');
     setCls($('psP'), view === 'pprojects' ? 'on' : '');
     if (document.body.getAttribute('data-view') !== view) document.body.setAttribute('data-view', view);
     var bc = railOpen ? 'rail-open' : '';
     if (document.body.className !== bc) document.body.className = bc;
-    if (view !== 'tasks' && view !== 'plan' && view !== 'pprojects') setHTML($('viewTitle'), esc((App.views[view] && App.views[view].title) || ''));
+    if (view !== 'tasks' && view !== 'plan' && view !== 'pprojects' && view !== 'wproject') setHTML($('viewTitle'), esc((App.views[view] && App.views[view].title) || ''));
   }
   function render() {
     renderChrome();
@@ -528,7 +528,7 @@
     if (window.pageYOffset !== pageY) window.scrollTo(0, pageY);
   }
   /* ---------- navigation ---------- */
-  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects', jobs: 'vJobs' };
+  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects', jobs: 'vJobs', wproject: 'vWproject' };
   function navTo(name) {
     if (name === 'projects') name = (view === 'tasks' || !store.get('projMode')) ? (mode === 'work' ? 'board' : 'pprojects') : store.get('projMode'); // one Projects tab, Work | Personal switch inside
     if (name === 'board' || name === 'pprojects') store.set('projMode', name);
@@ -1867,7 +1867,7 @@
   App.completeTask = function (id) { var t = find(id); if (t && !t.done) doTick(id, true); }; // marks an open task done (scan review): no Undo toast per task
   App.mode = function () { return mode; };
   App.token = function () { return token; };
-  App.whenToken = whenToken; App.getProjects = getProjects;
+  App.whenToken = whenToken; App.getProjects = getProjects; App.navTo = navTo; App.view = function () { return view; };
   App.settings = settings;
   App.render = render;
   App.ask = ask;

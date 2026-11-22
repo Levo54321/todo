@@ -6,6 +6,7 @@
   var projects = [], known = false, failed = false, fold = {}, msg = '', pick = null, drag = null;
   var tab = store.get('bdTab') === 'ins' ? 'ins' : 'board';
   var rows = null, hErr = '', hLoading = false, hAt = 0;
+  var cards = {}, people = {}, cardsAt = 0, kept = null; // v34: RAG / owner / due per project (GET ?cards=1), scroll kept while a project page is open
   try { fold = JSON.parse(store.get('bdFold') || '{}') || {}; } catch (e) { fold = {}; }
 
   function syncCore() { if (App.setProjects) App.setProjects(projects); }
@@ -17,6 +18,22 @@
       else if (!known && !failed) { failed = true; paint(); }
     });
   }
+
+  function loadCards() { // board header details; fetched when the board is shown (not on every refresh)
+    if (!App.token()) return;
+    cardsAt = Date.now();
+    App.api('GET', '?cards=1', null, function (s, d) { if (s === 200 && d && d.cards) setCards(d.cards, d.people); }, '/api/projects');
+  }
+  function setCards(c, pl) {
+    var i; cards = c || {}; people = {};
+    for (i = 0; i < (pl || []).length; i++) people[pl[i].id] = pl[i];
+    paint();
+  }
+  function firstName(id) {
+    var pe = people[id]; if (!pe) return '';
+    return pe.name.split(' ')[0] + (pe.removed ? ' (removed)' : '');
+  }
+  var RAGN = { r: 'Red', a: 'Amber', g: 'Green' };
 
   /* ---------- data ---------- */
   function openWork() {
@@ -233,15 +250,18 @@
   }
   function column(c) {
     var p = c.p, tasks = c.tasks, folded = isFolded(p), hold = p.status === 'hold', h, i, firstFree = -1;
-    var pzn = 0;
+    var pzn = 0, cd = cards[p.id] || {};
     for (i = 0; i < tasks.length; i++) if (tasks[i].paused) pzn++;
     for (i = 0; i < tasks.length; i++) if (!tasks[i].blocked && !tasks[i].paused) { firstFree = i; break; }
     h = '<section class="bdcol' + (folded ? ' folded' : '') + (hold ? ' hold' : '') + '">' +
-      '<button class="bdhead" data-bd="fold" data-pid="' + esc(p.id) + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
+      '<div class="bdtop"><button class="bdhead" data-bd="fold" data-pid="' + esc(p.id) + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
+      (cd.rag ? '<span class="wprag wprag-' + cd.rag + '" title="RAG: ' + RAGN[cd.rag] + '" aria-label="RAG ' + RAGN[cd.rag] + '"></span>' : '') +
       '<span class="bdname">' + esc(p.name) + '</span>' +
       (hold ? '<span class="bdp hold">On hold</span>' : p.prio ? '<span class="bdp bdp' + p.prio + '">' + PL[p.prio] + '</span>' : '') +
       '<span class="bdn">' + (tasks.length - pzn) + ' open</span><span class="bdcaret">' + (folded ? '▸' : '▾') + '</span></button>' +
-      '<div class="bdhealth">' + health(tasks) +
+      '<button class="bdopen" data-bd="page" data-pid="' + esc(p.id) + '" aria-label="Open the ' + esc(p.name) + ' page">Open ›</button></div>' +
+      '<div class="bdhealth">' + (cd.owner && firstName(cd.owner) ? '<span class="bdh own">' + esc(firstName(cd.owner)) + '</span>' : '') +
+      (cd.due && cd.due < App.today() ? '<span class="bdh bad pdue">Past due</span>' : '') + health(tasks) +
       (p.order && p.order.length && tasks.length > 1 ? '<button class="bdh auto" data-bd="auto" data-pid="' + esc(p.id) + '">↺ Auto-order</button>' : '') + '</div>';
     if (!folded) {
       h += '<ul class="list bdlist">';
@@ -554,7 +574,9 @@
     while (el && el !== document && !(el.getAttribute && el.getAttribute('data-bd'))) el = el.parentNode;
     if (!el || el === document || el.disabled) return;
     a = el.getAttribute('data-bd');
-    if (a === 'fold') {
+    if (a === 'page') {
+      grabKept(); if (App.openWorkProject) App.openWorkProject(el.getAttribute('data-pid'));
+    } else if (a === 'fold') {
       var pid = el.getAttribute('data-pid'), pj = byId(pid);
       if (pj) toggleFold(pj);
       store.set('bdFold', JSON.stringify(fold)); paint();
@@ -579,12 +601,37 @@
   document.addEventListener('visibilitychange', function () { if (!App.hidden()) load(function () { paint(); }); }, false);
 
   App.boardSet = function (l) { use(l); paint(); };
+  App.boardCards = function (pid, c, pl) { // the project page sends fresh header details after a save
+    if (c && (c.rag || c.owner || c.due)) cards[pid] = c; else delete cards[pid];
+    setCards(cards, pl);
+  };
+  App.boardReloadCards = loadCards; // after the Work people list changes
+  App.boardTasks = function (pid) { // a project's open tasks in board order (the project page lists them the same way)
+    var g = groups(), i;
+    for (i = 0; i < g.cols.length; i++) if (g.cols[i].p.id === pid) return g.cols[i].tasks;
+    return null;
+  };
+  App.boardProject = byId;
+  function grabKept() { // remember where the board was scrolled, so Back from a project page lands in the same place
+    var cols = $('boardPane') && $('boardPane').querySelector('.bdcols'), b, i;
+    kept = { y: window.pageYOffset || 0, left: cols ? cols.scrollLeft : 0, tops: [] };
+    if (cols) { b = cols.querySelectorAll('.bdlist'); for (i = 0; i < b.length; i++) kept.tops.push(b[i].scrollTop); }
+  }
+  App.boardKeep = grabKept;
+  function putKept() {
+    var k = kept, cols = $('boardPane') && $('boardPane').querySelector('.bdcols'), b, i;
+    kept = null; if (!k) return;
+    if (cols && cols.scrollLeft !== k.left) cols.scrollLeft = k.left;
+    if (cols) { b = cols.querySelectorAll('.bdlist'); for (i = 0; i < b.length && i < k.tops.length; i++) if (b[i].scrollTop !== k.tops[i]) b[i].scrollTop = k.tops[i]; }
+    if (k.y) window.scrollTo(0, k.y);
+  }
   App.register('board', {
     title: 'Projects',
     render: function () { paint(); },
     show: function () {
-      msg = ''; pick = null; paint();
+      msg = ''; pick = null; paint(); putKept();
       load(function () { paint(); });
+      if (Date.now() - cardsAt > 60000) loadCards();
       if (tab === 'ins' && (!rows || Date.now() - hAt > 60000)) fetchRows();
     }
   });

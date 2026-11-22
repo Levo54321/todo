@@ -159,6 +159,19 @@ change the header in the endpoint file and regenerate._
 // db/setup20.sql. Values, names, passwords and passes are never logged and never written to the activity log.
 ```
 
+## api/_wpmeta.js
+```
+// Work project page details (work_projects.meta) and the Work people list; used by api/projects.js.
+// A leading _ means this file is not a serverless function of its own (12-function limit).
+// meta shape (every key optional, left out when not set):
+//   { owner, requester, recruiter: work_people ids (12 hex),
+//     goal, success: plain text up to 2000 characters,
+//     rag: 'r' | 'a' | 'g',
+//     dates: { requested, started, target, due: 'YYYY-MM-DD' },
+//     links: { slack: [{n, u, init?}], groups: [{n, u}], studies: [{n, u}], other: [{n, u}] }  (init = "Initial request", at most one),
+//     codes: [{n, c}] }  (campaign codes: plain text, not links)
+```
+
 ## api/budget.js
 ```
 // /api/budget — token-gated access to the budget config and entries.
@@ -285,6 +298,18 @@ change the header in the endpoint file and regenerate._
 // Storage (v33): table work_projects via RPCs wproj_list / wproj_save / wproj_delete (db/setup33.sql). Created, renamed,
 // prio and status changes are logged in work_project_events. The old 'projects' config key is kept in step by the database
 // for one release (fallback only; nothing reads it).
+// Project pages and Work people (v34, db/setup34.sql, cleaning in api/_wpmeta.js; GET /api/projects itself is unchanged):
+//   GET ?page=<id>      -> {id, meta, created:'YYYY-MM-DD', events:[{at,kind,text}], people:[{id,name,removed?}]}
+//        meta = {owner?, requester?, recruiter? (person ids), goal?, success? (<=2000 chars), rag?: 'r'|'a'|'g',
+//                dates?: {requested?, started?, target?, due?}, links?: {slack?:[{n,u,init?}], groups?, studies?, other?: [{n,u}]},
+//                codes?: [{n,c}]}; links are https only, at most 25 rows per list, one Slack row may be init (Initial request).
+//        Event kinds added: rag (text r/a/g or '' = not set), owner/requester/recruiter (text = person's name), details (text = changed keys).
+//   PATCH ?id=<id>&meta=1 {meta:{...}} -> save the keys sent (null or '' clears one; keys not sent are kept) -> same reply as ?page
+//   PATCH ?id=<id>&meta=1 {rag:'r'|'a'|'g'|null} -> set the traffic light alone -> same reply as ?page
+//   GET ?cards=1        -> {cards:{<project id>:{rag?, owner?, due?}}, people:[...]}  (board column headers)
+//   GET ?people=1       -> {people}; POST ?people=1 {name} -> add (a removed person with that name comes back);
+//   PATCH ?people=<id> {name} -> rename; DELETE ?people=<id> -> remove: hidden from pickers, projects keep the id and show
+//        "Name (removed)" until another person is picked. All reply {people}; names up to 40, unique ignoring case.
 ```
 
 ## api/saver.js

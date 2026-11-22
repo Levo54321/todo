@@ -7,7 +7,7 @@ function ok(n, c, i) { if (!c) { fails++; console.log('FAIL ' + n + (i ? ' -> ' 
 function dbError(code, m) { var e = new Error(m || 'db ' + code); e.code = code; return e; }
 
 // rows as the table holds them; tasks = Work tasks by category
-var rows, tasks, events;
+var rows, tasks, events, people = [];
 function reset() {
   rows = [
     { id: 'aaaaaaaaaaa1', name: 'Firstwork', prio: 1, status: 'active', pos: 1, task_order: ['8fb8da5d-f79c-4b8a-b98e-a5cb22b306d4'], left_open: null, done_at: null },
@@ -65,6 +65,16 @@ function fakeRpc(name, a) {
     tasks.forEach(function (t) { if (t.category === r.name) { t.category = null; n++; } });
     return { projects: json(), tasks: n };
   }
+  if (name === 'wpeople_list') return people.slice();
+  if (name === 'wpeople_save') { var pe = people.filter(function (x) { return x.id === a.p_id; })[0]; if (pe) pe.name = a.p_name; else people.push({ id: a.p_id, name: a.p_name }); return people.slice(); }
+  if (name === 'wpeople_remove') { var pr = people.filter(function (x) { return x.id === a.p_id; })[0]; if (!pr) throw dbError('P0002'); pr.removed = true; return people.slice(); }
+  if (name === 'wproj_meta_get' || name === 'wproj_meta_put') {
+    r = byId(a.p_id); if (!r) throw dbError('P0002');
+    r.meta = r.meta || {};
+    if (name === 'wproj_meta_put') Object.keys(a.p_patch).forEach(function (k) { if (a.p_patch[k] === null) delete r.meta[k]; else r.meta[k] = a.p_patch[k]; });
+    return { id: r.id, meta: r.meta, created: '2026-11-22', events: [], people: people };
+  }
+  if (name === 'wproj_cards') return { cards: {}, people: people };
   if (name === 'todo_update') { tasks.push({ id: a.p_id, category: a.p_patch.category, done: false }); return { id: a.p_id }; }
   throw new Error('unexpected rpc ' + name);
 }
@@ -158,6 +168,57 @@ var U = '11111111-2222-4333-8444-555555555555';
   ok('DELETE: removed, its tasks lose the project, {projects, tasks}', dl.status === 200 && dl.json.tasks === 2 && dl.json.projects.length === 3 && tasks[0].category === null);
   ok('DELETE unknown -> 404', (await call('DELETE', { id: 'ffffffffffff' })).status === 404);
   ok('PUT -> 405', (await call('PUT')).status === 405);
+
+  // v34: project pages and Work people
+  reset(); people = [];
+  var pg = await call('GET', { page: 'aaaaaaaaaaa2' });
+  ok('GET ?page: meta + created + events + people', pg.status === 200 && pg.json.created === '2026-11-22' && Array.isArray(pg.json.events) && last('wproj_meta_get').p_id === 'aaaaaaaaaaa2' && calls.length === 1);
+  ok('GET ?page bad id -> 404', (await call('GET', { page: 'nope' })).status === 404 && (await call('GET', { page: 'ffffffffffff' })).status === 404);
+  ok('GET ?cards', (await call('GET', { cards: '1' })).json.cards !== undefined && last('wproj_cards'));
+  var full = { owner: 'bbbbbbbbbbb1', requester: '', recruiter: null, goal: '  Line one\r\n\n\n\nLine two  ', success: 'x'.repeat(2500),
+    dates: { requested: '2026-11-01', due: '2026-12-31', started: '', target: null },
+    links: { slack: [{ n: 'Ask', u: 'https://x.slack.com/a', init: true }, { n: 'Thread', u: 'https://x.slack.com/b', init: true }, { n: '', u: '' }],
+             groups: [{ n: 'G1', u: 'https://app.prolific.com/g/1' }], studies: [], other: [{ n: 'Linear', u: 'https://linear.app/p/1' }] },
+    codes: [{ n: 'Spring', c: 'SPR-01' }, { n: '', c: '' }, { n: 'Two', c: 'C2' }], junk: 'ignored' };
+  var mp = await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: full });
+  var sp = last('wproj_meta_put').p_patch;
+  ok('PATCH meta: people ids kept, empty ones cleared', mp.status === 200 && sp.owner === 'bbbbbbbbbbb1' && sp.requester === null && sp.recruiter === null, JSON.stringify(sp));
+  ok('PATCH meta: text tidied and capped', sp.goal === 'Line one\n\nLine two' && sp.success.length === 2000);
+  ok('PATCH meta: empty dates dropped', JSON.stringify(sp.dates) === '{"requested":"2026-11-01","due":"2026-12-31"}');
+  ok('PATCH meta: empty link rows dropped, one Initial request, empty groups left out', sp.links.slack.length === 2 && sp.links.slack[0].init === true && !sp.links.slack[1].init && !sp.links.studies && sp.links.other[0].u === 'https://linear.app/p/1', JSON.stringify(sp.links));
+  ok('PATCH meta: codes kept as text, empty rows dropped, unknown keys ignored', sp.codes.length === 2 && sp.codes[1].c === 'C2' && !('junk' in sp));
+  ok('PATCH meta: rag not touched by the form', !('rag' in sp) && mp.json.meta.owner === 'bbbbbbbbbbb1');
+  var e1 = await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { other: [{ n: 'Bad', u: 'http://plain.example.com' }] } } });
+  ok('PATCH meta: http link -> 400 with a readable message', e1.status === 400 && /https/.test(e1.json.error), JSON.stringify(e1.json));
+  ok('PATCH meta: javascript: link -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { slack: [{ n: 'x', u: 'javascript:alert(1)' }] } } })).status === 400);
+  ok('PATCH meta: name with no link -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { groups: [{ n: 'G', u: '' }] } } })).status === 400);
+  ok('PATCH meta: code missing -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { codes: [{ n: 'A', c: '' }] } })).status === 400);
+  ok('PATCH meta: bad date -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { dates: { due: '2026-02-30' } } })).status === 400);
+  ok('PATCH meta: bad person id -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { owner: 'Sam' } })).status === 400);
+  var many = []; for (k = 0; k < 26; k++) many.push({ n: 'c' + k, c: 'C' + k });
+  ok('PATCH meta: more than 25 rows -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { codes: many } })).status === 400);
+  var cl = await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { slack: [] }, codes: [], dates: {} } });
+  ok('PATCH meta: emptied lists clear their keys', cl.status === 200 && !cl.json.meta.links && !cl.json.meta.codes && !cl.json.meta.dates && cl.json.meta.goal);
+  var rg = await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { rag: 'a' });
+  ok('PATCH rag alone', rg.status === 200 && JSON.stringify(last('wproj_meta_put').p_patch) === '{"rag":"a"}' && rg.json.meta.rag === 'a' && rg.json.meta.owner);
+  ok('PATCH rag null clears it', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { rag: null })).json.meta.rag === undefined);
+  ok('PATCH rag bad -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { rag: 'blue' })).status === 400);
+  ok('PATCH meta with nothing -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, {})).status === 400);
+  ok('PATCH meta unknown project -> 404', (await call('PATCH', { id: 'ffffffffffff', meta: '1' }, { rag: 'g' })).status === 404);
+  ok('meta routes need the token', (await call('GET', { page: 'aaaaaaaaaaa2' }, null, { 'x-todo-token': 'nope' })).status === 401);
+  var a1 = await call('POST', { people: '1' }, { name: '  Sam   Jones ' });
+  ok('people: add (cleaned, fresh 12-hex id)', a1.status === 201 && a1.json.people[0].name === 'Sam Jones' && /^[0-9a-f]{12}$/.test(a1.json.people[0].id));
+  ok('people: duplicate (any case) -> 409', (await call('POST', { people: '1' }, { name: 'sam jones' })).status === 409);
+  ok('people: empty name -> 400', (await call('POST', { people: '1' }, { name: ' ' })).status === 400);
+  var sid = a1.json.people[0].id;
+  ok('people: rename', (await call('PATCH', { people: sid }, { name: 'Sam J' })).json.people[0].name === 'Sam J');
+  ok('people: rename unknown -> 404', (await call('PATCH', { people: 'ffffffffffff' }, { name: 'X' })).status === 404);
+  var rm = await call('DELETE', { people: sid });
+  ok('people: remove keeps the row, marked removed', rm.status === 200 && rm.json.people[0].removed === true);
+  ok('people: a removed name can be added again', (await call('POST', { people: '1' }, { name: 'Sam J' })).status === 201);
+  ok('people: GET', (await call('GET', { people: '1' })).json.people.length === 2);
+  ok('people: PUT -> 405', (await call('PUT', { people: '1' })).status === 405);
+  ok('plain GET still returns the old shape only', JSON.stringify(Object.keys((await call('GET')).json)) === '["projects"]');
 
   console.log(fails ? 'WPROJ NODE TESTS: ' + fails + ' failed' : 'WPROJ NODE TESTS: all passed');
   process.exit(fails ? 1 : 0);

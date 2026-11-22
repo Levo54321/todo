@@ -5,7 +5,9 @@ _Done: v1050 (Deploy A) C3, C4, W3, W4, P1; v1051 (Deploy B) C2 and the `#t=` ha
 
 ## Work project amendments (planned 22 Nov 2026, one session each)
 - **Prompt 1 — done (22 Nov 2026, server only)**: Work projects moved from the `projects` config key into `work_projects` + `work_project_events` (`db/setup33.sql`); `/api/projects` reads/writes them via `wproj_*` RPCs with the same response shape.
-- **Prompt 2–6 — planned**: per-project data on `work_projects.meta` and the events log (owner, requester, links, client, RAG status, status-update history). Each comes as its own prompt/session; details to be filled in from Luc's prompts when they start.
+- **Prompt 2 — done (22 Nov 2026, v1083, `db/setup34.sql`)**: Work project page (board `Open ›` + Manage projects `Open`), owner/requester/recruiter from a Work people list (Manage projects), goal, success criteria, four dates with a Past due pill, Slack / Prolific Groups / Prolific Studies / Other link lists (one Initial request), campaign codes, RAG switch with a dot on the board header, changes in the activity log.
+- **Prompt 3–6 — planned**: rest of the per-project data (client, status-update history; a pasted Claude status update suggesting a RAG that Luc accepts himself). Each comes as its own prompt/session.
+- Ideas noticed in Prompt 2 (not built, ask first): filter the board by owner; a Copy button for campaign codes (iOS 9 cannot copy by script, so a select-all box there); show RAG and owner in Manage projects and Insights; a project's link list could also offer "Open all Slack" on desktop.
 - Follow-up (next release after Luc has used v33): stop mirroring into the `projects` config key (`wproj_mirror`), then delete the key and drop `projects` from the `cfg_get`/`cfg_set` whitelist.
 
 ## Open import issues (Luc, 7 Nov 2026, after v1064: "works well enough to use", revisit later)

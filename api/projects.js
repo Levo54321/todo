@@ -13,8 +13,21 @@
 // Storage (v33): table work_projects via RPCs wproj_list / wproj_save / wproj_delete (db/setup33.sql). Created, renamed,
 // prio and status changes are logged in work_project_events. The old 'projects' config key is kept in step by the database
 // for one release (fallback only; nothing reads it).
+// Project pages and Work people (v34, db/setup34.sql, cleaning in api/_wpmeta.js; GET /api/projects itself is unchanged):
+//   GET ?page=<id>      -> {id, meta, created:'YYYY-MM-DD', events:[{at,kind,text}], people:[{id,name,removed?}]}
+//        meta = {owner?, requester?, recruiter? (person ids), goal?, success? (<=2000 chars), rag?: 'r'|'a'|'g',
+//                dates?: {requested?, started?, target?, due?}, links?: {slack?:[{n,u,init?}], groups?, studies?, other?: [{n,u}]},
+//                codes?: [{n,c}]}; links are https only, at most 25 rows per list, one Slack row may be init (Initial request).
+//        Event kinds added: rag (text r/a/g or '' = not set), owner/requester/recruiter (text = person's name), details (text = changed keys).
+//   PATCH ?id=<id>&meta=1 {meta:{...}} -> save the keys sent (null or '' clears one; keys not sent are kept) -> same reply as ?page
+//   PATCH ?id=<id>&meta=1 {rag:'r'|'a'|'g'|null} -> set the traffic light alone -> same reply as ?page
+//   GET ?cards=1        -> {cards:{<project id>:{rag?, owner?, due?}}, people:[...]}  (board column headers)
+//   GET ?people=1       -> {people}; POST ?people=1 {name} -> add (a removed person with that name comes back);
+//   PATCH ?people=<id> {name} -> rename; DELETE ?people=<id> -> remove: hidden from pickers, projects keep the id and show
+//        "Name (removed)" until another person is picked. All reply {people}; names up to 40, unique ignoring case.
 var crypto = require('crypto');
 var todos = require('./todos.js');
+var wp = require('./_wpmeta.js');
 var MAX = 40, MAXN = 30, MAXALL = 120, STATUS = ['active', 'hold', 'done'];
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -42,11 +55,47 @@ function dupe(list, name, exceptId) {
   return list.some(function (p) { return p.id !== exceptId && p.name.toLowerCase() === low; });
 }
 
+// Project pages, board header cards and the Work people list (v34).
+async function pages(req, res, q, token) {
+  var m = req.method, b, r;
+  if (q.cards && m === 'GET') return send(res, 200, await todos.rpc('wproj_cards', { p_token: token }));
+  if (q.page && m === 'GET') {
+    if (!wp.PID.test(q.page)) return send(res, 404, { error: 'not found' });
+    return send(res, 200, await todos.rpc('wproj_meta_get', { p_token: token, p_id: q.page }));
+  }
+  if (q.meta && m === 'PATCH') {
+    if (!wp.PID.test(q.id || '')) return send(res, 404, { error: 'not found' });
+    b = readBody(req);
+    var patch = b.meta !== undefined ? wp.cleanMeta(b.meta) : 'rag' in b ? { rag: wp.cleanRag(b.rag) } : null;
+    if (!patch || !Object.keys(patch).length) return send(res, 400, { error: 'nothing to save' });
+    return send(res, 200, await todos.rpc('wproj_meta_put', { p_token: token, p_id: q.id, p_patch: patch }));
+  }
+  if (q.people) {
+    if (m === 'GET') return send(res, 200, { people: await todos.rpc('wpeople_list', { p_token: token }) });
+    if (m === 'DELETE') {
+      if (!wp.PID.test(q.people)) return send(res, 404, { error: 'not found' });
+      return send(res, 200, { people: await todos.rpc('wpeople_remove', { p_token: token, p_id: q.people }) });
+    }
+    if (m === 'POST' || m === 'PATCH') {
+      var nm = wp.personName(readBody(req).name), id = m === 'POST' ? newId() : q.people;
+      if (!nm) return send(res, 400, { error: 'Give the person a name' });
+      if (m === 'PATCH' && !wp.PID.test(id)) return send(res, 404, { error: 'not found' });
+      r = await todos.rpc('wpeople_list', { p_token: token });
+      if ((r || []).some(function (x) { return !x.removed && x.id !== id && x.name.toLowerCase() === nm.toLowerCase(); })) return send(res, 409, { error: nm + ' is already in the list' });
+      if (m === 'PATCH' && !(r || []).some(function (x) { return x.id === id; })) return send(res, 404, { error: 'not found' });
+      return send(res, m === 'POST' ? 201 : 200, { people: await todos.rpc('wpeople_save', { p_token: token, p_id: id, p_name: nm }) });
+    }
+  }
+  res.setHeader('Allow', 'GET, POST, PATCH, DELETE');
+  return send(res, 405, { error: 'method not allowed' });
+}
+
 module.exports = async function handler(req, res) {
   var q = req.query || {};
   var token = req.headers['x-todo-token'] || q.t;
   if (!token) return send(res, 401, { error: 'missing token' });
   try {
+    if (q.page || q.cards || q.people || q.meta) return await pages(req, res, q, token);
     var list = await read(token), name, i;
     if (req.method === 'GET') return send(res, 200, { projects: list });
     if (req.method === 'POST') {
@@ -112,11 +161,12 @@ module.exports = async function handler(req, res) {
     res.setHeader('Allow', 'GET, POST, PATCH, DELETE');
     return send(res, 405, { error: 'method not allowed' });
   } catch (e) {
+    if (e.bad) return send(res, 400, { error: e.message });
     if (e.code === '28000') return send(res, 401, { error: 'bad token' });
     if (e.code === '23505') return send(res, 409, { error: 'You already have a project with that name' });
     if (e.code === 'P0002') return send(res, 404, { error: 'not found' });
     if (e.code === '23514') return send(res, 400, { error: 'bad value' });
-    if (e.code === 'PGRST202') return send(res, 409, { error: 'run the projects migration first (db/setup33.sql)' });
+    if (e.code === 'PGRST202') return send(res, 409, { error: 'run the projects migration first (db/setup34.sql)' });
     console.error('projects api error', e.code, e.message);
     return send(res, 502, { error: 'upstream error' });
   }

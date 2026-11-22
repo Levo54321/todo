@@ -49,14 +49,14 @@ Keep it short: facts and rules, not history.
 ## Stack and repo
 - Repo `Levo54321/todo` (private). Branch `main` auto-deploys to Vercel project `luc-todo` (team `teamevo`, region
   dub1). Live: https://luc-todo.vercel.app.
-- `shell.html` → `python3 tools/build.py <ver> budget saver calendar insights projects workcal board pprojects csvimport jobs`
+- `shell.html` → `python3 tools/build.py <ver> budget saver calendar insights projects workcal board pprojects csvimport jobs wproject`
   → `public/index.html`. Module load order matters. **Bump `<ver>` (the `?v=` cache buster) on every
   frontend change**; the current version is in `public/index.html`.
 - `public/js/core.js` (~100 KB) is the shell: `window.App`, view registry `App.register(name,{title,render,show})`,
   state, editor sheet, task lists. Modules: budget, saver (screensaver), calendar, insights, projects (Manage
-  Projects, Work), workcal (Google work-calendar prompt), board (Projects board, Work), pprojects (My projects), jobs (Jobs tab).
+  Projects, Work), workcal (Google work-calendar prompt), board (Projects board, Work), pprojects (My projects), jobs (Jobs tab), wproject (Work project page).
 - One document-level click handler dispatches `data-act`; modules use their own attributes: `data-bd` (board),
-  `data-pj` (projects), `data-wc` (work calendar), `data-pp` (My projects), `data-sv` (screensaver settings), `data-jb` (Jobs).
+  `data-pj` (projects), `data-wc` (work calendar), `data-pp` (My projects), `data-sv` (screensaver settings), `data-jb` (Jobs), `data-wp` (Work project page).
 - Design (v1056/57): warm paper `--bg:#f5f2eb`, one accent per mode (navy Personal, green Work), sans-serif only, radii 8/12/16,
   4px spacing unit, type scale 12/14/16/17/20/28, 76px left rail (icon-only bottom bar on phones), night theme via
   `html.night`. `public/app.css` is ONE ordered file (tokens, base, shell, header, lists, tags/chips/buttons, sheets and
@@ -92,7 +92,7 @@ Keep it short: facts and rules, not history.
 ## Pitfalls learned
 - Dates are `YYYY-MM-DD` strings in Europe/London, not UTC (time zone fixed in `api/todos.js`).
 - board.js's submit handler grabs any form with class `bdadd`; other modules must use their own form class
-  (My projects uses `ppadd`).
+  (My projects uses `ppadd`, the Work project page `wpadd`).
 - Task rows from `App.listHTML` carry `data-act` and are handled by core; a module's own click handler must stop
   walking up at elements with `data-act` or `<a>` links.
 - Config keys are whitelisted in `cfg_get`/`cfg_set` (`db/setup13.sql`); a new key needs a migration editing both. Work projects are NOT a config key any more (table `work_projects`, v33).
@@ -133,6 +133,7 @@ Keep it short: facts and rules, not history.
 
 ## Amendments log
 Newest first. One line each: date — what changed in how sessions should work.
+- 2026-11-22 — v1083: Work project pages (Luc's plan OK'd: "Go ahead"). `db/setup34.sql` (applied): `work_people` + `wpeople_*`, `wproj_meta_get/put`, `wproj_cards`; routes `?page|meta|cards|people` in `api/projects.js` (cleaning in `api/_wpmeta.js`, still 12 functions); new module `wproject.js` (last on the build line), styles in `work.css`. Meta shape and rules: ARCHITECTURE section 3. `wproj_meta_put` merges top-level keys, so a form must send every key it owns (null to clear). Owner is a label only (no counts/order). Removing a person is soft ("Name (removed)"). Row ids like `#i-<task id>` repeat across hidden views: scope test selectors to the pane (`#wpPane #i-…`). Local test setup here: `pip install playwright`, `CHROME=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`, `npm i acorn` in the scratchpad + `NODE_PATH` for `tests/es5.js`. Fixed the stale `tests/bulk_node.js` fake (it still answered `cfg_get`; projects come from `wproj_list` since v33). Shop baseline before/after unchanged (items 2, members 3, push 1, receipts 1, shops 14, state 1, usuals 48). Tests: `node tests/wproj_node.js`, `python3 tests/harness.py . tests/t_wproject.py`.
 - 2026-11-22 — Server and SQL only (no `?v=` bump, still 12 functions): Work projects live in table `work_projects` + `work_project_events` (`db/setup33.sql`, copied from the `projects` config key with the same ids), reached through `wproj_list/save/delete/events`. `wproj_list` returns the OLD config-key shape (keys left out when unset: no `status` for active, no `prio` for 0; `order` = the board's task order, not the project's position, which is `pos`): keep that shape, every caller depends on it. The `projects` config key is still rewritten on every save (`wproj_mirror`) as a rollback fallback; nothing should read it; remove the mirror in a later release (ROADMAP "Work project amendments"). `project_rename`/`project_clear` exist only in the live database, not in `db/`. New per-project fields go in `meta` or new columns + `wproj_json`. Tests: `node tests/wproj_node.js`, `todos_node.js`. Applied 22 Nov: 12 config projects = 12 rows, same ids and order; open Work task counts unchanged; shop baseline before/after unchanged (shop_* counts items 2, members 3, push 1, receipts 1, shops 14, state 1, usuals 48; holmlodge-shop production deployment `dpl_Fnqvs85E…`). Live-db test trick: inside `begin; … rollback;` a stand-in `todo_check` lets you call token RPCs; end with `raise exception` carrying the results so the transaction can never commit.
 - 2026-11-14 — Server only (no `?v=` bump): Gemini 503 (overloaded) hit Luc in Tailor my CV. `ask()` in `api/_jobmail.js` (used by Discover emails, About the role, Tailor my CV) now retries a 503/500 once on the same model, then tries `GEMINI_FALLBACK_MODEL` (default `gemini-3.5-flash-lite`, optional env), all inside 26 s (functions allow 30); 429 and other errors are not retried; the final message is "Gemini is busy right now (503)". `_scan.js` has its own Gemini call and does NOT have this yet. Test: `node tests/gemini_retry_node.js`.
 - 2026-11-14 — v1082: Jobs step 5b, Tailor my CV (Luc: "go"). No migration: results live in `jobs.details.cv`. `api/_cvtailor.js`, routes `?jobs=tailor` (POST) and `?jobs=cv` (GET) in `_jobs.js` (still 12 functions). Rule: Gemini only proposes; code computes coverage, drops any change whose evidence is not an existing profile line or that adds a number/capitalised name not in the profile or Luc's typed answers, and builds the tailored copy; Luc ticks each change. Gemini sees `cvprofile.forGemini` only. Tests use dummy CV data, never his real CV. Designed PDF still comes from his cv-designer skill (cv_data.json export). Not testable here: real Gemini quality, iPad 2 rendering. Open: tune prompt after his first real run. Tests: `cvtailor_node.js`, `t_jobs.py`, es5.

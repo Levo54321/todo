@@ -3,6 +3,7 @@
   var App = window.App; if (!App) return;
   var $ = App.$, esc = App.esc;
   var list = [], known = false, editId = '', msg = '', busy = false, tries = 0, sheet = null, shownCur = '', lastPick = '', showArch = false;
+  var people = null, pEdit = '', pMsg = '', pBusy = false; // v34: Work people (Owner / Requester / Recruiter on project pages)
   var PRIO = ['None', 'Low', 'Medium', 'High'];
 
   function load(cb) {
@@ -67,7 +68,7 @@
     sheet.innerHTML = '<div class="card" id="projCard"></div>';
     document.body.appendChild(sheet);
     sheet.addEventListener('click', function (e) { if (e.target === sheet) close(); }, false);
-    sheet.addEventListener('submit', function (e) { e.preventDefault(); add($('pjNew').value); }, false);
+    sheet.addEventListener('submit', function (e) { e.preventDefault(); if (e.target && e.target.id === 'wpPForm') addPerson(); else add($('pjNew').value); }, false);
   }
   function seg(kind, id, labels, cur) {
     var h = '<span class="sg sm">', i;
@@ -93,6 +94,7 @@
             n = openCount(p.name);
             h += '<li class="prow2' + (p.status === 'hold' ? ' hold' : '') + '"><div class="prow top"><button class="pname" data-pj="filter" data-name="' + esc(p.name) + '">' + esc(p.name) + '</button>' +
               '<span class="pcount">' + n + ' open</span>' +
+              '<button class="pbtn popen" data-pj="page" data-id="' + esc(p.id) + '" aria-label="Open the project page">Open</button>' +
               '<button class="pbtn" data-pj="edit" data-id="' + esc(p.id) + '" aria-label="Rename project">✎</button>' +
               '<button class="pbtn del" data-pj="del" data-id="' + esc(p.id) + '" aria-label="Remove project">×</button></div>' +
               '<div class="pctl"><div class="pl"><span class="inl">Priority</span>' + seg('prio', p.id, PRIO, p.prio || 0) + '</div>' +
@@ -109,6 +111,7 @@
           for (i = 0; i < arch.length; i++) {
             p = arch[i]; n = openCount(p.name);
             h += '<li class="prow2 arch"><div class="prow top"><span class="pname">' + esc(p.name) + '</span>' +
+              '<button class="pbtn popen" data-pj="page" data-id="' + esc(p.id) + '" aria-label="Open the project page">Open</button>' +
               '<button class="pbtn del" data-pj="del" data-id="' + esc(p.id) + '" aria-label="Delete project">×</button></div>' +
               '<div class="pctl"><span class="pcount">Completed ' + (p.done_at ? App.fmtDate(p.done_at.slice(0, 10)) : '') + (n ? ' · ' + n + ' still open' : '') + '</span>' +
               '<button class="chip pdone" data-pj="reopen" data-id="' + esc(p.id) + '">Reopen</button></div></li>';
@@ -124,15 +127,72 @@
       h += '<div class="lbl">Old categories on your Work tasks</div><div class="sethint" style="margin:-4px 0 8px">Tap one to turn it into a project.</div>';
       for (i = 0; i < lg.length; i++) h += '<button class="chip" data-pj="promote" data-name="' + esc(lg[i]) + '">+ ' + esc(lg[i]) + '</button>';
     }
+    h += peopleHTML();
     h += '<div class="row"><span class="sp"></span><button class="btn primary" data-pj="close">Done</button></div>';
+    var pk = $('wpPNew') ? $('wpPNew').value : '';
     $('projCard').innerHTML = h;
     if ($('pjNew') && keep) $('pjNew').value = keep;
+    if ($('wpPNew') && pk) $('wpPNew').value = pk;
+    if (pEdit && $('wpPEdit')) { try { $('wpPEdit').focus(); } catch (e2) {} }
     if (editId && $('pjEdit')) { try { $('pjEdit').focus(); } catch (e) {} }
   }
+  /* ---------- Work people: the names picked as Owner, Requester and Recruiter on a project page ---------- */
+  function peopleHTML() {
+    var h = '<div class="lbl wpplbl">Work people</div><div class="sethint" style="margin:-4px 0 8px">Pick them as Owner, Requester or Recruiter on a project page. Removing someone keeps their name on old projects, marked “(removed)”.</div>', i, pe, n = 0;
+    if (!people) return h + '<div class="sethint">Loading…</div>';
+    h += '<ul class="plist">';
+    for (i = 0; i < people.length; i++) {
+      pe = people[i]; if (pe.removed) continue; n++;
+      if (pEdit === pe.id) h += '<li class="prow editing"><input class="setinput" id="wpPEdit" type="text" maxlength="40" autocomplete="off" autocorrect="off" value="' + esc(pe.name) + '">' +
+        '<button class="btn sm primary" data-pj="psave" data-id="' + esc(pe.id) + '"' + (pBusy ? ' disabled' : '') + '>Save</button><button class="btn sm" data-pj="pcancel">Cancel</button></li>';
+      else h += '<li class="prow"><span class="pname wpperson">' + esc(pe.name) + '</span>' +
+        '<button class="pbtn" data-pj="pedit" data-id="' + esc(pe.id) + '" aria-label="Rename ' + esc(pe.name) + '">✎</button>' +
+        '<button class="pbtn del" data-pj="pdel" data-id="' + esc(pe.id) + '" aria-label="Remove ' + esc(pe.name) + '">×</button></li>';
+    }
+    h += '</ul>';
+    if (!n) h += '<div class="sethint">Nobody yet. Add your first person below.</div>';
+    h += '<form class="addform" id="wpPForm" autocomplete="off"><input id="wpPNew" type="text" placeholder="Add a person…" maxlength="40" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"><button type="submit"' + (pBusy ? ' disabled' : '') + '>Add</button></form>';
+    if (pMsg) h += '<div class="sethint" style="color:var(--alert)">' + esc(pMsg) + '</div>';
+    return h;
+  }
+  function loadPeople() {
+    App.api('GET', '?people=1', null, function (s, d) { if (s === 200 && d && d.people) { people = d.people; if (sheetOpen()) paint(); } }, '/api/projects');
+  }
+  function peopleCall(method, q, body, okMsg) {
+    if (pBusy) return;
+    pBusy = true; pMsg = ''; paint();
+    App.api(method, q, body, function (s, d) {
+      pBusy = false;
+      if ((s === 200 || s === 201) && d && d.people) {
+        people = d.people; pEdit = ''; if ($('wpPNew') && method === 'POST') $('wpPNew').value = '';
+        if (okMsg) App.toast(okMsg);
+        if (App.boardReloadCards) App.boardReloadCards(); // board headers show owners' names
+      } else pMsg = (d && d.error) || 'Could not save, try again';
+      paint();
+    }, '/api/projects');
+  }
+  function addPerson() {
+    var v = $('wpPNew') ? $('wpPNew').value.replace(/^\s+|\s+$/g, '') : '';
+    if (!v) { pMsg = 'Give the person a name'; paint(); return; }
+    peopleCall('POST', '?people=1', { name: v }, v + ' added');
+  }
+  function removePerson(id) {
+    var pe = null, i;
+    for (i = 0; i < (people || []).length; i++) if (people[i].id === id) pe = people[i];
+    if (!pe) return;
+    App.ask({
+      title: 'Remove ' + pe.name + '?',
+      text: 'They leave the pickers. Projects that already name them keep showing “' + pe.name + ' (removed)” until you pick someone else.',
+      buttons: [{ label: 'Remove', alert: true }, { label: 'Cancel', primary: true }]
+    }, function (b) { if (b === 0) peopleCall('DELETE', '?people=' + encodeURIComponent(id), null, pe.name + ' removed'); });
+  }
+
   function open() {
     ensureSheet(); editId = ''; msg = ''; showArch = false;
+    pEdit = ''; pMsg = '';
     paint(); sheet.style.display = 'flex';
     load(function () { paint(); });
+    loadPeople();
   }
   function close() { if (sheet) sheet.style.display = 'none'; editId = ''; msg = ''; }
 
@@ -294,6 +354,11 @@
     else if (a === 'done') complete(id);
     else if (a === 'reopen') reopen(id);
     else if (a === 'arch') { showArch = !showArch; paint(); }
+    else if (a === 'page') { close(); if (App.openWorkProject) App.openWorkProject(id); }
+    else if (a === 'pedit') { pEdit = id; pMsg = ''; paint(); }
+    else if (a === 'pcancel') { pEdit = ''; pMsg = ''; paint(); }
+    else if (a === 'psave') { var nv = $('wpPEdit') ? $('wpPEdit').value.replace(/^\s+|\s+$/g, '') : ''; if (!nv) { pMsg = 'Give the person a name'; paint(); } else peopleCall('PATCH', '?people=' + encodeURIComponent(id), { name: nv }, 'Renamed'); }
+    else if (a === 'pdel') removePerson(id);
   }, false);
   App.projects = { open: open, list: function () { return list; }, active: ranked };
 })();
