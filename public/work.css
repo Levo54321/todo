@@ -211,3 +211,9 @@ body .bdhead{min-height:44px;padding:6px 0}
 .wcsub{padding:0 0 10px}
 .wcup{position:relative;overflow:hidden;-webkit-flex:none;flex:none;display:-webkit-inline-flex;display:inline-flex;-webkit-align-items:center;-webkit-justify-content:center;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:0 2px 0 4px;padding:0 10px;box-sizing:border-box}
 .wcup input{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;font-size:100px;cursor:pointer}
+
+/* v1085: a column header with an icon, a priority pill, "N open" and a caret is wider than a narrow column. Let the name keep at
+   least ~110px and move the pills to a second line instead of squeezing the title to one word per line (iPad 2). */
+.bdcol .bdhead{-webkit-flex-wrap:wrap;flex-wrap:wrap}
+.bdcol .bdname{-webkit-flex:1 1 110px;flex:1 1 110px}
+.bdcol .bdhead .bdp,.bdcol .bdhead .bdn,.bdcol .bdhead .bdcaret{margin-top:3px;margin-bottom:2px}
