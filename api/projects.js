@@ -36,6 +36,10 @@
 //   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the stored image (nosniff + sandbox CSP, cached for a year per ?v=; 404 = none, the app
 //        shows the first letter). POST ?clienticon=<id> {data: base64, mime} -> store (max 200 KB, PNG/JPEG/GIF/WebP by the file's own bytes,
 //        never SVG; the browser crops to 128px PNG first) -> {clients}. DELETE ?clienticon=<id> -> remove -> {clients}.
+// v2 (23 Nov 2026, api/_wv2.js + api/_wlinks.js, no new route yet): PATCH ?meta=1 also accepts link rows with k (kind) and id and the keys
+//   linear, particip, deliver, activity, prov (shapes in the header of api/_wv2.js). On every save that carries links the server gives each row
+//   its kind and ID (carried over from the stored row with the same URL, else worked out from the URL) and, when the project has no Linear
+//   ticket yet, fills meta.linear from its first Linear issue link. The legacy ES5 pages keep working on the same data.
 // Work status updates (v36, db/setup36.sql, parser and export in api/_wstatus.js; format in docs/work-status-format.md):
 //   POST ?statusparse=1 {text, only?:<project id>} -> reads the todo-status block, saves NOTHING:
 //        {ok:true, entries:[{ref, by:'id'|'name', project:{id,name,rag?}, update:{...}}], skipped:[{ref,label,why}], warnings:[], exported}
@@ -50,6 +54,7 @@
 var crypto = require('crypto');
 var todos = require('./todos.js');
 var wp = require('./_wpmeta.js');
+var w2 = require('./_wv2.js');
 var wc = require('./_wclients.js');
 var ws = require('./_wstatus.js');
 var MAX = 40, MAXN = 30, MAXALL = 120, STATUS = ['active', 'hold', 'done'];
@@ -94,6 +99,10 @@ async function pages(req, res, q, token) {
     b = readBody(req);
     var patch = b.meta !== undefined ? wp.cleanMeta(b.meta) : 'rag' in b ? { rag: wp.cleanRag(b.rag) } : null;
     if (!patch || !Object.keys(patch).length) return send(res, 400, { error: 'nothing to save' });
+    if (patch.links) { // v2: every link row keeps/gets its kind and ID (the old form drops them); a first Linear link fills meta.linear
+      var cur = await todos.rpc('wproj_meta_get', { p_token: token, p_id: q.id });
+      patch = w2.enrich(cur && cur.meta, patch);
+    }
     return send(res, 200, await todos.rpc('wproj_meta_put', { p_token: token, p_id: q.id, p_patch: patch }));
   }
   if (q.people) {

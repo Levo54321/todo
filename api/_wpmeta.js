@@ -8,6 +8,8 @@
 //     links: { slack: [{n, u, init?}], groups: [{n, u}], studies: [{n, u}], other: [{n, u}] }  (init = "Initial request", at most one),
 //     codes: [{n, c}],  (campaign codes: plain text, not links)
 //     client: work_clients id (12 hex); left out = Internal (v35, the database checks that the client exists) }
+// v2 (23 Nov 2026): link rows may carry k (kind) and id; new keys linear, particip, deliver, activity, prov, sv: see the header of api/_wv2.js.
+var v2 = require('./_wv2.js');
 var PID = /^[0-9a-f]{12}$/, DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 var PEOPLE = ['owner', 'requester', 'recruiter'], TEXTS = { goal: 2000, success: 2000 };
 var DATES = ['requested', 'started', 'target', 'due'], GROUPS = ['slack', 'groups', 'studies', 'other'];
@@ -42,6 +44,7 @@ function rows(arr, group) {
     var u = https(raw);
     if (!u) throw bad(LABEL[group] + ': ' + (raw ? 'links must start with https://' : 'add a link for "' + n + '"'));
     var o = { n: n, u: u };
+    var ex = v2.rowExtras(group, r); if (ex.k) o.k = ex.k; if (ex.id) o.id = ex.id;
     if (group === 'slack' && r.init === true && !init) { o.init = true; init = true; }
     out.push(o);
   });
@@ -89,6 +92,7 @@ function cleanMeta(m) {
     for (i = 0; i < GROUPS.length; i++) { var g = rows(src[GROUPS[i]], GROUPS[i]); if (g.length) { l[GROUPS[i]] = g; any = true; } }
     p.links = any ? l : null;
   }
+  v2.cleanV2(m, p);
   if ('codes' in m) { var c = codes(m.codes); p.codes = c.length ? c : null; }
   if ('rag' in m) p.rag = cleanRag(m.rag);
   if ('client' in m) {

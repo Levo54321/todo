@@ -188,6 +188,18 @@ var U = '11111111-2222-4333-8444-555555555555';
   ok('PATCH meta: empty link rows dropped, one Initial request, empty groups left out', sp.links.slack.length === 2 && sp.links.slack[0].init === true && !sp.links.slack[1].init && !sp.links.studies && sp.links.other[0].u === 'https://linear.app/p/1', JSON.stringify(sp.links));
   ok('PATCH meta: codes kept as text, empty rows dropped, unknown keys ignored', sp.codes.length === 2 && sp.codes[1].c === 'C2' && !('junk' in sp));
   ok('PATCH meta: rag not touched by the form', !('rag' in sp) && mp.json.meta.owner === 'bbbbbbbbbbb1');
+  // v2: the legacy form sends link rows without k/id; the server must keep (or work out) them and fill meta.linear
+  var LINV = 'https://linear.app/prolific/issue/HDOR-394/uber-users-in-new-orleans-and-san-fran', STV = 'https://app.prolific.com/researcher/workspaces/studies/65f2a1c9d3e4f5a6b7c8d9e0';
+  await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { other: [{ n: 'Linear', u: LINV }], studies: [{ n: 'Main', u: STV + '/overview' }] } } });
+  var m1 = last('wproj_meta_put').p_patch;
+  ok('v2 save: rows get kind and ID, first Linear link fills meta.linear', m1.links.other[0].k === 'linear' && m1.links.other[0].id === 'HDOR-394' && m1.links.studies[0].id === '65f2a1c9d3e4f5a6b7c8d9e0' && m1.linear.id === 'HDOR-394' && m1.prov['linear.id'].by === 'auto', JSON.stringify(m1));
+  rows.filter(function (r) { return r.id === 'aaaaaaaaaaa2'; })[0].meta.links.studies[0].id = 'typed-by-hand';
+  rows.filter(function (r) { return r.id === 'aaaaaaaaaaa2'; })[0].meta.linear.title = 'Corrected by Luc';
+  await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { other: [{ n: 'Linear', u: LINV }], studies: [{ n: 'Main', u: STV + '/overview' }] } } });
+  var m2 = last('wproj_meta_put').p_patch;
+  ok('v2 save from the legacy form keeps a hand-typed ID and does not touch the Linear title Luc corrected', m2.links.studies[0].id === 'typed-by-hand' && !('linear' in m2), JSON.stringify(m2));
+  await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { goal: 'only a goal' } });
+  ok('a save without links does not read or touch links', !('links' in last('wproj_meta_put').p_patch));
   var e1 = await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { other: [{ n: 'Bad', u: 'http://plain.example.com' }] } } });
   ok('PATCH meta: http link -> 400 with a readable message', e1.status === 400 && /https/.test(e1.json.error), JSON.stringify(e1.json));
   ok('PATCH meta: javascript: link -> 400', (await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { slack: [{ n: 'x', u: 'javascript:alert(1)' }] } } })).status === 400);
