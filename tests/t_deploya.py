@@ -10,7 +10,7 @@ spec = importlib.util.spec_from_file_location('ti', os.path.join(D, 't_import.py
 def fresh(h, token_js, w=1024, hh=768, tz=None):
     b = h.page.context.browser
     ctx = b.new_context(viewport={'width': w, 'height': hh}, timezone_id=tz) if tz else b.new_context(viewport={'width': w, 'height': hh})
-    ctx.add_init_script("if(!sessionStorage.getItem('x')){sessionStorage.setItem('x','1');" + token_js + "localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');localStorage.setItem('weekSeen','2026-11-01');}")
+    ctx.add_init_script("if(!sessionStorage.getItem('x')){sessionStorage.setItem('x','1');" + token_js + "localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');localStorage.setItem('weekSeen','2026-11-01');localStorage.setItem('wpxOff','1');}")
     def route(r):
         u = urlparse(r.request.url)
         if u.hostname != 'todo.test': return r.abort()

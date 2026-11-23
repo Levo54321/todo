@@ -226,7 +226,7 @@ def run(h):
     for label, ua, w_, hh in (('iPad 2', 'Mozilla/5.0 (iPad; CPU OS 9_3_5 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13G36 Safari/601.1', 1024, 768),
                               ('iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1', 390, 844)):
         ctx = p.context.browser.new_context(viewport={'width': w_, 'height': hh}, user_agent=ua)
-        ctx.add_init_script("localStorage.setItem('todoToken','tok');localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');")
+        ctx.add_init_script("localStorage.setItem('todoToken','tok');localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');localStorage.setItem('wpxOff','1');")
         ctx.route('**/*', serve)
         pg = ctx.new_page(); pg.goto('http://todo.test/'); pg.wait_for_timeout(900)
         pg.evaluate("document.querySelector('[data-act=settings]').click()"); pg.wait_for_timeout(300)
@@ -244,7 +244,7 @@ def run(h):
     UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
     def phone(url):
         c = p.context.browser.new_context(viewport={'width': 390, 'height': 844}, user_agent=UA)
-        c.add_init_script("localStorage.setItem('todoToken','tok');localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');")
+        c.add_init_script("localStorage.setItem('todoToken','tok');localStorage.setItem('railOpen','1');localStorage.setItem('pvSeen','2026-11-01');localStorage.setItem('wpxOff','1');")
         c.route('**/*', serve); g = c.new_page(); g.goto(url); g.wait_for_timeout(1000); return c, g
     def scan_calls(): return [c for c in h.calls if c[0] == 'POST' and c[1] == '/api/todos' and 'scan_done' in c[2]]
     h.scan = {'id': 'sc-1', 'csv': SC, 'n': 3, 'created_at': NOW, 'status': 'ready'}
