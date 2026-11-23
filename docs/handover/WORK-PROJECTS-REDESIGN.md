@@ -120,3 +120,7 @@ Existing fields stay. Additions to scope:
 - Next numbered `db/setupNN.sql` (37 onwards), idempotent, tested in `begin; … rollback;` first.
 - Commit with the GitHub-linked identity; confirm READY + alias after each push; bump `?v=`.
 - Update CLAUDE.md (amendment line + new rules for the modern section), ARCHITECTURE, ROADMAP, API.md.
+
+## 8. Session log (kept current)
+- 23 Nov 2026 — Stage 1 (audit) done: `docs/handover/AUDIT-WORK-PROJECTS.md` with screenshots in `docs/handover/audit/`. Waiting for Luc's OK before stage 2 (design proposal).
+- Skills loaded this session: luc-todo-maintainer, frontend-design, apple-design, dashboard-design.
