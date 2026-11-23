@@ -173,6 +173,7 @@ change the header in the endpoint file and regenerate._
 ```
 // Work project links (v2): what a pasted URL is, its ID, and the Linear ticket title from its slug. Pure functions, no
 // requires, so the same code can be copied to the browser module (public/wp/) and is covered by tests/wv2_node.js.
+// Also loaded in the browser as /wp/wlinks.js (tools/build.py copies it), where it sets window.WLinks.
 // A leading _ means this file is not a serverless function of its own (12-function limit).
 //
 // kind (stored on a link row as `k`): request | slack | linear | prolific_group | prolific_study | prolific_project | qualtrics | sheet | other
@@ -378,6 +379,9 @@ change the header in the endpoint file and regenerate._
 //   linear, particip, deliver, activity, prov (shapes in the header of api/_wv2.js). On every save that carries links the server gives each row
 //   its kind and ID (carried over from the stored row with the same URL, else worked out from the URL) and, when the project has no Linear
 //   ticket yet, fills meta.linear from its first Linear issue link. The legacy ES5 pages keep working on the same data.
+// Work section v2 (db/setup38.sql): GET ?v2=overview -> {projects:[{id,name,prio,status,pos,next?,meta,last?:{at,headline,rag}}], people, clients} in list order (one call for
+//   the overview and the project list; meta as in ?page). PATCH ?next=<project id> {task:<task uuid>|null} -> {id, next}: sets/clears the Next task (an open Work
+//   task of that project, else 400); the app treats a Next task that is done, deleted or moved as cleared.
 // Work status updates (v36, db/setup36.sql, parser and export in api/_wstatus.js; format in docs/work-status-format.md):
 //   POST ?statusparse=1 {text, only?:<project id>} -> reads the todo-status block, saves NOTHING:
 //        {ok:true, entries:[{ref, by:'id'|'name', project:{id,name,rag?}, update:{...}}], skipped:[{ref,label,why}], warnings:[], exported}

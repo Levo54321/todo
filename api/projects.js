@@ -40,6 +40,9 @@
 //   linear, particip, deliver, activity, prov (shapes in the header of api/_wv2.js). On every save that carries links the server gives each row
 //   its kind and ID (carried over from the stored row with the same URL, else worked out from the URL) and, when the project has no Linear
 //   ticket yet, fills meta.linear from its first Linear issue link. The legacy ES5 pages keep working on the same data.
+// Work section v2 (db/setup38.sql): GET ?v2=overview -> {projects:[{id,name,prio,status,pos,next?,meta,last?:{at,headline,rag}}], people, clients} in list order (one call for
+//   the overview and the project list; meta as in ?page). PATCH ?next=<project id> {task:<task uuid>|null} -> {id, next}: sets/clears the Next task (an open Work
+//   task of that project, else 400); the app treats a Next task that is done, deleted or moved as cleared.
 // Work status updates (v36, db/setup36.sql, parser and export in api/_wstatus.js; format in docs/work-status-format.md):
 //   POST ?statusparse=1 {text, only?:<project id>} -> reads the todo-status block, saves NOTHING:
 //        {ok:true, entries:[{ref, by:'id'|'name', project:{id,name,rag?}, update:{...}}], skipped:[{ref,label,why}], warnings:[], exported}
@@ -89,6 +92,13 @@ async function pages(req, res, q, token) {
   var m = req.method, b, r;
   if (q.clients !== undefined || q.clienticon !== undefined) return wc.handle(req, res, q, token, { send: send, readBody: readBody });
   if (q.statusparse !== undefined || q.updates !== undefined || q.export !== undefined) return status(req, res, q, token);
+  if (q.v2 === 'overview' && m === 'GET') return send(res, 200, await todos.rpc('wp2_overview', { p_token: token }));
+  if (q.next && m === 'PATCH') { // v2: one Next task per project (null clears)
+    if (!wp.PID.test(q.next)) return send(res, 404, { error: 'not found' });
+    b = readBody(req);
+    if (b.task !== null && !UUID.test(String(b.task || ''))) return send(res, 400, { error: 'bad task' });
+    return send(res, 200, await todos.rpc('wp2_next_set', { p_token: token, p_id: q.next, p_task: b.task }));
+  }
   if (q.cards && m === 'GET') return send(res, 200, await todos.rpc('wproj_cards', { p_token: token }));
   if (q.page && m === 'GET') {
     if (!wp.PID.test(q.page)) return send(res, 404, { error: 'not found' });
@@ -180,7 +190,7 @@ module.exports = async function handler(req, res) {
   var token = req.headers['x-todo-token'] || q.t;
   if (!token) return send(res, 401, { error: 'missing token' });
   try {
-    if (q.page || q.cards || q.people || q.meta || q.statusparse !== undefined || q.updates !== undefined || q.export !== undefined || q.clients !== undefined || q.clienticon !== undefined) return await pages(req, res, q, token);
+    if (q.page || q.v2 || q.next || q.cards || q.people || q.meta || q.statusparse !== undefined || q.updates !== undefined || q.export !== undefined || q.clients !== undefined || q.clienticon !== undefined) return await pages(req, res, q, token);
     var list = await read(token), name, i;
     if (req.method === 'GET') return send(res, 200, { projects: list });
     if (req.method === 'POST') {

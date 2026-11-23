@@ -398,8 +398,8 @@
     setCls($('nBudget'), 'ritem' + (view === 'budget' ? ' on' : ''));
     setCls($('nInsights'), 'ritem' + (view === 'insights' ? ' on' : ''));
     setCls($('nJobs'), 'ritem' + (view === 'jobs' ? ' on' : ''));
-    setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' || view === 'wproject' || view === 'wstatus' ? ' on' : ''));
-    setCls($('psW'), view === 'board' || view === 'wproject' || view === 'wstatus' ? 'on' : '');
+    setCls($('nProjects'), 'ritem' + (view === 'board' || view === 'pprojects' || view === 'wproject' || view === 'wstatus' || view === 'wp' ? ' on' : ''));
+    setCls($('psW'), view === 'board' || view === 'wproject' || view === 'wstatus' || view === 'wp' ? 'on' : '');
     setCls($('psP'), view === 'pprojects' ? 'on' : '');
     if (document.body.getAttribute('data-view') !== view) document.body.setAttribute('data-view', view);
     var bc = railOpen ? 'rail-open' : '';
@@ -528,10 +528,11 @@
     if (window.pageYOffset !== pageY) window.scrollTo(0, pageY);
   }
   /* ---------- navigation ---------- */
-  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects', jobs: 'vJobs', wproject: 'vWproject', wstatus: 'vWstatus' };
+  var VIEW_IDS = { tasks: 'vTasks', plan: 'vPlan', budget: 'vBudget', insights: 'vInsights', board: 'vBoard', pprojects: 'vPprojects', jobs: 'vJobs', wproject: 'vWproject', wstatus: 'vWstatus', wp: 'vWp' };
   function navTo(name) {
     if (name === 'projects') name = (view === 'tasks' || !store.get('projMode')) ? (mode === 'work' ? 'board' : 'pprojects') : store.get('projMode'); // one Projects tab, Work | Personal switch inside
-    if (name === 'board' || name === 'pprojects') store.set('projMode', name);
+    if (name === 'board' && App.wpReady && !App.wpLegacy) name = 'wp'; // v1088: browsers with module support get the new Work projects section; App.wpLegacy = the earlier pages
+    if (name === 'board' || name === 'pprojects' || name === 'wp') store.set('projMode', name === 'wp' ? 'board' : name);
     var next = (name === 'personal' || name === 'work') ? 'tasks' : name;
     if (next !== 'tasks' && next !== 'plan' && !App.views[next]) { toast('Not available yet'); return; }
     if (next === 'tasks' && name !== mode) {
@@ -1953,7 +1954,7 @@
     App.views[name] = def;
     var n = $('n' + name.charAt(0).toUpperCase() + name.slice(1));
     if (n) n.style.display = '';
-    if ((name === 'board' || name === 'pprojects') && $('nProjects')) $('nProjects').style.display = '';
+    if ((name === 'board' || name === 'pprojects' || name === 'wp') && $('nProjects')) $('nProjects').style.display = '';
     if (view === name) render();
   };
 

@@ -183,7 +183,7 @@ html.work .cat{background:var(--accentbg);color:var(--accent);font-weight:600}
 .seg button,.sg button{min-width:44px;min-height:44px;padding:0 16px;border:0;border-radius:var(--r2);background:none;color:var(--ink);font-size:var(--fs-sm);-webkit-appearance:none;outline:none}
 .seg button.on,.sg button.on{background:var(--paper);box-shadow:0 1px 3px rgba(46,36,14,.18);color:var(--accent);font-weight:600}
 .seg.projsw{display:none;margin:var(--s2) 0 0}
-body[data-view=board] .seg.projsw,body[data-view=pprojects] .seg.projsw{display:inline-block}
+body[data-view=board] .seg.projsw,body[data-view=pprojects] .seg.projsw,body[data-view=wp] .seg.projsw{display:inline-block}
 .projsw button{padding:0 24px;font-size:15px}
 .tabs{display:-webkit-flex;display:flex;margin:0 -18px var(--s3);padding:0 var(--s3);border-bottom:1px solid var(--rule);overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
 .tab{flex:none;min-height:44px;padding:10px 14px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font-size:15px;-webkit-appearance:none;outline:none}

@@ -1,5 +1,6 @@
 // Work project links (v2): what a pasted URL is, its ID, and the Linear ticket title from its slug. Pure functions, no
 // requires, so the same code can be copied to the browser module (public/wp/) and is covered by tests/wv2_node.js.
+// Also loaded in the browser as /wp/wlinks.js (tools/build.py copies it), where it sets window.WLinks.
 // A leading _ means this file is not a serverless function of its own (12-function limit).
 //
 // kind (stored on a link row as `k`): request | slack | linear | prolific_group | prolific_study | prolific_project | qualtrics | sheet | other
@@ -79,4 +80,5 @@ function idFor(kind, url) {
 }
 function isKind(k) { return KINDS.indexOf(k) >= 0; }
 
-module.exports = { parse: parse, slugTitle: slugTitle, kindFor: kindFor, idFor: idFor, isKind: isKind, KINDS: KINDS, ID_OK: ID_OK };
+var API = { parse: parse, slugTitle: slugTitle, kindFor: kindFor, idFor: idFor, isKind: isKind, KINDS: KINDS, ID_OK: ID_OK };
+if (typeof module !== 'undefined' && module.exports) module.exports = API; else window.WLinks = API; // browser copy: /wp/wlinks.js (made by tools/build.py)

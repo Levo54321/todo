@@ -300,7 +300,7 @@
   function tabBar() {
     return '<div class="bdbar"><div class="bdtools"><span class="sg sm"><button class="' + (tab === 'board' ? 'on' : '') + '" data-bd="tab" data-tab="board">Board</button>' +
       '<button class="' + (tab === 'ins' ? 'on' : '') + '" data-bd="tab" data-tab="ins">Insights</button></span>' +
-      '<button class="chip" data-pj="open">Manage projects…</button>' + (App.wsBar ? App.wsBar() : '') + '</div>' + filterBar() + '</div>';
+      (App.wpReady ? '<button class="chip" data-bd="newui">New projects view</button>' : '') + '<button class="chip" data-pj="open">Manage projects…</button>' + (App.wsBar ? App.wsBar() : '') + '</div>' + filterBar() + '</div>';
   }
   var LEGEND = '<div class="bdlegend"><span class="lg blk">Blocked</span><span class="lg od">Overdue</span><span class="lg td">Due today</span><span class="lg hi">High priority</span><span class="lg pz">Paused</span>' +
     '<span class="lgx">Order follows the Work list: priority, quick wins, deadline. Drag ☰ or tap a number to change it.</span></div>';
@@ -596,6 +596,7 @@
     while (el && el !== document && !(el.getAttribute && el.getAttribute('data-bd'))) el = el.parentNode;
     if (!el || el === document || el.disabled) return;
     a = el.getAttribute('data-bd');
+    if (a === 'newui') { App.wpLegacy = false; App.navTo('wp'); return; }
     if (a === 'page') {
       grabKept(); if (App.openWorkProject) App.openWorkProject(el.getAttribute('data-pid'));
     } else if (a === 'fold') {

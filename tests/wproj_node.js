@@ -65,6 +65,8 @@ function fakeRpc(name, a) {
     tasks.forEach(function (t) { if (t.category === r.name) { t.category = null; n++; } });
     return { projects: json(), tasks: n };
   }
+  if (name === 'wp2_overview') return { projects: rows.map(function (r) { return { id: r.id, name: r.name, prio: r.prio, status: r.status, pos: r.pos, meta: r.meta || {} }; }), people: people.slice(), clients: [] };
+  if (name === 'wp2_next_set') { r = byId(a.p_id); if (!r) throw dbError('P0002'); if (a.p_task && a.p_task !== '8fb8da5d-f79c-4b8a-b98e-a5cb22b306d4') throw dbError('23514', 'not an open task of this project'); r.next = a.p_task; return { id: r.id, next: a.p_task }; }
   if (name === 'wpeople_list') return people.slice();
   if (name === 'wpeople_save') { var pe = people.filter(function (x) { return x.id === a.p_id; })[0]; if (pe) pe.name = a.p_name; else people.push({ id: a.p_id, name: a.p_name }); return people.slice(); }
   if (name === 'wpeople_remove') { var pr = people.filter(function (x) { return x.id === a.p_id; })[0]; if (!pr) throw dbError('P0002'); pr.removed = true; return people.slice(); }
@@ -188,6 +190,13 @@ var U = '11111111-2222-4333-8444-555555555555';
   ok('PATCH meta: empty link rows dropped, one Initial request, empty groups left out', sp.links.slack.length === 2 && sp.links.slack[0].init === true && !sp.links.slack[1].init && !sp.links.studies && sp.links.other[0].u === 'https://linear.app/p/1', JSON.stringify(sp.links));
   ok('PATCH meta: codes kept as text, empty rows dropped, unknown keys ignored', sp.codes.length === 2 && sp.codes[1].c === 'C2' && !('junk' in sp));
   ok('PATCH meta: rag not touched by the form', !('rag' in sp) && mp.json.meta.owner === 'bbbbbbbbbbb1');
+  // v38: the one-call overview and the Next task
+  var ov = await call('GET', { v2: 'overview' });
+  ok('GET ?v2=overview: projects with meta, people, clients in one reply', ov.status === 200 && ov.json.projects.length === 4 && ov.json.projects[0].meta && Array.isArray(ov.json.people) && Array.isArray(ov.json.clients) && last('wp2_overview').p_token, JSON.stringify(ov.json).slice(0, 120));
+  var nx = await call('PATCH', { next: 'aaaaaaaaaaa1' }, { task: '8fb8da5d-f79c-4b8a-b98e-a5cb22b306d4' });
+  ok('PATCH ?next sets the Next task', nx.status === 200 && nx.json.next === '8fb8da5d-f79c-4b8a-b98e-a5cb22b306d4' && last('wp2_next_set').p_id === 'aaaaaaaaaaa1');
+  ok('PATCH ?next {task:null} clears it', (await call('PATCH', { next: 'aaaaaaaaaaa1' }, { task: null })).json.next === null);
+  ok('PATCH ?next with a bad task id -> 400, unknown project -> 404, a task the database refuses -> 400', (await call('PATCH', { next: 'aaaaaaaaaaa1' }, { task: 'nope' })).status === 400 && (await call('PATCH', { next: 'ffffffffffff' }, { task: null })).status === 404 && (await call('PATCH', { next: 'aaaaaaaaaaa1' }, { task: '11111111-1111-4111-8111-111111111111' })).status === 400);
   // v2: the legacy form sends link rows without k/id; the server must keep (or work out) them and fill meta.linear
   var LINV = 'https://linear.app/prolific/issue/HDOR-394/uber-users-in-new-orleans-and-san-fran', STV = 'https://app.prolific.com/researcher/workspaces/studies/65f2a1c9d3e4f5a6b7c8d9e0';
   await call('PATCH', { id: 'aaaaaaaaaaa2', meta: '1' }, { meta: { links: { other: [{ n: 'Linear', u: LINV }], studies: [{ n: 'Main', u: STV + '/overview' }] } } });
