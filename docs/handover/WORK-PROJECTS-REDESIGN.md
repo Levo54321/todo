@@ -124,3 +124,4 @@ Existing fields stay. Additions to scope:
 ## 8. Session log (kept current)
 - 23 Nov 2026 — Stage 1 (audit) done: `docs/handover/AUDIT-WORK-PROJECTS.md` with screenshots in `docs/handover/audit/`. Waiting for Luc's OK before stage 2 (design proposal).
 - Skills loaded this session: luc-todo-maintainer, frontend-design, apple-design, dashboard-design.
+- 23 Nov 2026 — Stage 2 (design proposal) done: `docs/handover/DESIGN-PROPOSAL.md`, mock-ups in `docs/handover/mockups/` (A Split desk, B Briefing, C Night ledger). Recommendation: A layout in warm paper, C as night theme, ES module inside the shell, additive data v2, contract v2. Waiting for Luc's pick (six decisions in section 9) before stage 3.
