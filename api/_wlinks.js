@@ -2,13 +2,13 @@
 // requires, so the same code can be copied to the browser module (public/wp/) and is covered by tests/wv2_node.js.
 // A leading _ means this file is not a serverless function of its own (12-function limit).
 //
-// kind (stored on a link row as `k`): request | slack | linear | prolific_group | prolific_study | qualtrics | sheet | other
+// kind (stored on a link row as `k`): request | slack | linear | prolific_group | prolific_study | prolific_project | qualtrics | sheet | other
 // service (never stored, drives the icon): slack | linear | prolific | qualtrics | google_sheets | google_docs | other
 // ID rules (Luc, 23 Nov 2026): a Prolific group/study ID is the text after the last "/" of the link, ignoring a trailing
 // "/overview" and any ?query or #hash; it can be edited by hand. A Linear ID looks like HDOR-394 (any team prefix).
 var LINEAR = /^\/([^/]+)\/issue\/([A-Za-z][A-Za-z0-9]*-\d+)(?:\/([^/?#]+))?/;
 var ID_OK = /^[A-Za-z0-9_-]{6,64}$/;
-var KINDS = ['request', 'slack', 'linear', 'prolific_group', 'prolific_study', 'qualtrics', 'sheet', 'other'];
+var KINDS = ['request', 'slack', 'linear', 'prolific_group', 'prolific_study', 'prolific_project', 'qualtrics', 'sheet', 'other'];
 
 // Capital letters the slug lost: first word, places, acronyms. "san X" and the pairs below are capitalised together.
 var PLACES = ('london paris berlin madrid rome dublin cardiff manchester birmingham glasgow edinburgh leeds bristol liverpool chicago boston seattle austin dallas houston miami atlanta denver phoenix ' +
@@ -55,6 +55,7 @@ function parse(url) {
   else if (hostIs(h, 'prolific.com') || hostIs(h, 'prolific.co')) {
     out.service = 'prolific';
     if (/\/(studies|study)(\/|$)/i.test(p)) { out.kind = 'prolific_study'; out.id = lastId(x) || undefined; }
+    else if (/\/projects?(\/|$)/i.test(p)) { out.kind = 'prolific_project'; out.id = lastId(x) || undefined; }
     else if (/\/(participant-)?groups?(\/|$)/i.test(p)) { out.kind = 'prolific_group'; out.id = lastId(x) || undefined; }
   } else if (hostIs(h, 'qualtrics.com')) { out.service = 'qualtrics'; out.kind = 'qualtrics'; m = /(SV_[A-Za-z0-9]+)/.exec(p); if (m) out.id = m[1]; }
   else if (h === 'docs.google.com' && /^\/spreadsheets\//.test(p)) { out.service = 'google_sheets'; out.kind = 'sheet'; m = /^\/spreadsheets\/d\/([A-Za-z0-9_-]+)/.exec(p); if (m) out.id = m[1]; }
@@ -67,13 +68,13 @@ function parse(url) {
 function kindFor(group, row) {
   if (group === 'slack') return row && row.init ? 'request' : 'slack';
   if (group === 'groups') return 'prolific_group';
-  if (group === 'studies') return 'prolific_study';
+  if (group === 'studies') return parse(row && row.u).kind === 'prolific_project' ? 'prolific_project' : 'prolific_study'; // the old "Prolific Studies" list also holds project links
   var k = parse(row && row.u).kind; return k === 'request' ? 'other' : k;
 }
 // The ID of a stored row: Prolific IDs from the last path segment; Linear/Qualtrics/Sheets from the link.
 function idFor(kind, url) {
   var x = host(typeof url === 'string' ? url.trim() : ''); if (!x) return '';
-  if (kind === 'prolific_group' || kind === 'prolific_study') return lastId(x);
+  if (kind === 'prolific_group' || kind === 'prolific_study' || kind === 'prolific_project') return lastId(x);
   var p = parse(url); return p.kind === kind && p.id ? p.id : '';
 }
 function isKind(k) { return KINDS.indexOf(k) >= 0; }

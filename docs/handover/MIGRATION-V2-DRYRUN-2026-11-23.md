@@ -1,6 +1,6 @@
 # Work projects v2 migration: dry run (2026-11-23)
 
-Summary: 15 projects, 9 link rows, 3 projects changed, Linear tickets filled: 2, links lost: **0**, checks to look at: 0. Link kinds after: request 2, prolific_study 2, linear 2, slack 1, prolific_group 1, qualtrics 1.
+Summary: 15 projects, 9 link rows, 3 projects changed, Linear tickets filled: 2, links lost: **0**, checks to look at: 0. Link kinds after: request 2, prolific_project 2, linear 2, slack 1, prolific_group 1, qualtrics 1.
 
 ## Firstwork (`4969add1822d`)
 
@@ -34,13 +34,13 @@ Unchanged: nothing else set. Links lost or renamed: none.
 
 | Before (name, link) | After: kind | After: ID |
 |---|---|---|
-| Video Game + Designer Assessments, https://app.prolific.com/researcher/workspaces/projects/6aeb6766bf02a709f13d86fd | prolific_study | 6aeb6766bf02a709f13d86fd |
+| Video Game + Designer Assessments, https://app.prolific.com/researcher/workspaces/projects/6aeb6766bf02a709f13d86fd | prolific_project | 6aeb6766bf02a709f13d86fd |
 
 **Other links**
 
 | Before (name, link) | After: kind | After: ID |
 |---|---|---|
-| Linear | HDOPS-330, https://linear.app/prolific/issue/HDOR-330/gamers-and-game-designers | linear | HDOR-330 |
+| Linear | HDOR-330, https://linear.app/prolific/issue/HDOR-330/gamers-and-game-designers | linear | HDOR-330 |
 
 Linear ticket read from its link: **HDOR-330**, title "Gamers and game designers" (from the link, capitals approximate)
 
@@ -114,7 +114,7 @@ Unchanged: rag, dates, client. Links lost or renamed: none.
 
 | Before (name, link) | After: kind | After: ID |
 |---|---|---|
-| Screeners, https://app.prolific.com/researcher/workspaces/projects/6aff4d404facbb81cfdc9f46 | prolific_study | 6aff4d404facbb81cfdc9f46 |
+| Screeners, https://app.prolific.com/researcher/workspaces/projects/6aff4d404facbb81cfdc9f46 | prolific_project | 6aff4d404facbb81cfdc9f46 |
 
 **Other links**
 

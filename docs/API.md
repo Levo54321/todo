@@ -169,6 +169,18 @@ change the header in the endpoint file and regenerate._
 //   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the image · POST ?clienticon=<id> {data,mime} -> store · DELETE -> remove
 ```
 
+## api/_wlinks.js
+```
+// Work project links (v2): what a pasted URL is, its ID, and the Linear ticket title from its slug. Pure functions, no
+// requires, so the same code can be copied to the browser module (public/wp/) and is covered by tests/wv2_node.js.
+// A leading _ means this file is not a serverless function of its own (12-function limit).
+//
+// kind (stored on a link row as `k`): request | slack | linear | prolific_group | prolific_study | prolific_project | qualtrics | sheet | other
+// service (never stored, drives the icon): slack | linear | prolific | qualtrics | google_sheets | google_docs | other
+// ID rules (Luc, 23 Nov 2026): a Prolific group/study ID is the text after the last "/" of the link, ignoring a trailing
+// "/overview" and any ?query or #hash; it can be edited by hand. A Linear ID looks like HDOR-394 (any team prefix).
+```
+
 ## api/_wpmeta.js
 ```
 // Work project page details (work_projects.meta) and the Work people list; used by api/projects.js.
@@ -181,6 +193,7 @@ change the header in the endpoint file and regenerate._
 //     links: { slack: [{n, u, init?}], groups: [{n, u}], studies: [{n, u}], other: [{n, u}] }  (init = "Initial request", at most one),
 //     codes: [{n, c}],  (campaign codes: plain text, not links)
 //     client: work_clients id (12 hex); left out = Internal (v35, the database checks that the client exists) }
+// v2 (23 Nov 2026): link rows may carry k (kind) and id; new keys linear, particip, deliver, activity, prov, sv: see the header of api/_wv2.js.
 ```
 
 ## api/_wstatus.js
@@ -192,6 +205,24 @@ change the header in the endpoint file and regenerate._
 //   { ok:false, error:'plain English reason' }
 // An update (cleaned): { period?, rag?:'r'|'a'|'g', headline, done[], next[], blockers[], risks[], decisions[], asks:[{who,what}],
 //   sources:{slack?:[{n,u}], linear?:[{n,u}]}, notes? }. Strings are trimmed to one line (lists: <=12 items of <=300 chars); links must be https.
+```
+
+## api/_wv2.js
+```
+// Work project data v2 (23 Nov 2026): the new meta keys, their cleaning, and the one-off migration of old link lists.
+// Used by api/_wpmeta.js (cleanMeta), api/projects.js (enrich on save) and tools/wv2_migrate.js. Not a serverless function.
+//
+// v2 keeps ONE structure with the legacy UI: everything lives in work_projects.meta, and the old keys keep their shape.
+// New keys (all optional, left out when not set):
+//   links.<group>[] rows may now carry  k  = kind (request|slack|linear|prolific_group|prolific_study|prolific_project|qualtrics|sheet|other)
+//                                       id = the link's ID (Prolific group/study ID, Linear HDOR-394, Qualtrics SV_.., Sheet id); editable by hand
+//   linear: { id:'HDOR-394', url, title, status, sla:'YYYY-MM-DD'|'YYYY-MM-DDTHH:MM', revenue:number, cur:'USD', description (verbatim, <=8000), synced:ISO }
+//   particip: { source:'text', group_ids:['plain codes not tied to a link'] }   (Group IDs shown = ids of Prolific group links + these)
+//   deliver: [{ n:'segment name' (may be ''), requested, provided, approved }]   progress = sum(provided) / sum(requested)
+//   activity: { last_slack:{ at:ISO, who, where, u:https, text } }
+//   prov: { '<field path>': { by:'luc'|'claude'|'auto', src?:https, at:'YYYY-MM-DD' } }   who/what set a value
+//   sv: 2   marks a project whose link rows were migrated (projects without links are not touched)
+// The deadline shown on the board is dates.due (not the Linear SLA, which is a separate ticket field).
 ```
 
 ## api/budget.js
@@ -343,6 +374,10 @@ change the header in the endpoint file and regenerate._
 //   GET ?clienticon=<id>[&v=<icon_at>]&t=<token> -> the stored image (nosniff + sandbox CSP, cached for a year per ?v=; 404 = none, the app
 //        shows the first letter). POST ?clienticon=<id> {data: base64, mime} -> store (max 200 KB, PNG/JPEG/GIF/WebP by the file's own bytes,
 //        never SVG; the browser crops to 128px PNG first) -> {clients}. DELETE ?clienticon=<id> -> remove -> {clients}.
+// v2 (23 Nov 2026, api/_wv2.js + api/_wlinks.js, no new route yet): PATCH ?meta=1 also accepts link rows with k (kind) and id and the keys
+//   linear, particip, deliver, activity, prov (shapes in the header of api/_wv2.js). On every save that carries links the server gives each row
+//   its kind and ID (carried over from the stored row with the same URL, else worked out from the URL) and, when the project has no Linear
+//   ticket yet, fills meta.linear from its first Linear issue link. The legacy ES5 pages keep working on the same data.
 // Work status updates (v36, db/setup36.sql, parser and export in api/_wstatus.js; format in docs/work-status-format.md):
 //   POST ?statusparse=1 {text, only?:<project id>} -> reads the todo-status block, saves NOTHING:
 //        {ok:true, entries:[{ref, by:'id'|'name', project:{id,name,rag?}, update:{...}}], skipped:[{ref,label,why}], warnings:[], exported}

@@ -3,7 +3,7 @@
 //
 // v2 keeps ONE structure with the legacy UI: everything lives in work_projects.meta, and the old keys keep their shape.
 // New keys (all optional, left out when not set):
-//   links.<group>[] rows may now carry  k  = kind (request|slack|linear|prolific_group|prolific_study|qualtrics|sheet|other)
+//   links.<group>[] rows may now carry  k  = kind (request|slack|linear|prolific_group|prolific_study|prolific_project|qualtrics|sheet|other)
 //                                       id = the link's ID (Prolific group/study ID, Linear HDOR-394, Qualtrics SV_.., Sheet id); editable by hand
 //   linear: { id:'HDOR-394', url, title, status, sla:'YYYY-MM-DD'|'YYYY-MM-DDTHH:MM', revenue:number, cur:'USD', description (verbatim, <=8000), synced:ISO }
 //   particip: { source:'text', group_ids:['plain codes not tied to a link'] }   (Group IDs shown = ids of Prolific group links + these)
@@ -14,7 +14,7 @@
 // The deadline shown on the board is dates.due (not the Linear SLA, which is a separate ticket field).
 var L = require('./_wlinks.js');
 var PERSON_BY = ['luc', 'claude', 'auto'], GROUPS = ['slack', 'groups', 'studies', 'other'];
-var ALLOWED = { slack: ['request', 'slack'], groups: ['prolific_group'], studies: ['prolific_study'], other: ['linear', 'qualtrics', 'sheet', 'slack', 'other'] };
+var ALLOWED = { slack: ['request', 'slack'], groups: ['prolific_group'], studies: ['prolific_study', 'prolific_project'], other: ['linear', 'qualtrics', 'sheet', 'slack', 'other'] };
 var DAYRE = /^\d{4}-\d{2}-\d{2}$/, WHENRE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
 
 function bad(msg) { var e = new Error(msg); e.bad = true; return e; }

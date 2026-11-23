@@ -27,6 +27,8 @@ ok('Qualtrics form ID', q.kind === 'qualtrics' && q.id === 'SV_abc123XYZ');
 var sh = L.parse('https://docs.google.com/spreadsheets/d/1AbC_dEf-123/edit#gid=0');
 ok('Google Sheet id and service', sh.kind === 'sheet' && sh.id === '1AbC_dEf-123' && sh.service === 'google_sheets' && L.parse('https://docs.google.com/document/d/1x/edit').service === 'google_docs');
 ok('Slack link is a slack link', L.parse('https://prolific.slack.com/archives/C0123/p1700000000000100').kind === 'slack');
+var PJ = 'https://app.prolific.com/researcher/workspaces/projects/6aeb6766bf02a709f13d86fd';
+ok('Prolific project link is its own kind, with its ID', L.parse(PJ).kind === 'prolific_project' && L.idFor('prolific_project', PJ) === '6aeb6766bf02a709f13d86fd' && L.kindFor('studies', { u: PJ }) === 'prolific_project' && L.kindFor('studies', { u: ST }) === 'prolific_study' && L.kindFor('studies', { u: 'https://app.prolific.com/x/abc' }) === 'prolific_study');
 eq('kindFor by list', [L.kindFor('slack', { init: true, u: 'x' }), L.kindFor('slack', { u: 'x' }), L.kindFor('groups', {}), L.kindFor('studies', {}), L.kindFor('other', { u: LIN }), L.kindFor('other', { u: 'https://example.com/a' })],
   ['request', 'slack', 'prolific_group', 'prolific_study', 'linear', 'other']);
 
@@ -65,12 +67,13 @@ ok('a patch without links is returned untouched', V.enrich({}, { rag: 'a' }, DAY
 var OLD = { owner: 'aaaaaaaaaaa1', goal: 'G', rag: 'a', dates: { due: '2026-12-04' }, codes: [{ n: 'SF', c: 'X-1' }],
   links: { slack: [{ n: 'Initial ask', u: 'https://p.slack.com/archives/C1/p1', init: true }, { n: '#ops thread', u: 'https://p.slack.com/archives/C2/p2' }],
            groups: [{ n: 'SF group', u: 'https://app.prolific.com/researcher/participant-groups/6641c0e2a9/overview' }, { n: 'Odd group', u: 'https://app.prolific.com/g/1' }],
-           studies: [{ n: 'Screener', u: ST }, { n: 'Main', u: ST + '/overview' }],
+           studies: [{ n: 'Screener', u: ST }, { n: 'Main', u: ST + '/overview' }, { n: 'Project', u: 'https://app.prolific.com/researcher/workspaces/projects/6aeb6766bf02a709f13d86fd' }],
            other: [{ n: 'Linear', u: LIN }, { n: 'Tracker', u: sh.u }, { n: 'Form', u: q.u }, { n: 'Notion', u: 'https://notion.so/page' }, { n: 'Second ticket', u: 'https://linear.app/prolific/issue/HDOR-111/other' }] } };
 var mg = V.migrateMeta(OLD, DAY), nm = mg.meta;
 eq('every old key and value is still there', [nm.owner, nm.goal, nm.rag, nm.dates, nm.codes], [OLD.owner, OLD.goal, OLD.rag, OLD.dates, OLD.codes]);
 eq('no link lost, renamed or moved', V.lostLinks(OLD, nm), []);
 eq('kinds', [nm.links.slack[0].k, nm.links.slack[1].k, nm.links.groups[0].k, nm.links.studies[0].k, nm.links.other.map(function (r) { return r.k; }).join()], ['request', 'slack', 'prolific_group', 'prolific_study', 'linear,sheet,qualtrics,other,linear']);
+ok('a project link in the old studies list is typed prolific_project', nm.links.studies[2].k === 'prolific_project' && nm.links.studies[2].id === '6aeb6766bf02a709f13d86fd');
 eq('IDs read from the links', [nm.links.groups[0].id, nm.links.studies[0].id, nm.links.studies[1].id, nm.links.other[1].id, nm.links.other[2].id], ['6641c0e2a9', '65f2a1c9d3e4f5a6b7c8d9e0', '65f2a1c9d3e4f5a6b7c8d9e0', '1AbC_dEf-123', 'SV_abc123XYZ']);
 ok('first Linear link becomes meta.linear (ID, url, slug title, provenance auto)', nm.linear.id === 'HDOR-394' && nm.linear.url === LIN && nm.linear.title === 'Uber users in New Orleans and San Fran' && nm.prov['linear.title'].by === 'auto' && nm.sv === 2);
 ok('warnings: the group with no readable ID, and the second Linear ticket', mg.warnings.some(function (w) { return w.indexOf('Odd group') >= 0; }) && mg.warnings.some(function (w) { return w.indexOf('1 more Linear') >= 0; }), JSON.stringify(mg.warnings));
