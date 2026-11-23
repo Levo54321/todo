@@ -1,8 +1,9 @@
 # Work projects data v2: migration runbook (stage 3a)
 
-Status 23 Nov 2026: code and tests are done; **the live database has not been touched**. The Supabase connector refused every query
-("You do not have permission"), so the shop baseline, the backup, the dry run on real data and the apply are waiting for the connector's
-tools to be switched on (claude.ai > Settings > Connectors > Supabase > allow the tools).
+Status 23 Nov 2026 (connector back): **baseline recorded, backup taken and verified, dry run on the real data done, `db/setup37.sql` + the apply script tested inside a rolled-back transaction. Waiting for Luc's OK to apply.**
+- Baseline before: shop items 1, members 3, push 1, receipts 1, shops 15, state 1, usuals 48; work_projects 15; open Work tasks 30; latest holmlodge-shop production deployment `dpl_Fnqvs85Eqj1EKTTCZxUFoNub5QbQ`.
+- Backup: `work_bak_20261123_{projects 15, events 45, people 6, clients 1, client_icons 1, updates 0, status_state 1}`, row counts equal to the sources, RLS on.
+- Dry run: `docs/handover/MIGRATION-V2-DRYRUN-2026-11-23.md` (15 projects, 9 link rows, 3 projects change, links lost 0).
 
 ## What v2 is (decision changed from the stage 2 plan, so the legacy ES5 pages keep working)
 Luc asked to keep the legacy ES5 UI usable on the same data. So v2 does NOT add a resources table: everything stays in `work_projects.meta`.

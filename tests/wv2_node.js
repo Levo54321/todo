@@ -78,7 +78,7 @@ var mg2 = V.migrateMeta(nm, DAY);
 ok('idempotent: migrating twice changes nothing', JSON.stringify(mg2.meta) === JSON.stringify(nm) && mg2.changes.length === 0, JSON.stringify(mg2.changes));
 ok('does not overwrite a Linear title Luc corrected', V.migrateMeta(Object.assign({}, nm, { linear: Object.assign({}, nm.linear, { title: 'Uber users in New Orleans and San Francisco' }) }), DAY).meta.linear.title === 'Uber users in New Orleans and San Francisco');
 var e1 = V.migrateMeta({}, DAY), e2 = V.migrateMeta(null, DAY);
-ok('empty and missing meta: only the v2 mark', JSON.stringify(e1.meta) === '{"sv":2}' && JSON.stringify(e2.meta) === '{"sv":2}');
+ok('empty and missing meta are left as they are', JSON.stringify(e1.meta) === '{}' && JSON.stringify(e2.meta) === '{}' && e1.changes.length === 0);
 ok('a project with links but none matching still migrates', V.migrateMeta({ links: { other: [{ n: 'Doc', u: 'https://example.com/x' }] } }, DAY).meta.links.other[0].k === 'other');
 ok('the migrated meta passes the same cleaning the app applies on save', (function () { try { W.cleanMeta({ links: nm.links, linear: nm.linear, prov: nm.prov }); return true; } catch (e) { console.log(e.message); return false; } })());
 console.log(fails ? fails + ' FAILED' : 'ALL PASS'); process.exit(fails ? 1 : 0);

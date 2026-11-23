@@ -10,7 +10,7 @@
 //   deliver: [{ n:'segment name' (may be ''), requested, provided, approved }]   progress = sum(provided) / sum(requested)
 //   activity: { last_slack:{ at:ISO, who, where, u:https, text } }
 //   prov: { '<field path>': { by:'luc'|'claude'|'auto', src?:https, at:'YYYY-MM-DD' } }   who/what set a value
-//   sv: 2   marks a project whose link rows were migrated
+//   sv: 2   marks a project whose link rows were migrated (projects without links are not touched)
 // The deadline shown on the board is dates.due (not the Linear SLA, which is a separate ticket field).
 var L = require('./_wlinks.js');
 var PERSON_BY = ['luc', 'claude', 'auto'], GROUPS = ['slack', 'groups', 'studies', 'other'];
@@ -195,7 +195,7 @@ function migrateMeta(meta, day) {
       }
     }
   }
-  if (m.sv !== 2) { m.sv = 2; if (!changes.length && !links) changes.push('marked as v2 (no links to type)'); }
+  if (links && typeof links === 'object' && m.sv !== 2) m.sv = 2; // marks a project whose link rows were migrated; projects without links are left exactly as they are
   return { meta: m, changes: changes, warnings: warnings };
 }
 // Every old link row (name + url) must still be in exactly one place after the migration. -> [] when none is lost.
